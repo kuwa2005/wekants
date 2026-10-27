@@ -18,6 +18,7 @@ export const workspaces = pgTable("workspaces", {
   ownerId: text("owner_id").notNull(),
   title: text("title").notNull(),
   rank: bigint("rank", { mode: "number" }).notNull(),
+  starred: boolean("starred").notNull().default(false),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
@@ -28,6 +29,8 @@ export const boards = pgTable("boards", {
   ownerId: text("owner_id").notNull(),
   workspaceId: text("workspace_id").notNull(),
   rank: bigint("rank", { mode: "number" }).notNull(),
+  isTemplate: boolean("is_template").notNull().default(false),
+  isPublic: boolean("is_public").notNull().default(false),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

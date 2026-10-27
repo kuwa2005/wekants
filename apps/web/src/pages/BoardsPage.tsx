@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -60,6 +60,13 @@ function BoardTicket({ board }: { board: Board }) {
       role="link"
     >
       {board.title}
+      {board.isTemplate || board.isPublic ? (
+        <span className="marks">
+          {board.isTemplate ? "雛形" : ""}
+          {board.isTemplate && board.isPublic ? " · " : ""}
+          {board.isPublic ? "公開" : ""}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -69,11 +76,19 @@ function WorkspaceColumn({
   boards,
   onImport,
   onCreateBoard,
+  onRename,
+  onStar,
+  onDelete,
+  onCopy,
 }: {
   workspace: WorkspaceTree["workspaces"][number];
   boards: Board[];
   onImport: (markdown: string, name: string) => Promise<void>;
   onCreateBoard: (title: string) => Promise<void>;
+  onRename: (title: string) => Promise<void>;
+  onStar: (starred: boolean) => Promise<void>;
+  onDelete: () => Promise<void>;
+  onCopy: (boardId: string) => Promise<void>;
 }) {
   const {
     attributes,
@@ -91,6 +106,16 @@ function WorkspaceColumn({
     data: { type: "workspace", workspaceId: workspace.id },
   });
   const [title, setTitle] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(workspace.title);
+  const [page, setPage] = useState(0);
+  const skipCommit = useRef(false);
+  const pageSize = 6;
+  useEffect(() => {
+    setPage(0);
+  }, [boards.length]);
+  const pageCount = Math.max(1, Math.ceil(boards.length / pageSize));
+  const shown = boards.slice(page * pageSize, page * pageSize + pageSize);
 
   async function onDropFile(event: React.DragEvent) {
     const file = event.dataTransfer.files[0];
@@ -125,15 +150,106 @@ function WorkspaceColumn({
         >
           移動
         </button>
-        <h2>{workspace.title}</h2>
+        {renaming ? (
+          <input
+            className="list-title"
+            aria-label="ワークスペース名"
+            value={draft}
+            autoFocus
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              if (skipCommit.current) {
+                skipCommit.current = false;
+                setDraft(workspace.title);
+                setRenaming(false);
+                return;
+              }
+              const next = draft.trim();
+              setRenaming(false);
+              if (!next || next === workspace.title) {
+                setDraft(workspace.title);
+                return;
+              }
+              void onRename(next);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                skipCommit.current = true;
+                event.currentTarget.blur();
+              }
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="list-title"
+            role="heading"
+            aria-level={2}
+            aria-label={`${workspace.title} の名前を変更`}
+            onClick={() => {
+              setDraft(workspace.title);
+              setRenaming(true);
+            }}
+          >
+            {workspace.title}
+          </button>
+        )}
+        <button
+          type="button"
+          className="fold"
+          aria-label={workspace.starred ? `${workspace.title} の星を外す` : `${workspace.title} を星付きにする`}
+          onClick={() => void onStar(!workspace.starred)}
+        >
+          {workspace.starred ? "星付き" : "星"}
+        </button>
+        <button
+          type="button"
+          className="danger"
+          aria-label={`${workspace.title} を削除`}
+          onClick={() => {
+            if (window.confirm(`「${workspace.title}」と中のボードを削除しますか？`)) {
+              void onDelete();
+            }
+          }}
+        >
+          削除
+        </button>
       </div>
       <div ref={setNodeRef} className="workspace-boards">
-        <SortableContext items={boards.map((board) => board.id)} strategy={rectSortingStrategy}>
-          {boards.map((board) => (
-            <BoardTicket key={board.id} board={board} />
+        <SortableContext items={shown.map((board) => board.id)} strategy={rectSortingStrategy}>
+          {shown.map((board) => (
+            <div key={board.id} className="ticket-row">
+              <BoardTicket board={board} />
+              {board.isTemplate ? (
+                <button type="button" className="ghost" onClick={() => void onCopy(board.id)}>
+                  複製
+                </button>
+              ) : null}
+            </div>
           ))}
         </SortableContext>
       </div>
+      {boards.length > pageSize ? (
+        <div className="pager">
+          <button type="button" className="ghost" disabled={page === 0} onClick={() => setPage((current) => current - 1)}>
+            前へ
+          </button>
+          <span>
+            {page + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            className="ghost"
+            disabled={page + 1 >= pageCount}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            次へ
+          </button>
+        </div>
+      ) : null}
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -159,6 +275,8 @@ function WorkspaceColumn({
 
 export function BoardsPage({ user, onLogout }: Props) {
   const [tree, setTree] = useState<WorkspaceTree | null>(null);
+  const [publicBoards, setPublicBoards] = useState<Board[]>([]);
+  const [query, setQuery] = useState("");
   const [workspaceTitle, setWorkspaceTitle] = useState("");
   const navigate = useNavigate();
   const sensors = useSensors(
@@ -166,7 +284,9 @@ export function BoardsPage({ user, onLogout }: Props) {
   );
 
   async function reload() {
-    setTree(await api.workspaces());
+    const [next, published] = await Promise.all([api.workspaces(), api.publicBoards()]);
+    setTree(next);
+    setPublicBoards(published.boards);
   }
 
   useEffect(() => {
@@ -256,6 +376,13 @@ export function BoardsPage({ user, onLogout }: Props) {
         />
         <button type="submit">ワークスペースを追加</button>
       </form>
+      <input
+        className="search"
+        aria-label="ボードを検索"
+        placeholder="ボードを検索"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
       {/* ワークスペースの並び替えは新規実装。legacy WeKan の DnD は移植しない。 */}
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <SortableContext
@@ -267,7 +394,13 @@ export function BoardsPage({ user, onLogout }: Props) {
             <WorkspaceColumn
               key={workspace.id}
               workspace={workspace}
-              boards={workspace.boards.slice().sort((a, b) => a.rank - b.rank)}
+              boards={workspace.boards
+                .filter((board) => {
+                  const needle = query.trim().toLowerCase();
+                  return !needle || board.title.toLowerCase().includes(needle);
+                })
+                .slice()
+                .sort((a, b) => a.rank - b.rank)}
               onCreateBoard={async (title) => {
                 const snapshot = await api.createBoard(title, workspace.id);
                 navigate(`/b/${snapshot.board.id}`);
@@ -276,11 +409,39 @@ export function BoardsPage({ user, onLogout }: Props) {
                 const snapshot = await api.importMarkdownBoard(markdown, workspace.id);
                 navigate(`/b/${snapshot.board.id}`);
               }}
+              onRename={async (title) => {
+                await api.patchWorkspace(workspace.id, { title });
+                await reload();
+              }}
+              onStar={async (starred) => {
+                await api.patchWorkspace(workspace.id, { starred });
+                await reload();
+              }}
+              onDelete={async () => {
+                await api.deleteWorkspace(workspace.id);
+                await reload();
+              }}
+              onCopy={async (boardId) => {
+                const snapshot = await api.copyBoard(boardId, workspace.id);
+                navigate(`/b/${snapshot.board.id}`);
+              }}
             />
           ))}
         </div>
         </SortableContext>
       </DndContext>
+      {publicBoards.length > 0 ? (
+        <section className="public-boards">
+          <h2>公開ボード</h2>
+          <div className="workspace-boards">
+            {publicBoards.map((board) => (
+              <Link key={board.id} className="board-ticket" to={`/b/${board.id}`}>
+                {board.title}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

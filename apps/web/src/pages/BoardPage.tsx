@@ -76,6 +76,7 @@ function ListColumn({
   onRename,
   onToggle,
   onPatch,
+  canEdit,
 }: {
   list: List;
   cards: Card[];
@@ -86,6 +87,7 @@ function ListColumn({
   onRename: (title: string) => Promise<void>;
   onToggle: (collapsed: boolean) => Promise<void>;
   onPatch: (patch: Partial<Pick<List, "width" | "wipLimit" | "archived" | "color" | "cardEdit">>) => Promise<void>;
+  canEdit: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -151,6 +153,7 @@ function ListColumn({
       }}
     >
       <div className="list-head">
+        {canEdit ? (
         <button
           type="button"
           className="grip"
@@ -160,7 +163,10 @@ function ListColumn({
         >
           移動
         </button>
-        {renaming ? (
+        ) : null}
+        {!canEdit ? (
+          <h2>{list.title}</h2>
+        ) : renaming ? (
           <input
             className="list-title"
             aria-label="リスト名"
@@ -205,6 +211,8 @@ function ListColumn({
             {list.title}
           </button>
         )}
+        {canEdit ? (
+        <>
         <button
           type="button"
           className="fold"
@@ -225,9 +233,12 @@ function ListColumn({
         >
           削除
         </button>
+        </>
+        ) : null}
       </div>
       {list.collapsed ? null : (
       <>
+      {canEdit ? (
       <div className="list-tools">
         <button
           type="button"
@@ -289,6 +300,7 @@ function ListColumn({
           保管
         </button>
       </div>
+      ) : null}
       <div ref={setNodeRef} className="list-cards">
         <SortableContext
           items={cards.map((card) => card.id)}
@@ -299,7 +311,7 @@ function ListColumn({
           ))}
         </SortableContext>
       </div>
-      {list.cardEdit === "deny" ? (
+      {!canEdit ? null : list.cardEdit === "deny" ? (
         <p className="hint">このリストは編集できません</p>
       ) : list.wipLimit != null && cards.length >= list.wipLimit ? (
         <p className="hint">WIP の上限です</p>
@@ -314,7 +326,7 @@ function ListColumn({
         <button type="submit">+</button>
       </form>
       )}
-      {list.cardEdit === "deny" ? null : (
+      {!canEdit || list.cardEdit === "deny" ? null : (
       <label className="hint">
         Markdown を取り込む
         <input
@@ -450,7 +462,7 @@ export function BoardPage({ user, onLogout }: Props) {
   }
 
   async function onDragEnd(event: DragEndEvent) {
-    if (!snapshot || !event.over) {
+    if (!snapshot || !event.over || snapshot.board.ownerId !== user.id) {
       return;
     }
     const activeType = event.active.data.current?.type;
@@ -565,6 +577,36 @@ export function BoardPage({ user, onLogout }: Props) {
           すべてのボード
         </Link>
         <h1>{snapshot.board.title}</h1>
+        {snapshot.board.ownerId === user.id ? (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                void api
+                  .patchBoard(boardId, { isTemplate: !snapshot.board.isTemplate })
+                  .then((board) =>
+                    setSnapshot((current) => (current ? { ...current, board } : current)),
+                  )
+              }
+            >
+              {snapshot.board.isTemplate ? "雛形をやめる" : "雛形にする"}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void api
+                  .patchBoard(boardId, { isPublic: !snapshot.board.isPublic })
+                  .then((board) =>
+                    setSnapshot((current) => (current ? { ...current, board } : current)),
+                  )
+              }
+            >
+              {snapshot.board.isPublic ? "公開をやめる" : "公開する"}
+            </button>
+          </>
+        ) : (
+          <span>公開ボード</span>
+        )}
         <button
           type="button"
           onClick={async () => {
@@ -585,10 +627,12 @@ export function BoardPage({ user, onLogout }: Props) {
           出る
         </button>
       </header>
+      {snapshot.board.ownerId === user.id ? (
       <form className="composer" onSubmit={addList}>
         <input name="listTitle" placeholder="新しいリスト" />
         <button type="submit">リストを追加</button>
       </form>
+      ) : null}
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <SortableContext
           items={lists.map((list) => `column:${list.id}`)}
@@ -598,6 +642,7 @@ export function BoardPage({ user, onLogout }: Props) {
           {lists.map((list) => (
             <ListColumn
               key={list.id}
+              canEdit={snapshot.board.ownerId === user.id}
               list={list}
               cards={snapshot.cards
                 .filter((card) => card.listId === list.id)
@@ -636,7 +681,7 @@ export function BoardPage({ user, onLogout }: Props) {
         </div>
         </SortableContext>
       </DndContext>
-      {archivedLists.length > 0 ? (
+      {snapshot.board.ownerId === user.id && archivedLists.length > 0 ? (
         <aside className="archive">
           <h2>保管庫</h2>
           {archivedLists.map((list) => (
@@ -657,15 +702,18 @@ export function BoardPage({ user, onLogout }: Props) {
           <h2>Markdown</h2>
           <input
             value={editing.title}
+            readOnly={snapshot.board.ownerId !== user.id}
             onChange={(e) => setEditing({ ...editing, title: e.target.value })}
           />
           <textarea
             value={editing.description}
+            readOnly={snapshot.board.ownerId !== user.id}
             onChange={(e) => setEditing({ ...editing, description: e.target.value })}
             rows={12}
           />
           <Markdown source={editing.description} />
           <div className="composer">
+            {snapshot.board.ownerId === user.id ? (
             <button
               type="button"
               onClick={async () => {
@@ -688,9 +736,11 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               保存
             </button>
+            ) : null}
             <button type="button" className="ghost" onClick={() => setEditing(null)}>
               閉じる
             </button>
+            {snapshot.board.ownerId === user.id ? (
             <button
               type="button"
               className="danger"
@@ -714,6 +764,7 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               削除
             </button>
+            ) : null}
           </div>
         </aside>
       ) : null}

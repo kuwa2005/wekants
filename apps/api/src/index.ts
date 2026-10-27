@@ -2,7 +2,6 @@ import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { eq } from "drizzle-orm";
-import { assertBoardAccess } from "@wekants/wekan-core-node";
 import { createApp } from "./app.ts";
 import { openDatabase } from "./db.ts";
 import { joinBoard, leaveBoard } from "./hub.ts";
@@ -48,9 +47,7 @@ wss.on("connection", (socket: WebSocket, request) => {
       socket.close(4404, "見つかりません");
       return;
     }
-    try {
-      assertBoardAccess(board.ownerId, session.userId);
-    } catch {
+    if (board.ownerId !== session.userId && !board.isPublic) {
       socket.close(4404, "見つかりません");
       return;
     }

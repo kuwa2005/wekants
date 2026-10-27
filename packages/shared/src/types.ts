@@ -8,6 +8,7 @@ export type Workspace = {
   title: string;
   rank: number;
   ownerId: string;
+  starred: boolean;
 };
 
 export type Board = {
@@ -17,6 +18,8 @@ export type Board = {
   ownerId: string;
   workspaceId: string;
   rank: number;
+  isTemplate: boolean;
+  isPublic: boolean;
 };
 
 export type List = {

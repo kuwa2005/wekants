@@ -343,4 +343,80 @@ Use **3mm** steel.
     const body = await afterList.json();
     expect(body.lists.map((list: { id: string }) => list.id)).not.toContain(snapshot.lists[0].id);
   });
+
+  it("renames a workspace, copies a template, and opens a public board", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada", password: "password1" }),
+    });
+    const adaJar = cookie(ada);
+    const tree = await app.request("/api/workspaces", { headers: { cookie: adaJar } });
+    const workspaceId = (await tree.json()).workspaces[0].id as string;
+    const renamed = await app.request(`/api/workspaces/${workspaceId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "現場", starred: true }),
+    });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({ title: "現場", starred: true });
+
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Lathe", workspaceId }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Chuck" }),
+    });
+    expect(cardRes.status).toBe(201);
+    const flagged = await app.request(`/api/boards/${snapshot.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ isTemplate: true, isPublic: true }),
+    });
+    expect(flagged.status).toBe(200);
+
+    const copied = await app.request(`/api/boards/${snapshot.board.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ workspaceId }),
+    });
+    expect(copied.status).toBe(201);
+    const copy = await copied.json();
+    expect(copy.board.title).toBe("Lathe の複製");
+    expect(copy.cards.map((card: { title: string }) => card.title)).toContain("Chuck");
+
+    const bob = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "bob", password: "password1" }),
+    });
+    const bobJar = cookie(bob);
+    const seen = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: bobJar } });
+    expect(seen.status).toBe(200);
+    const published = await app.request("/api/boards/public", { headers: { cookie: bobJar } });
+    const publicIds = (await published.json()).boards.map((board: { id: string }) => board.id);
+    expect(publicIds).toContain(snapshot.board.id);
+
+    const hidden = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Private", workspaceId }),
+    });
+    const privateId = (await hidden.json()).board.id as string;
+    const denied = await app.request(`/api/boards/${privateId}`, { headers: { cookie: bobJar } });
+    expect(denied.status).toBe(404);
+
+    const removed = await app.request(`/api/workspaces/${workspaceId}`, {
+      method: "DELETE",
+      headers: { cookie: adaJar },
+    });
+    expect(removed.status).toBe(200);
+    const after = await app.request("/api/workspaces", { headers: { cookie: adaJar } });
+    expect((await after.json()).workspaces).toEqual([]);
+  });
 });

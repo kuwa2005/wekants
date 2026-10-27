@@ -54,6 +54,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  patchWorkspace: (workspaceId: string, patch: { title?: string; starred?: boolean }) =>
+    request<Workspace>(`/api/workspaces/${workspaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteWorkspace: (workspaceId: string) =>
+    request<{ ok: boolean }>(`/api/workspaces/${workspaceId}`, { method: "DELETE" }),
+  publicBoards: () => request<{ boards: Board[] }>("/api/boards/public"),
+  patchBoard: (boardId: string, patch: { title?: string; isTemplate?: boolean; isPublic?: boolean }) =>
+    request<Board>(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  copyBoard: (boardId: string, workspaceId: string) =>
+    request<BoardSnapshot>(`/api/boards/${boardId}/copy`, {
+      method: "POST",
+      body: JSON.stringify({ workspaceId }),
+    }),
   createBoard: (title: string, workspaceId?: string) =>
     request<BoardSnapshot>("/api/boards", {
       method: "POST",

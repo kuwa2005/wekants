@@ -47,6 +47,7 @@ function mapWorkspace(row: typeof workspaces.$inferSelect) {
     title: row.title,
     rank: Number(row.rank),
     ownerId: row.ownerId,
+    starred: Boolean(row.starred),
   };
 }
 
@@ -58,6 +59,8 @@ function mapBoard(row: typeof boards.$inferSelect) {
     ownerId: row.ownerId,
     workspaceId: row.workspaceId,
     rank: Number(row.rank),
+    isTemplate: Boolean(row.isTemplate),
+    isPublic: Boolean(row.isPublic),
   };
 }
 
@@ -262,6 +265,14 @@ export function createApp(db: AppDb): Hono<Env> {
     return board;
   }
 
+  async function visibleBoard(userId: string, boardId: string) {
+    const board = await one(db.select().from(boards).where(eq(boards.id, boardId)).limit(1));
+    if (!board || (board.ownerId !== userId && !board.isPublic)) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    return board;
+  }
+
   async function assertListAcceptsCard(listId: string, adding: boolean) {
     const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
     if (!list) {
@@ -411,6 +422,45 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(mapWorkspace(moved!));
   });
 
+  app.patch("/api/workspaces/:workspaceId", async (c) => {
+    const userId = c.get("userId");
+    const workspace = await ownedWorkspace(userId, c.req.param("workspaceId"));
+    const body = await c.req.json<{ title?: string; starred?: boolean }>();
+    const patch: { title?: string; starred?: boolean } = {};
+    if (typeof body.title === "string") {
+      try {
+        validateTitle(body.title);
+      } catch (err) {
+        throw new HTTPException(400, { message: String(err) });
+      }
+      patch.title = body.title.trim();
+    }
+    if (typeof body.starred === "boolean") {
+      patch.starred = body.starred;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new HTTPException(400, { message: "変更がありません" });
+    }
+    await db.update(workspaces).set(patch).where(eq(workspaces.id, workspace.id));
+    const updated = await one(
+      db.select().from(workspaces).where(eq(workspaces.id, workspace.id)).limit(1),
+    );
+    return c.json(mapWorkspace(updated!));
+  });
+
+  app.delete("/api/workspaces/:workspaceId", async (c) => {
+    const userId = c.get("userId");
+    const workspace = await ownedWorkspace(userId, c.req.param("workspaceId"));
+    const owned = await db.select().from(boards).where(eq(boards.workspaceId, workspace.id));
+    for (const board of owned) {
+      await db.delete(cards).where(eq(cards.boardId, board.id));
+      await db.delete(lists).where(eq(lists.boardId, board.id));
+      await db.delete(boards).where(eq(boards.id, board.id));
+    }
+    await db.delete(workspaces).where(eq(workspaces.id, workspace.id));
+    return c.json({ ok: true });
+  });
+
   app.post("/api/boards", async (c) => {
     const userId = c.get("userId");
     const body = await c.req.json<{ title?: string; workspaceId?: string; markdown?: string }>();
@@ -488,17 +538,150 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(await snapshot(boardId), 201);
   });
 
+  app.get("/api/boards/public", async (c) => {
+    const userId = c.get("userId");
+    const rows = await db
+      .select()
+      .from(boards)
+      .where(and(eq(boards.isPublic, true), eq(boards.archived, false)))
+      .orderBy(asc(boards.createdAt));
+    return c.json({
+      boards: rows.filter((board) => board.ownerId !== userId).map(mapBoard),
+    });
+  });
+
   app.get("/api/boards/:boardId", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
-    await ownedBoard(userId, boardId);
+    await visibleBoard(userId, boardId);
     return c.json(await snapshot(boardId));
+  });
+
+  app.patch("/api/boards/:boardId", async (c) => {
+    const userId = c.get("userId");
+    const board = await ownedBoard(userId, c.req.param("boardId"));
+    const body = await c.req.json<{ title?: string; isTemplate?: boolean; isPublic?: boolean }>();
+    const patch: { title?: string; isTemplate?: boolean; isPublic?: boolean } = {};
+    if (typeof body.title === "string") {
+      try {
+        validateTitle(body.title);
+      } catch (err) {
+        throw new HTTPException(400, { message: String(err) });
+      }
+      patch.title = body.title.trim();
+    }
+    if (typeof body.isTemplate === "boolean") {
+      patch.isTemplate = body.isTemplate;
+    }
+    if (typeof body.isPublic === "boolean") {
+      patch.isPublic = body.isPublic;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new HTTPException(400, { message: "変更がありません" });
+    }
+    await db.update(boards).set(patch).where(eq(boards.id, board.id));
+    const updated = await one(db.select().from(boards).where(eq(boards.id, board.id)).limit(1));
+    return c.json(mapBoard(updated!));
+  });
+
+  app.post("/api/boards/:boardId/copy", async (c) => {
+    const userId = c.get("userId");
+    const source = await visibleBoard(userId, c.req.param("boardId"));
+    if (!source.isTemplate) {
+      throw new HTTPException(400, { message: "雛形ではありません" });
+    }
+    const body = await c.req.json<{ workspaceId?: string }>();
+    if (!body.workspaceId) {
+      throw new HTTPException(400, { message: "ワークスペースを指定してください" });
+    }
+    await ownedWorkspace(userId, body.workspaceId);
+    const copyTitle = [...`${source.title} の複製`].slice(0, 200).join("");
+    const siblings = await db
+      .select()
+      .from(boards)
+      .where(eq(boards.workspaceId, body.workspaceId))
+      .orderBy(asc(boards.rank));
+    const placed = placeRank(siblings.at(-1)?.rank ?? null, null);
+    let rank = placed.rank;
+    if (placed.needsRebalance) {
+      const ranks = rebalanceRanks(siblings.length + 1);
+      for (const [index, row] of siblings.entries()) {
+        await db.update(boards).set({ rank: ranks[index] ?? 0 }).where(eq(boards.id, row.id));
+      }
+      rank = ranks[siblings.length] ?? siblings.length * 1024;
+    }
+    const boardId = id();
+    await db.insert(boards).values({
+      id: boardId,
+      title: copyTitle,
+      archived: false,
+      ownerId: userId,
+      workspaceId: body.workspaceId,
+      rank,
+      isTemplate: false,
+      isPublic: false,
+      createdAt: now(),
+    });
+    const sourceLists = await db
+      .select()
+      .from(lists)
+      .where(eq(lists.boardId, source.id))
+      .orderBy(asc(lists.rank));
+    const sourceCards = await db
+      .select()
+      .from(cards)
+      .where(eq(cards.boardId, source.id))
+      .orderBy(asc(cards.rank));
+    const listRanks = rebalanceRanks(sourceLists.length);
+    const listIds = new Map<string, string>();
+    for (const [index, list] of sourceLists.entries()) {
+      const listId = id();
+      listIds.set(list.id, listId);
+      await db.insert(lists).values({
+        id: listId,
+        boardId,
+        title: list.title,
+        rank: listRanks[index] ?? index * 1024,
+        collapsed: list.collapsed,
+        width: list.width,
+        wipLimit: list.wipLimit,
+        archived: list.archived,
+        color: list.color,
+        cardEdit: list.cardEdit,
+        createdAt: now(),
+      });
+    }
+    const cardsByList = new Map<string, typeof sourceCards>();
+    for (const card of sourceCards) {
+      const bucket = cardsByList.get(card.listId) ?? [];
+      bucket.push(card);
+      cardsByList.set(card.listId, bucket);
+    }
+    for (const [sourceListId, copied] of cardsByList) {
+      const listId = listIds.get(sourceListId);
+      if (!listId) {
+        continue;
+      }
+      const cardRanks = rebalanceRanks(copied.length);
+      for (const [index, card] of copied.entries()) {
+        await db.insert(cards).values({
+          id: id(),
+          boardId,
+          listId,
+          title: card.title,
+          description: card.description,
+          rank: cardRanks[index] ?? index * 1024,
+          createdAt: now(),
+        });
+      }
+    }
+    return c.json(await snapshot(boardId), 201);
   });
 
   app.get("/api/boards/:boardId/markdown", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
-    await ownedBoard(userId, boardId);
+    await visibleBoard(userId, boardId);
     const md = boardToMarkdown(await snapshot(boardId));
     return new Response(md, {
       headers: {

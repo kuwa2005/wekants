@@ -187,3 +187,24 @@ test("drag a board into another workspace", async ({ page }) => {
   await dragOnto(page, page.getByRole("link", { name: "Jig" }), bay2.locator(".workspace-boards"));
   await expect(bay2.getByRole("link", { name: "Jig" })).toBeVisible();
 });
+
+test("rename a workspace, search boards, and copy a template", async ({ page }) => {
+  await register(page, `shop_${stamp}`);
+  const bay = page.locator(".workspace").first();
+  await bay.getByRole("heading", { name: "作業場 の名前を変更" }).click();
+  const name = bay.getByLabel("ワークスペース名");
+  await name.fill("現場");
+  await name.press("Enter");
+  await expect(bay.getByRole("heading", { name: "現場" })).toBeVisible();
+  await bay.getByRole("button", { name: "現場 を星付きにする" }).click();
+  await expect(bay.getByRole("button", { name: "現場 の星を外す" })).toBeVisible();
+  await bay.getByPlaceholder("新しいボード").fill("Lathe");
+  await bay.getByRole("button", { name: "+" }).click();
+  await expect(page.getByRole("heading", { name: "Lathe" })).toBeVisible();
+  await page.getByRole("button", { name: "雛形にする" }).click();
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  await page.getByLabel("ボードを検索").fill("Lathe");
+  await expect(page.getByRole("link", { name: /Lathe/ })).toBeVisible();
+  await page.getByRole("button", { name: "複製" }).click();
+  await expect(page.getByRole("heading", { name: "Lathe の複製" })).toBeVisible();
+});

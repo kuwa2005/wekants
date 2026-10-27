@@ -32,6 +32,8 @@ export const boards = pgTable("boards", {
   rank: bigint("rank", { mode: "number" }).notNull(),
   isTemplate: boolean("is_template").notNull().default(false),
   isPublic: boolean("is_public").notNull().default(false),
+  key: text("key").notNull().default(""),
+  cardSeq: integer("card_seq").notNull().default(0),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
@@ -74,6 +76,7 @@ export const cards = pgTable("cards", {
   description: text("description").notNull().default(""),
   archived: boolean("archived").notNull().default(false),
   archivedWithList: boolean("archived_with_list").notNull().default(false),
+  number: integer("number").notNull().default(0),
   rank: bigint("rank", { mode: "number" }).notNull(),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });

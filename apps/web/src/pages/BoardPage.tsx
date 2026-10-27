@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { BoardSnapshot, Card, CardTemplate, List, TitleBatch, UnsavedEdit, UserPublic, WsEvent } from "@wekants/shared";
-import { titlesFromInput } from "@wekants/shared";
+import { formatCardKey, normalizeKey, parseCardKey, titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
 import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
@@ -75,12 +75,14 @@ function Ticket({
   draggable,
   skipOpen,
   unsaved,
+  boardKey,
 }: {
   card: Card;
   onOpen: (card: Card) => void;
   draggable: boolean;
   skipOpen: { current: boolean };
   unsaved: boolean;
+  boardKey: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -116,6 +118,9 @@ function Ticket({
         }
       }}
     >
+      {formatCardKey(boardKey, card.number) ? (
+        <span className="card-key">{formatCardKey(boardKey, card.number)}</span>
+      ) : null}
       <h3>{card.title}</h3>
       {unsaved ? (
         <span className="marks unsaved">未保存の本文</span>
@@ -144,6 +149,7 @@ function ListColumn({
   boardId,
   skipOpen,
   unsaved,
+  boardKey,
 }: {
   list: List;
   cards: Card[];
@@ -162,6 +168,7 @@ function ListColumn({
   boardId: string;
   skipOpen: { current: boolean };
   unsaved: UnsavedEdit[];
+  boardKey: string;
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -422,6 +429,7 @@ function ListColumn({
               draggable={canEdit}
               skipOpen={skipOpen}
               unsaved={unsaved.some((row) => row.cardId === card.id)}
+              boardKey={boardKey}
             />
           ))}
         </SortableContext>
@@ -512,6 +520,9 @@ export function BoardPage({ user, onLogout }: Props) {
   const [templateSaved, setTemplateSaved] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyError, setKeyError] = useState("");
+  const [cardQuery, setCardQuery] = useState("");
   const skipTitle = useRef(false);
   const [editing, setEditing] = useState<Card | null>(null);
   const [draftError, setDraftError] = useState("");
@@ -904,6 +915,55 @@ export function BoardPage({ user, onLogout }: Props) {
     );
   }
 
+  function matchesCardQuery(card: Card): boolean {
+    if (!snapshot) {
+      return true;
+    }
+    const query = cardQuery.trim();
+    if (!query) {
+      return true;
+    }
+    const parsed = parseCardKey(query);
+    if (parsed) {
+      return parsed.key === snapshot.board.key && card.number === parsed.number;
+    }
+    const label = formatCardKey(snapshot.board.key, card.number).toLowerCase();
+    return card.title.toLowerCase().includes(query.toLowerCase()) || label.includes(query.toLowerCase());
+  }
+
+  async function saveBoardName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!snapshot) {
+      return;
+    }
+    const form = event.currentTarget;
+    const nextTitle = String(new FormData(form).get("title") ?? "").trim();
+    const nextKey = normalizeKey(String(new FormData(form).get("key") ?? ""));
+    if (!nextTitle) {
+      return;
+    }
+    const patch: { title?: string; key?: string } = {};
+    if (nextTitle !== snapshot.board.title) {
+      patch.title = nextTitle;
+    }
+    if (nextKey !== snapshot.board.key) {
+      patch.key = nextKey;
+    }
+    if (!patch.title && !patch.key) {
+      setRenaming(false);
+      setKeyError("");
+      return;
+    }
+    try {
+      const board = await api.patchBoard(boardId, patch);
+      setSnapshot((current) => (current ? { ...current, board } : current));
+      setKeyError("");
+      setRenaming(false);
+    } catch (err) {
+      setKeyError(err instanceof Error ? err.message : "ボードキーを変えられません");
+    }
+  }
+
   return (
     <div className="shell">
       <header className="rail">
@@ -912,37 +972,41 @@ export function BoardPage({ user, onLogout }: Props) {
         </Link>
         {snapshot.board.ownerId === user?.id ? (
           renaming ? (
-            <input
-              className="board-name"
-              aria-label="ボード名"
-              value={titleDraft}
-              autoFocus
-              onChange={(event) => setTitleDraft(event.target.value)}
-              onBlur={() => {
-                if (skipTitle.current) {
-                  skipTitle.current = false;
-                  setRenaming(false);
-                  return;
-                }
-                const next = titleDraft.trim();
-                setRenaming(false);
-                if (!next || next === snapshot.board.title) {
-                  return;
-                }
-                void api.patchBoard(boardId, { title: next }).then((board) => {
-                  setSnapshot((current) => (current ? { ...current, board } : current));
-                });
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  skipTitle.current = true;
-                  event.currentTarget.blur();
-                }
-              }}
-            />
+            <form className="board-name-form" onSubmit={(event) => void saveBoardName(event)}>
+              <input
+                className="board-name"
+                name="title"
+                aria-label="ボード名"
+                value={titleDraft}
+                autoFocus
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    skipTitle.current = true;
+                    setRenaming(false);
+                    setKeyError("");
+                  }
+                }}
+              />
+              <input
+                className="board-key"
+                name="key"
+                aria-label="ボードキー"
+                value={keyDraft}
+                onChange={(event) => setKeyDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    skipTitle.current = true;
+                    setRenaming(false);
+                    setKeyError("");
+                  }
+                }}
+              />
+              <button type="submit">保存</button>
+              {keyError ? <span className="key-error">{keyError}</span> : null}
+            </form>
           ) : (
             <button
               type="button"
@@ -952,6 +1016,8 @@ export function BoardPage({ user, onLogout }: Props) {
               aria-label={`${snapshot.board.title} の名前を変更`}
               onClick={() => {
                 setTitleDraft(snapshot.board.title);
+                setKeyDraft(snapshot.board.key);
+                setKeyError("");
                 setRenaming(true);
               }}
             >
@@ -961,6 +1027,13 @@ export function BoardPage({ user, onLogout }: Props) {
         ) : (
           <h1>{snapshot.board.title}</h1>
         )}
+        <input
+          className="search"
+          aria-label="カードを検索"
+          placeholder="カードを検索"
+          value={cardQuery}
+          onChange={(event) => setCardQuery(event.target.value)}
+        />
         {snapshot.board.ownerId === user?.id ? (
           <>
             <button
@@ -1077,6 +1150,7 @@ export function BoardPage({ user, onLogout }: Props) {
               canEdit={snapshot.board.ownerId === user?.id}
               skipOpen={skipOpen}
               unsaved={snapshot.unsaved ?? []}
+              boardKey={snapshot.board.key}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)
@@ -1085,7 +1159,7 @@ export function BoardPage({ user, onLogout }: Props) {
               }
               list={list}
               cards={uniqueById(snapshot.cards)
-                .filter((card) => card.listId === list.id && !card.archived)
+                .filter((card) => card.listId === list.id && !card.archived && matchesCardQuery(card))
                 .slice()
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}

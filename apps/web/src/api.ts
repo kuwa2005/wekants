@@ -71,7 +71,7 @@ export const api = {
   publicBoards: () => request<{ boards: Board[] }>("/api/boards/public"),
   patchBoard: (
     boardId: string,
-    patch: { title?: string; isTemplate?: boolean; isPublic?: boolean; home?: boolean },
+    patch: { title?: string; isTemplate?: boolean; isPublic?: boolean; home?: boolean; key?: string },
   ) =>
     request<Board>(`/api/boards/${boardId}`, {
       method: "PATCH",

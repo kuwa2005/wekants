@@ -162,6 +162,50 @@ a {
   cursor: pointer;
 }
 
+.board-name-form {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.rail .board-name-form input.board-name {
+  min-width: 8rem;
+}
+
+.board-name-form button {
+  flex: 0 0 auto;
+}
+
+.rail input.board-key {
+  width: 6.5rem;
+  background: transparent;
+  color: var(--paper);
+  border: 1px solid var(--mute);
+  padding: 0.25rem 0.4rem;
+  letter-spacing: 0.06em;
+}
+
+.rail .search {
+  width: 11rem;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.key-error {
+  color: var(--rust);
+  font-size: 0.75rem;
+}
+
+.card-key {
+  display: block;
+  margin: 0 0 0.2rem;
+  color: var(--rivet);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
 .bays {
   display: flex;
   gap: 1rem;

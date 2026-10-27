@@ -1,6 +1,9 @@
+import { and, asc, eq, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { planBoardKeys } from "@wekants/shared";
 import * as schema from "./schema.ts";
+import { boards, cards } from "./schema.ts";
 
 export type AppDb = PostgresJsDatabase<typeof schema>;
 
@@ -36,10 +39,14 @@ CREATE TABLE IF NOT EXISTS boards (
   rank BIGINT NOT NULL,
   is_template BOOLEAN NOT NULL DEFAULT FALSE,
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
+  key TEXT NOT NULL DEFAULT '',
+  card_seq INTEGER NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL
 );
 ALTER TABLE boards ADD COLUMN IF NOT EXISTS is_template BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE boards ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE boards ADD COLUMN IF NOT EXISTS key TEXT NOT NULL DEFAULT '';
+ALTER TABLE boards ADD COLUMN IF NOT EXISTS card_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE boards ALTER COLUMN workspace_id DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS lists (
   id TEXT PRIMARY KEY,
@@ -68,11 +75,13 @@ CREATE TABLE IF NOT EXISTS cards (
   description TEXT NOT NULL DEFAULT '',
   archived BOOLEAN NOT NULL DEFAULT FALSE,
   archived_with_list BOOLEAN NOT NULL DEFAULT FALSE,
+  number INTEGER NOT NULL DEFAULT 0,
   rank BIGINT NOT NULL,
   created_at BIGINT NOT NULL
 );
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived_with_list BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS number INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS card_unsaved (
   user_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
@@ -95,5 +104,50 @@ export async function openDatabase(url: string): Promise<{ db: AppDb; sql: postg
   const sql = postgres(url, { max: 8, onnotice: () => {} });
   await sql.unsafe(DDL);
   const db = drizzle(sql, { schema });
+  await assignMissingBoardKeys(db);
   return { db, sql };
+}
+
+async function assignMissingBoardKeys(db: AppDb): Promise<void> {
+  const missing = await db.select().from(boards).where(eq(boards.key, ""));
+  if (missing.length > 0) {
+    const used = await db.select({ key: boards.key }).from(boards);
+    const taken = new Set(used.map((row) => row.key).filter((key) => key.length > 0));
+    for (const item of planBoardKeys(
+      missing.map((row) => ({ id: row.id, title: row.title })),
+      taken,
+    )) {
+      await db.update(boards).set({ key: item.key }).where(eq(boards.id, item.id));
+    }
+  }
+  const rows = await db.select().from(cards).orderBy(asc(cards.createdAt));
+  const byBoard = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const list = byBoard.get(row.boardId) ?? [];
+    list.push(row);
+    byBoard.set(row.boardId, list);
+  }
+  for (const [boardId, list] of byBoard) {
+    let seq = 0;
+    for (const card of list) {
+      if (card.number > seq) {
+        seq = card.number;
+      }
+    }
+    let changed = false;
+    for (const card of list) {
+      if (card.number > 0) {
+        continue;
+      }
+      seq += 1;
+      changed = true;
+      await db.update(cards).set({ number: seq }).where(eq(cards.id, card.id));
+    }
+    if (changed) {
+      await db
+        .update(boards)
+        .set({ cardSeq: seq })
+        .where(and(eq(boards.id, boardId), sql`${boards.cardSeq} < ${seq}`));
+    }
+  }
 }

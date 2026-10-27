@@ -258,8 +258,8 @@ test("rename a workspace, search boards, and copy a template", async ({ page }) 
   await page.getByRole("button", { name: "雛形にする" }).click();
   await page.getByRole("link", { name: "すべてのボード" }).click();
   await page.getByLabel("ボードを検索").fill("Lathe");
-  await expect(page.getByRole("link", { name: /Lathe/ })).toBeVisible();
-  await page.getByRole("button", { name: "複製" }).click();
+  await expect(bay.getByRole("link", { name: /Lathe/ })).toBeVisible();
+  await bay.getByRole("button", { name: "複製" }).click();
   await expect(page.getByRole("heading", { name: "Lathe の複製" })).toBeVisible();
 });
 
@@ -367,7 +367,7 @@ test("a board rename reaches another open view and unpublishing hides it", async
   await guest.locator('input[name="username"]').fill(`guest_${stamp}`);
   await guest.locator('input[name="password"]').fill("password1");
   await guest.getByRole("button", { name: "登録する" }).click();
-  await guest.getByRole("link", { name: "Lathe" }).click();
+  await guest.locator(`a[href="${new URL(boardUrl).pathname}"]`).click();
   await expect(guest.getByRole("heading", { name: "Lathe", level: 1 })).toBeVisible();
 
   await owner.getByRole("heading", { name: "Lathe の名前を変更" }).click();
@@ -590,6 +590,34 @@ test("an unsaved description stays after close, reload, and another screen", asy
   await expect(otherTicket.locator(".marks")).toHaveText("本文");
   await contextA.close();
   await contextB.close();
+});
+
+test("a board key numbers cards and search finds one", async ({ page }) => {
+  await register(page, `key_${stamp}`);
+  await hangBoard(page, "Development Team");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Cut plate");
+  await ready.getByRole("button", { name: "+" }).click();
+  await ready.getByPlaceholder("新しいカード").fill("Weld seam");
+  await ready.getByRole("button", { name: "+" }).click();
+  const first = ready.locator("[data-card-id]").nth(0);
+  const key = (await first.locator(".card-key").innerText()).split("-")[0] ?? "";
+  await expect(first).toContainText(`${key}-1`);
+  await expect(ready.locator("[data-card-id]").nth(1)).toContainText(`${key}-2`);
+  await page.getByLabel("カードを検索").fill(`${key}-1`.toLowerCase());
+  await expect(ready.locator("[data-card-id]")).toHaveCount(1);
+  await expect(ready.locator("[data-card-id]")).toContainText("Cut plate");
+  await page.getByLabel("カードを検索").fill("");
+  await expect(ready.locator("[data-card-id]")).toHaveCount(2);
+  const nextKey = `Z${stamp.replace(/[^a-z0-9]/gi, "").slice(0, 5)}`.toUpperCase();
+  await page.getByRole("heading", { name: "Development Team の名前を変更" }).click();
+  await page.getByLabel("ボードキー").fill(nextKey);
+  await page.getByLabel("ボードキー").press("Enter");
+  await expect(first).toContainText(`${nextKey}-1`);
+  await expect(ready.locator("[data-card-id]").nth(1)).toContainText(`${nextKey}-2`);
+  await page.reload();
+  await expect(page.locator("[data-card-id]").nth(0)).toContainText(`${nextKey}-1`);
+  await expect(page.locator("[data-card-id]").nth(1)).toContainText(`${nextKey}-2`);
 });
 
 test("change the password while staying signed in", async ({ page }) => {

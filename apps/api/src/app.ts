@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, sql } from "drizzle-orm";
 import {
   assertBoardAccess,
   hashPassword,
@@ -12,8 +12,11 @@ import {
 } from "@wekants/wekan-core-node";
 import {
   boardToMarkdown,
+  isValidKey,
   markdownToBoardDraft,
   markdownToCardDraft,
+  normalizeKey,
+  suggestKey,
   type BoardSnapshot,
   type Card,
   type List,
@@ -61,6 +64,7 @@ function mapBoard(row: typeof boards.$inferSelect) {
     rank: Number(row.rank),
     isTemplate: Boolean(row.isTemplate),
     isPublic: Boolean(row.isPublic),
+    key: row.key,
   };
 }
 
@@ -89,6 +93,7 @@ function mapCard(row: typeof cards.$inferSelect): Card {
     rank: Number(row.rank),
     archived: Boolean(row.archived),
     archivedWithList: Boolean(row.archivedWithList),
+    number: row.number,
   };
 }
 
@@ -359,6 +364,20 @@ export function createApp(db: AppDb): Hono<Env> {
     };
   }
 
+  async function allocateKey(title: string): Promise<string> {
+    const rows = await db.select({ key: boards.key }).from(boards);
+    return suggestKey(title, new Set(rows.map((row) => row.key).filter((key) => key.length > 0)));
+  }
+
+  async function takeCardNumber(boardId: string): Promise<number> {
+    const rows = await db
+      .update(boards)
+      .set({ cardSeq: sql`${boards.cardSeq} + 1` })
+      .where(eq(boards.id, boardId))
+      .returning({ cardSeq: boards.cardSeq });
+    return rows[0]?.cardSeq ?? 1;
+  }
+
   async function seedLists(boardId: string, titles: string[]) {
     const ranks = rebalanceRanks(titles.length);
     for (const [index, title] of titles.entries()) {
@@ -576,6 +595,8 @@ export function createApp(db: AppDb): Hono<Env> {
       ownerId: userId,
       workspaceId,
       rank,
+      key: await allocateKey(draft.title.trim()),
+      cardSeq: 0,
       createdAt: now(),
     });
     if (body.markdown) {
@@ -597,6 +618,7 @@ export function createApp(db: AppDb): Hono<Env> {
             listId,
             title: cardDraft.title,
             description: cardDraft.description,
+            number: await takeCardNumber(boardId),
             rank: cardRanks[cardIndex] ?? cardIndex * 1024,
             createdAt: now(),
           });
@@ -653,8 +675,9 @@ export function createApp(db: AppDb): Hono<Env> {
       isTemplate?: boolean;
       isPublic?: boolean;
       home?: boolean;
+      key?: string;
     }>();
-    const patch: { title?: string; isTemplate?: boolean; isPublic?: boolean } = {};
+    const patch: { title?: string; isTemplate?: boolean; isPublic?: boolean; key?: string } = {};
     if (typeof body.title === "string") {
       try {
         validateTitle(body.title);
@@ -668,6 +691,17 @@ export function createApp(db: AppDb): Hono<Env> {
     }
     if (typeof body.isPublic === "boolean") {
       patch.isPublic = body.isPublic;
+    }
+    if (typeof body.key === "string") {
+      const key = normalizeKey(body.key);
+      if (!isValidKey(key)) {
+        throw new HTTPException(400, { message: "ボードキーは先頭が文字の2〜10文字です" });
+      }
+      const clash = await one(db.select().from(boards).where(eq(boards.key, key)).limit(1));
+      if (clash && clash.id !== board.id) {
+        throw new HTTPException(400, { message: "このボードキーは使われています" });
+      }
+      patch.key = key;
     }
     if (Object.keys(patch).length === 0 && typeof body.home !== "boolean") {
       throw new HTTPException(400, { message: "変更がありません" });
@@ -729,6 +763,8 @@ export function createApp(db: AppDb): Hono<Env> {
       rank,
       isTemplate: false,
       isPublic: false,
+      key: await allocateKey(title),
+      cardSeq: 0,
       createdAt: now(),
     });
     const sourceLists = await db
@@ -781,6 +817,7 @@ export function createApp(db: AppDb): Hono<Env> {
             title: card.title,
             description: card.description,
             archived: card.archived,
+            number: await takeCardNumber(boardId),
             rank: cardRanks[index] ?? index * 1024,
             createdAt: now(),
           });
@@ -955,6 +992,7 @@ export function createApp(db: AppDb): Hono<Env> {
         title: card.title,
         description: card.description,
         archived: false,
+        number: await takeCardNumber(targetBoardId),
         rank: cardRanks[index] ?? index * 1024,
         createdAt: now(),
       });
@@ -1197,6 +1235,7 @@ export function createApp(db: AppDb): Hono<Env> {
       listId: list.id,
       title: draft.title.trim(),
       description: draft.description,
+      number: await takeCardNumber(boardId),
       rank,
       createdAt: now(),
     });
@@ -1306,6 +1345,7 @@ export function createApp(db: AppDb): Hono<Env> {
       title: title.trim(),
       description: source.description,
       archived: false,
+      number: await takeCardNumber(targetBoardId),
       rank,
       createdAt: now(),
     });

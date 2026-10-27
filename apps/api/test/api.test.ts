@@ -1344,4 +1344,77 @@ Use **3mm** steel.
     expect(savedBody.unsaved).toEqual([]);
     expect(savedBody.cards.find((row: { id: string }) => row.id === card.id).description).toBe("final notes");
   });
+
+  it("assigns a board key and keeps card numbers when the key changes", async () => {
+    const nora = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nora", password: "password1" }),
+    });
+    const jar = cookie(nora);
+    const first = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Development Team" }),
+    });
+    const dev = await first.json();
+    expect(dev.board.key).toBe("DT");
+    const second = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Development Team" }),
+    });
+    expect((await second.json()).board.key).toBe("DT2");
+    const plain = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "作業" }),
+    });
+    expect((await plain.json()).board.key).toBe("BOARD");
+
+    const listId = dev.lists[0].id as string;
+    const one = await app.request(`/api/boards/${dev.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, title: "Cut plate" }),
+    });
+    const two = await app.request(`/api/boards/${dev.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, title: "Weld seam" }),
+    });
+    expect((await one.json()).number).toBe(1);
+    expect((await two.json()).number).toBe(2);
+
+    const renamed = await app.request(`/api/boards/${dev.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ key: "ops" }),
+    });
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).key).toBe("OPS");
+    const loaded = await app.request(`/api/boards/${dev.board.id}`, { headers: { cookie: jar } });
+    const cards = (await loaded.json()).cards as Array<{ title: string; number: number }>;
+    expect(cards.find((card) => card.title === "Cut plate")?.number).toBe(1);
+    expect(cards.find((card) => card.title === "Weld seam")?.number).toBe(2);
+
+    const taken = await app.request(`/api/boards/${dev.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ key: "DT2" }),
+    });
+    expect(taken.status).toBe(400);
+    const short = await app.request(`/api/boards/${dev.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ key: "A" }),
+    });
+    expect(short.status).toBe(400);
+    const digit = await app.request(`/api/boards/${dev.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ key: "1DEV" }),
+    });
+    expect(digit.status).toBe(400);
+  });
 });

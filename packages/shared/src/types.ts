@@ -21,6 +21,7 @@ export type Board = {
   rank: number;
   isTemplate: boolean;
   isPublic: boolean;
+  key: string;
 };
 
 export type List = {
@@ -51,6 +52,7 @@ export type Card = {
   rank: number;
   archived: boolean;
   archivedWithList: boolean;
+  number: number;
 };
 
 export type UnsavedEdit = {

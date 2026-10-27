@@ -139,6 +139,7 @@ a {
 }
 
 .rail button,
+.rail a,
 .ghost {
   background: transparent;
   color: var(--paper);

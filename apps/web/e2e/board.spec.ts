@@ -307,3 +307,20 @@ test("move a card to the top and then the bottom of its list", async ({ page }) 
   await page.locator(".editor").getByRole("button", { name: "Gamma を末尾へ" }).click();
   await expect(ready.locator("[data-card-id]").last()).toContainText("Gamma");
 });
+
+test("change the password while staying signed in", async ({ page }) => {
+  const name = `lock_${stamp}`;
+  await register(page, name);
+  await page.getByRole("link", { name: "パスワード" }).click();
+  await page.getByLabel("今のパスワード").fill("password1");
+  await page.getByLabel("新しいパスワード").fill("password2");
+  await page.getByRole("button", { name: "変える" }).click();
+  await expect(page.getByText("変えました。")).toBeVisible();
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  await expect(page.getByRole("heading", { name: "wekants" })).toBeVisible();
+  await page.getByRole("button", { name: "出る" }).click();
+  await page.locator('input[name="username"]').fill(name);
+  await page.locator('input[name="password"]').fill("password2");
+  await page.getByRole("button", { name: "入る" }).click();
+  await expect(page.getByRole("heading", { name: "wekants" })).toBeVisible();
+});

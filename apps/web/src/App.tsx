@@ -5,6 +5,7 @@ import { api } from "./api";
 import { BoardPage } from "./pages/BoardPage";
 import { BoardsPage } from "./pages/BoardsPage";
 import { GatePage } from "./pages/GatePage";
+import { PasswordPage } from "./pages/PasswordPage";
 
 export function App() {
   const [user, setUser] = useState<UserPublic | null | undefined>(undefined);
@@ -41,6 +42,10 @@ export function App() {
       <Route
         path="/"
         element={user ? <BoardsPage user={user} onLogout={() => setUser(null)} /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/password"
+        element={user ? <PasswordPage user={user} /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/b/:boardId"

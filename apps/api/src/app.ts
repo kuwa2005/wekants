@@ -204,6 +204,21 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json({ id: user.id, username: user.username });
   });
 
+  app.post("/api/auth/password", async (c) => {
+    const userId = await attachUser(c);
+    const body = await c.req.json<{ currentPassword?: string; nextPassword?: string }>();
+    const user = await one(db.select().from(users).where(eq(users.id, userId)).limit(1));
+    if (!user || !verifyPassword(body.currentPassword ?? "", user.passwordHash)) {
+      throw new HTTPException(400, { message: "今のパスワードが違います" });
+    }
+    const nextPassword = body.nextPassword ?? "";
+    if (nextPassword.length < 8) {
+      throw new HTTPException(400, { message: "パスワードは8文字以上にしてください" });
+    }
+    await db.update(users).set({ passwordHash: hashPassword(nextPassword) }).where(eq(users.id, userId));
+    return c.json({ ok: true });
+  });
+
   app.post("/api/auth/logout", async (c) => {
     const token = getCookie(c, SESSION);
     if (token) {

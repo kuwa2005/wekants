@@ -377,6 +377,9 @@ export function BoardsPage({ user, onLogout }: Props) {
       <header className="rail">
         <h1>wekants</h1>
         <span>{user.username}</span>
+        <Link className="ghost" to="/password">
+          パスワード
+        </Link>
         <button type="button" onClick={logout}>
           出る
         </button>

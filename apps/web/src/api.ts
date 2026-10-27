@@ -40,6 +40,11 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  changePassword: (currentPassword: string, nextPassword: string) =>
+    request<{ ok: boolean }>("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, nextPassword }),
+    }),
   workspaces: () => request<WorkspaceTree>("/api/workspaces"),
   createWorkspace: (title: string) =>
     request<Workspace>("/api/workspaces", {

@@ -624,4 +624,45 @@ Use **3mm** steel.
       .map((card: { title: string }) => card.title);
     expect(endOrder).toEqual(["Alpha", "Beta", "Gamma"]);
   });
+
+  it("replaces the signed-in user's password and keeps the session", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "lock", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const wrong = await app.request("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ currentPassword: "nope-nope", nextPassword: "password2" }),
+    });
+    expect(wrong.status).toBe(400);
+    const short = await app.request("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ currentPassword: "password1", nextPassword: "short" }),
+    });
+    expect(short.status).toBe(400);
+    const changed = await app.request("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ currentPassword: "password1", nextPassword: "password2" }),
+    });
+    expect(changed.status).toBe(200);
+    const still = await app.request("/api/auth/me", { headers: { cookie: jar } });
+    expect(still.status).toBe(200);
+    const oldLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "lock", password: "password1" }),
+    });
+    expect(oldLogin.status).toBe(401);
+    const nextLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "lock", password: "password2" }),
+    });
+    expect(nextLogin.status).toBe(200);
+  });
 });

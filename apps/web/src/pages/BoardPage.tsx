@@ -753,6 +753,9 @@ export function BoardPage({ user, onLogout }: Props) {
           Markdown を書き出す
         </button>
         <span>{user.username}</span>
+        <Link className="ghost" to="/password">
+          パスワード
+        </Link>
         <button type="button" onClick={logout}>
           出る
         </button>

@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived_with_list BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS card_unsaved (
+  user_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  board_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, card_id)
+);
 CREATE TABLE IF NOT EXISTS card_templates (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

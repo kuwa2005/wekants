@@ -3,6 +3,7 @@ import type {
   BoardSnapshot,
   Card,
   CardTemplate,
+  UnsavedEdit,
   List,
   UserPublic,
   Workspace,
@@ -175,6 +176,15 @@ export const api = {
     request<List>(`/api/boards/${boardId}/lists/${listId}/move`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  saveUnsaved: (boardId: string, cardId: string, body: { title: string; description: string }) =>
+    request<{ unsaved: UnsavedEdit | null }>(`/api/boards/${boardId}/cards/${cardId}/unsaved`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  clearUnsaved: (boardId: string, cardId: string) =>
+    request<{ ok: true }>(`/api/boards/${boardId}/cards/${cardId}/unsaved`, {
+      method: "DELETE",
     }),
   patchCard: (
     boardId: string,

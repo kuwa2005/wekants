@@ -19,7 +19,7 @@ import {
   type List,
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
-import { boards, cardTemplates, cards, lists, sessions, users, workspaces } from "./schema.ts";
+import { boards, cardTemplates, cardUnsaved, cards, lists, sessions, users, workspaces } from "./schema.ts";
 import { broadcast, closeGuests } from "./hub.ts";
 
 export type Env = {
@@ -628,7 +628,21 @@ export function createApp(db: AppDb): Hono<Env> {
     const viewer = userId
       ? await one(db.select().from(users).where(eq(users.id, userId)).limit(1))
       : undefined;
-    return c.json({ ...snap, home: viewer?.homeBoardId === boardId });
+    const drafts = userId
+      ? await db
+          .select()
+          .from(cardUnsaved)
+          .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.boardId, boardId)))
+      : [];
+    return c.json({
+      ...snap,
+      home: viewer?.homeBoardId === boardId,
+      unsaved: drafts.map((row) => ({
+        cardId: row.cardId,
+        title: row.title,
+        description: row.description,
+      })),
+    });
   });
 
   app.patch("/api/boards/:boardId", async (c) => {
@@ -1302,6 +1316,89 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(copied, 201);
   });
 
+  app.put("/api/boards/:boardId/cards/:cardId/unsaved", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{ title?: string; description?: string }>();
+    if (typeof body.title !== "string" || typeof body.description !== "string") {
+      throw new HTTPException(400, { message: "タイトルと本文が必要です" });
+    }
+    try {
+      validateTitle(body.title);
+    } catch (err) {
+      throw new HTTPException(400, { message: String(err) });
+    }
+    const title = body.title.trim();
+    const description = body.description;
+    const same = title === card.title && description === card.description;
+    if (same) {
+      await db
+        .delete(cardUnsaved)
+        .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
+      broadcast(boardId, {
+        type: "card.unsavedCleared",
+        payload: { cardId, userId },
+        actorId: userId,
+      });
+      return c.json({ unsaved: null });
+    }
+    const existing = await one(
+      db
+        .select()
+        .from(cardUnsaved)
+        .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)))
+        .limit(1),
+    );
+    if (existing) {
+      await db
+        .update(cardUnsaved)
+        .set({ title, description, updatedAt: now() })
+        .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
+    } else {
+      await db.insert(cardUnsaved).values({
+        userId,
+        cardId,
+        boardId,
+        title,
+        description,
+        updatedAt: now(),
+      });
+    }
+    const unsaved = { cardId, title, description };
+    broadcast(boardId, {
+      type: "card.unsaved",
+      payload: { ...unsaved, userId },
+      actorId: userId,
+    });
+    return c.json({ unsaved });
+  });
+
+  app.delete("/api/boards/:boardId/cards/:cardId/unsaved", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    await db
+      .delete(cardUnsaved)
+      .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
+    broadcast(boardId, {
+      type: "card.unsavedCleared",
+      payload: { cardId, userId },
+      actorId: userId,
+    });
+    return c.json({ ok: true });
+  });
+
   app.patch("/api/boards/:boardId/cards/:cardId", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
@@ -1331,6 +1428,16 @@ export function createApp(db: AppDb): Hono<Env> {
     const updated = mapCard(
       (await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!,
     );
+    if (typeof body.title === "string" || typeof body.description === "string") {
+      await db
+        .delete(cardUnsaved)
+        .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
+      broadcast(boardId, {
+        type: "card.unsavedCleared",
+        payload: { cardId, userId },
+        actorId: userId,
+      });
+    }
     broadcast(boardId, { type: "card.upserted", payload: updated, actorId: userId });
     return c.json(updated);
   });
@@ -1345,6 +1452,7 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(404, { message: "見つかりません" });
     }
     await db.delete(cards).where(eq(cards.id, cardId));
+    await db.delete(cardUnsaved).where(eq(cardUnsaved.cardId, cardId));
     broadcast(boardId, { type: "card.deleted", payload: { id: cardId }, actorId: userId });
     return c.json({ ok: true });
   });

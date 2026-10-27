@@ -5,6 +5,7 @@ export type {
   CardTemplate,
   List,
   MoveBoardBody,
+  UnsavedEdit,
   MoveCardBody,
   UserPublic,
   Workspace,

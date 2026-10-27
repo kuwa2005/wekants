@@ -15,7 +15,7 @@ import {
   horizontalListSortingStrategy,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { BoardSnapshot, Card, CardTemplate, List, TitleBatch, UserPublic, WsEvent } from "@wekants/shared";
+import type { BoardSnapshot, Card, CardTemplate, List, TitleBatch, UnsavedEdit, UserPublic, WsEvent } from "@wekants/shared";
 import { titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
 import { LineBatch } from "../LineBatch";
@@ -74,11 +74,13 @@ function Ticket({
   onOpen,
   draggable,
   skipOpen,
+  unsaved,
 }: {
   card: Card;
   onOpen: (card: Card) => void;
   draggable: boolean;
   skipOpen: { current: boolean };
+  unsaved: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -115,7 +117,11 @@ function Ticket({
       }}
     >
       <h3>{card.title}</h3>
-      {card.description ? <span className="marks">本文</span> : null}
+      {unsaved ? (
+        <span className="marks unsaved">未保存の本文</span>
+      ) : card.description ? (
+        <span className="marks">本文</span>
+      ) : null}
     </article>
   );
 }
@@ -137,6 +143,7 @@ function ListColumn({
   boards,
   boardId,
   skipOpen,
+  unsaved,
 }: {
   list: List;
   cards: Card[];
@@ -154,6 +161,7 @@ function ListColumn({
   boards: Array<{ id: string; title: string }>;
   boardId: string;
   skipOpen: { current: boolean };
+  unsaved: UnsavedEdit[];
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -407,7 +415,14 @@ function ListColumn({
           strategy={verticalListSortingStrategy}
         >
           {cards.map((card) => (
-            <Ticket key={card.id} card={card} onOpen={onOpen} draggable={canEdit} skipOpen={skipOpen} />
+            <Ticket
+              key={card.id}
+              card={card}
+              onOpen={onOpen}
+              draggable={canEdit}
+              skipOpen={skipOpen}
+              unsaved={unsaved.some((row) => row.cardId === card.id)}
+            />
           ))}
         </SortableContext>
       </div>
@@ -499,6 +514,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitle = useRef(false);
   const [editing, setEditing] = useState<Card | null>(null);
+  const [draftError, setDraftError] = useState("");
   const [listTitle, setListTitle] = useState("");
   const [listBatch, setListBatch] = useState<TitleBatch>("one");
   const [copyBoardId, setCopyBoardId] = useState(boardId);
@@ -568,6 +584,35 @@ export function BoardPage({ user, onLogout }: Props) {
     );
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data) as WsEvent;
+      if (event.type === "card.unsaved") {
+        if (event.payload.userId !== user?.id) {
+          return;
+        }
+        const edit = event.payload;
+        setSnapshot((current) => {
+          if (!current) {
+            return current;
+          }
+          const rest = (current.unsaved ?? []).filter((row) => row.cardId !== edit.cardId);
+          return {
+            ...current,
+            unsaved: [...rest, { cardId: edit.cardId, title: edit.title, description: edit.description }],
+          };
+        });
+        return;
+      }
+      if (event.type === "card.unsavedCleared") {
+        if (event.payload.userId !== user?.id) {
+          return;
+        }
+        const cardId = event.payload.cardId;
+        setSnapshot((current) =>
+          current
+            ? { ...current, unsaved: (current.unsaved ?? []).filter((row) => row.cardId !== cardId) }
+            : current,
+        );
+        return;
+      }
       if (event.type === "board.updated") {
         if (!event.payload.isPublic && event.payload.ownerId !== user?.id) {
           setMissing(true);
@@ -800,6 +845,57 @@ export function BoardPage({ user, onLogout }: Props) {
     onLogout();
   }
 
+  function replaceUnsaved(cardId: string, edit: UnsavedEdit | null) {
+    setSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+      const rest = (current.unsaved ?? []).filter((row) => row.cardId !== cardId);
+      return { ...current, unsaved: edit ? [...rest, edit] : rest };
+    });
+  }
+
+  async function closeEditor() {
+    if (!editing || !snapshot || snapshot.board.ownerId !== user?.id) {
+      setEditing(null);
+      return;
+    }
+    const saved = snapshot.cards.find((card) => card.id === editing.id);
+    if (!saved) {
+      setEditing(null);
+      return;
+    }
+    try {
+      if (saved.title === editing.title.trim() && saved.description === editing.description) {
+        await api.clearUnsaved(boardId, editing.id);
+        replaceUnsaved(editing.id, null);
+      } else {
+        const stored = await api.saveUnsaved(boardId, editing.id, {
+          title: editing.title,
+          description: editing.description,
+        });
+        replaceUnsaved(editing.id, stored.unsaved);
+      }
+      setDraftError("");
+      setEditing(null);
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : "下書きを残せません");
+    }
+  }
+
+  async function discardEditor() {
+    if (!editing || !snapshot) {
+      return;
+    }
+    const saved = snapshot.cards.find((card) => card.id === editing.id);
+    await api.clearUnsaved(boardId, editing.id);
+    replaceUnsaved(editing.id, null);
+    setDraftError("");
+    if (saved) {
+      setEditing(saved);
+    }
+  }
+
   if (missing || !snapshot) {
     return (
       <div className="gate">
@@ -980,6 +1076,7 @@ export function BoardPage({ user, onLogout }: Props) {
               key={list.id}
               canEdit={snapshot.board.ownerId === user?.id}
               skipOpen={skipOpen}
+              unsaved={snapshot.unsaved ?? []}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)
@@ -1001,7 +1098,11 @@ export function BoardPage({ user, onLogout }: Props) {
                 })
               }
               onOpen={(card) => {
-                setEditing(card);
+                const draft = snapshot.unsaved?.find((row) => row.cardId === card.id);
+                setEditing(
+                  draft ? { ...card, title: draft.title, description: draft.description } : card,
+                );
+                setDraftError("");
                 setTemplateSaved(false);
                 setCopyBoardId(boardId);
                 setCopyListId(card.listId);
@@ -1223,9 +1324,11 @@ export function BoardPage({ user, onLogout }: Props) {
                         cards: current.cards.map((card) =>
                           card.id === updated.id ? updated : card,
                         ),
+                        unsaved: (current.unsaved ?? []).filter((row) => row.cardId !== updated.id),
                       }
                     : current,
                 );
+                setDraftError("");
                 setEditing(null);
               }}
             >
@@ -1233,7 +1336,20 @@ export function BoardPage({ user, onLogout }: Props) {
             </button>
             </>
             ) : null}
-            <button type="button" className="ghost" onClick={() => setEditing(null)}>
+            {draftError ? <p className="hint">{draftError}</p> : null}
+            {snapshot.board.ownerId === user?.id &&
+            (snapshot.unsaved?.some((row) => row.cardId === editing.id) ||
+              snapshot.cards.find((card) => card.id === editing.id)?.title !== editing.title ||
+              snapshot.cards.find((card) => card.id === editing.id)?.description !==
+                editing.description) ? (
+              <p className="hint">未保存の本文</p>
+            ) : null}
+            {snapshot.board.ownerId === user?.id ? (
+              <button type="button" className="ghost" onClick={() => void discardEditor()}>
+                破棄
+              </button>
+            ) : null}
+            <button type="button" className="ghost" onClick={() => void closeEditor()}>
               閉じる
             </button>
             {snapshot.board.ownerId === user?.id ? (

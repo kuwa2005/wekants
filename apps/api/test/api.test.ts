@@ -54,7 +54,7 @@ describe("auth, boards, markdown, workspaces", () => {
 
   beforeEach(async () => {
     await sql.unsafe(
-      "TRUNCATE card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
+      "TRUNCATE card_unsaved, card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
     );
     app = createApp(db);
   });
@@ -1253,5 +1253,95 @@ Use **3mm** steel.
       "Two",
     ]);
     expect(shownCards.find((card) => card.title === "Kept")?.archived).toBe(true);
+  });
+
+  it("keeps an unsaved card draft apart from the saved card", async () => {
+    const nora = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nora", password: "password1" }),
+    });
+    const jar = cookie(nora);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Notes", isPublic: true }),
+    });
+    const snapshot = await created.json();
+    const listId = snapshot.lists[0].id as string;
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, title: "Cut plate", description: "saved body" }),
+    });
+    const card = await cardRes.json();
+    const draft = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/unsaved`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Cut plate", description: "rough notes" }),
+    });
+    expect(draft.status).toBe(200);
+    const loaded = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const body = await loaded.json();
+    expect(body.cards.find((row: { id: string }) => row.id === card.id).description).toBe("saved body");
+    expect(body.unsaved).toEqual([
+      { cardId: card.id, title: "Cut plate", description: "rough notes" },
+    ]);
+
+    const published = await app.request(`/api/boards/${snapshot.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(published.status).toBe(200);
+
+    const guest = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "guest", password: "password2" }),
+    });
+    const guestJar = cookie(guest);
+    const theirs = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: guestJar } });
+    expect((await theirs.json()).unsaved).toEqual([]);
+
+    const same = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/unsaved`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Cut plate", description: "saved body" }),
+    });
+    expect((await same.json()).unsaved).toBeNull();
+    const cleared = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    expect((await cleared.json()).unsaved).toEqual([]);
+
+    await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/unsaved`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Cut plate", description: "rough notes" }),
+    });
+    const discarded = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/unsaved`, {
+      method: "DELETE",
+      headers: { cookie: jar },
+    });
+    expect(discarded.status).toBe(200);
+    const afterDiscard = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const after = await afterDiscard.json();
+    expect(after.unsaved).toEqual([]);
+    expect(after.cards.find((row: { id: string }) => row.id === card.id).description).toBe("saved body");
+
+    await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/unsaved`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Cut plate", description: "rough notes" }),
+    });
+    const saved = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Cut plate", description: "final notes" }),
+    });
+    expect((await saved.json()).description).toBe("final notes");
+    const afterSave = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const savedBody = await afterSave.json();
+    expect(savedBody.unsaved).toEqual([]);
+    expect(savedBody.cards.find((row: { id: string }) => row.id === card.id).description).toBe("final notes");
   });
 });

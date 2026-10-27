@@ -533,6 +533,65 @@ test("deleting a workspace keeps its board open", async ({ page }) => {
   await other.close();
 });
 
+test("an unsaved description stays after close, reload, and another screen", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const page = await contextA.newPage();
+  const name = `draft_${stamp}`;
+  await register(page, name);
+  await hangBoard(page, "Drafts");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Cut plate");
+  await ready.getByRole("button", { name: "+" }).click();
+  const ticket = ready.locator("[data-card-id]", { hasText: "Cut plate" });
+  await ticket.click();
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+  await expect(ticket.locator(".marks")).toHaveCount(0);
+
+  await ticket.click();
+  await page.locator(".editor textarea").fill("rough notes");
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+  await expect(ticket.locator(".marks")).toHaveText("未保存の本文");
+  await expect(ticket).not.toContainText("rough notes");
+  await ticket.click();
+  await expect(page.locator(".editor textarea")).toHaveValue("rough notes");
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+
+  await page.reload();
+  const again = page.locator(".list").nth(0).locator("[data-card-id]", { hasText: "Cut plate" });
+  await expect(again.locator(".marks")).toHaveText("未保存の本文");
+
+  const other = await contextB.newPage();
+  await other.goto("/login");
+  await other.locator('input[name="username"]').fill(name);
+  await other.locator('input[name="password"]').fill("password1");
+  await other.getByRole("button", { name: "入る" }).click();
+  await other.getByRole("link", { name: "Drafts", exact: true }).click();
+  const otherTicket = other.locator("[data-card-id]", { hasText: "Cut plate" });
+  await expect(otherTicket.locator(".marks")).toHaveText("未保存の本文");
+  await otherTicket.click();
+  await expect(other.locator(".editor textarea")).toHaveValue("rough notes");
+  await other.locator(".editor").getByRole("button", { name: "破棄" }).click();
+  await expect(other.locator(".editor textarea")).toHaveValue("");
+  await expect(otherTicket.locator(".marks")).toHaveCount(0);
+  await expect(again.locator(".marks")).toHaveCount(0);
+
+  await again.click();
+  await expect(page.locator(".editor textarea")).toHaveValue("");
+  await page.locator(".editor textarea").fill("final notes");
+  await page.locator(".editor").getByRole("button", { name: "保存", exact: true }).click();
+  await expect(again.locator(".marks")).toHaveText("本文");
+  await again.click();
+  await expect(page.locator(".editor textarea")).toHaveValue("final notes");
+  await page.locator(".editor textarea").fill("nope");
+  await page.locator(".editor textarea").fill("final notes");
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+  await expect(again.locator(".marks")).toHaveText("本文");
+  await expect(otherTicket.locator(".marks")).toHaveText("本文");
+  await contextA.close();
+  await contextB.close();
+});
+
 test("change the password while staying signed in", async ({ page }) => {
   const name = `lock_${stamp}`;
   await register(page, name);

@@ -53,11 +53,18 @@ export type Card = {
   archivedWithList: boolean;
 };
 
+export type UnsavedEdit = {
+  cardId: string;
+  title: string;
+  description: string;
+};
+
 export type BoardSnapshot = {
   board: Board;
   lists: List[];
   cards: Card[];
   home?: boolean;
+  unsaved?: UnsavedEdit[];
 };
 
 export type WorkspaceTree = {
@@ -74,7 +81,9 @@ export type WsEvent =
   | { type: "list.upserted"; payload: List; actorId: string }
   | { type: "list.deleted"; payload: { id: string }; actorId: string }
   | { type: "workspace.moved"; payload: Board; actorId: string }
-  | { type: "board.updated"; payload: Board; actorId: string };
+  | { type: "board.updated"; payload: Board; actorId: string }
+  | { type: "card.unsaved"; payload: UnsavedEdit & { userId: string }; actorId: string }
+  | { type: "card.unsavedCleared"; payload: { cardId: string; userId: string }; actorId: string };
 
 export type MoveCardBody = {
   listId: string;

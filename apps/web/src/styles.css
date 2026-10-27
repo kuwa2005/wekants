@@ -584,6 +584,11 @@ a {
   letter-spacing: 0.04em;
 }
 
+.ticket .marks.unsaved {
+  color: var(--rust);
+  border-color: var(--rust);
+}
+
 .ticket p {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;

@@ -428,6 +428,10 @@ export function BoardPage({ user, onLogout }: Props) {
         : [],
     [snapshot],
   );
+  const archivedCards = useMemo(
+    () => (snapshot ? snapshot.cards.filter((card) => card.archived) : []),
+    [snapshot],
+  );
   const archivedLists = useMemo(
     () =>
       snapshot
@@ -532,11 +536,11 @@ export function BoardPage({ user, onLogout }: Props) {
     if (
       destination?.wipLimit != null &&
       listId !== moving.listId &&
-      snapshot.cards.filter((card) => card.listId === listId).length >= destination.wipLimit
+      snapshot.cards.filter((card) => card.listId === listId && !card.archived).length >= destination.wipLimit
     ) {
       return;
     }
-    const targetCards = snapshot.cards.filter((card) => card.listId === listId);
+    const targetCards = snapshot.cards.filter((card) => card.listId === listId && !card.archived);
     const { prevRank, nextRank } = neighborRanks(targetCards, cardId, beforeId);
     setSnapshot((current) => {
       if (!current) {
@@ -645,7 +649,7 @@ export function BoardPage({ user, onLogout }: Props) {
               canEdit={snapshot.board.ownerId === user.id}
               list={list}
               cards={snapshot.cards
-                .filter((card) => card.listId === list.id)
+                .filter((card) => card.listId === list.id && !card.archived)
                 .slice()
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
@@ -697,6 +701,33 @@ export function BoardPage({ user, onLogout }: Props) {
           ))}
         </aside>
       ) : null}
+      {snapshot.board.ownerId === user.id && archivedCards.length > 0 ? (
+        <aside className="archive">
+          <h2>カード保管庫</h2>
+          {archivedCards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              className="ghost"
+              aria-label={`${card.title} を戻す`}
+              onClick={() =>
+                void api.patchCard(boardId, card.id, { archived: false }).then((updated) => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          cards: current.cards.map((row) => (row.id === updated.id ? updated : row)),
+                        }
+                      : current,
+                  );
+                })
+              }
+            >
+              {card.title} を戻す
+            </button>
+          ))}
+        </aside>
+      ) : null}
       {editing ? (
         <aside className="editor">
           <h2>Markdown</h2>
@@ -740,6 +771,32 @@ export function BoardPage({ user, onLogout }: Props) {
             <button type="button" className="ghost" onClick={() => setEditing(null)}>
               閉じる
             </button>
+            {snapshot.board.ownerId === user.id ? (
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`${editing.title} を保管`}
+              onClick={() => {
+                if (!window.confirm(`「${editing.title}」を保管しますか？`)) {
+                  return;
+                }
+                const cardId = editing.id;
+                void api.patchCard(boardId, cardId, { archived: true }).then((updated) => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          cards: current.cards.map((row) => (row.id === updated.id ? updated : row)),
+                        }
+                      : current,
+                  );
+                  setEditing(null);
+                });
+              }}
+            >
+              保管
+            </button>
+            ) : null}
             {snapshot.board.ownerId === user.id ? (
             <button
               type="button"

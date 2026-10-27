@@ -163,6 +163,21 @@ test("delete a card from the editor", async ({ page }) => {
   await expect(page.locator("[data-card-id]")).toHaveCount(0);
 });
 
+test("archive a card and restore it", async ({ page }) => {
+  await register(page, `drawer_${stamp}`);
+  await hangBoard(page, "Drawer");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Spare");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(page.locator("[data-card-id]")).toContainText("Spare");
+  await page.locator("[data-card-id]").first().dblclick();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator(".editor").getByRole("button", { name: "Spare を保管" }).click();
+  await expect(page.locator("[data-card-id]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Spare を戻す" }).click();
+  await expect(page.locator("[data-card-id]")).toContainText("Spare");
+});
+
 test("drag a workspace before the first workspace", async ({ page }) => {
   await register(page, `order_${stamp}`);
   await page.locator('input[name="workspaceTitle"]').fill("Bay 2");

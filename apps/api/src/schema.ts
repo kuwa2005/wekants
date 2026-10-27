@@ -54,6 +54,7 @@ export const cards = pgTable("cards", {
   listId: text("list_id").notNull(),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
+  archived: boolean("archived").notNull().default(false),
   rank: bigint("rank", { mode: "number" }).notNull(),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });

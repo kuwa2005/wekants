@@ -63,9 +63,11 @@ CREATE TABLE IF NOT EXISTS cards (
   list_id TEXT NOT NULL,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  archived BOOLEAN NOT NULL DEFAULT FALSE,
   rank BIGINT NOT NULL,
   created_at BIGINT NOT NULL
 );
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 `;
 
 export async function openDatabase(url: string): Promise<{ db: AppDb; sql: postgres.Sql }> {

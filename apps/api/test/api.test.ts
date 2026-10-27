@@ -419,4 +419,46 @@ Use **3mm** steel.
     const after = await app.request("/api/workspaces", { headers: { cookie: adaJar } });
     expect((await after.json()).workspaces).toEqual([]);
   });
+
+  it("archives a card and restores it without deleting the row", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nell", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Drawer" }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Spare" }),
+    });
+    const card = await cardRes.json();
+    const archived = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(archived.status).toBe(200);
+    expect((await archived.json()).archived).toBe(true);
+    const hidden = await app.request(`/api/boards/${snapshot.board.id}/markdown`, {
+      headers: { cookie: jar },
+    });
+    expect(await hidden.text()).not.toContain("Spare");
+    const restored = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: false }),
+    });
+    expect((await restored.json()).archived).toBe(false);
+    const shown = await app.request(`/api/boards/${snapshot.board.id}/markdown`, {
+      headers: { cookie: jar },
+    });
+    expect(await shown.text()).toContain("Spare");
+  });
 });

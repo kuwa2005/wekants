@@ -42,6 +42,7 @@ export type Card = {
   title: string;
   description: string;
   rank: number;
+  archived: boolean;
 };
 
 export type BoardSnapshot = {

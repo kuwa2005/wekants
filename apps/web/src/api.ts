@@ -145,7 +145,7 @@ export const api = {
   patchCard: (
     boardId: string,
     cardId: string,
-    patch: { title?: string; description?: string },
+    patch: { title?: string; description?: string; archived?: boolean },
   ) =>
     request<Card>(`/api/boards/${boardId}/cards/${cardId}`, {
       method: "PATCH",

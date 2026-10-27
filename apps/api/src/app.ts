@@ -87,6 +87,7 @@ function mapCard(row: typeof cards.$inferSelect): Card {
     title: row.title,
     description: row.description,
     rank: Number(row.rank),
+    archived: Boolean(row.archived),
   };
 }
 
@@ -283,7 +284,7 @@ export function createApp(db: AppDb): Hono<Env> {
     }
     if (adding && list.wipLimit != null) {
       const sitting = await db.select().from(cards).where(eq(cards.listId, list.id));
-      if (sitting.length >= list.wipLimit) {
+      if (sitting.filter((card) => !card.archived).length >= list.wipLimit) {
         throw new HTTPException(400, { message: "WIP の上限に達しています" });
       }
     }
@@ -670,6 +671,7 @@ export function createApp(db: AppDb): Hono<Env> {
           listId,
           title: card.title,
           description: card.description,
+          archived: card.archived,
           rank: cardRanks[index] ?? index * 1024,
           createdAt: now(),
         });
@@ -976,7 +978,7 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!card || card.boardId !== boardId) {
       throw new HTTPException(404, { message: "見つかりません" });
     }
-    const body = await c.req.json<{ title?: string; description?: string }>();
+    const body = await c.req.json<{ title?: string; description?: string; archived?: boolean }>();
     const title = body.title ?? card.title;
     try {
       validateTitle(title);
@@ -988,6 +990,7 @@ export function createApp(db: AppDb): Hono<Env> {
       .set({
         title: title.trim(),
         description: body.description ?? card.description,
+        ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
       })
       .where(eq(cards.id, cardId));
     const updated = mapCard(

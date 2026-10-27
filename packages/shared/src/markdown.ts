@@ -25,12 +25,15 @@ function headingText(line: string, level: number): string | null {
 
 /** Serialize a board to a portable Markdown document. */
 export function boardToMarkdown(snapshot: BoardSnapshot): string {
-  const lists = snapshot.lists.slice().sort((a, b) => a.rank - b.rank);
+  const lists = snapshot.lists
+    .filter((list) => !list.archived)
+    .slice()
+    .sort((a, b) => a.rank - b.rank);
   const lines: string[] = [`# ${snapshot.board.title}`, ""];
   for (const list of lists) {
     lines.push(`## ${list.title}`, "");
     const cards = snapshot.cards
-      .filter((card) => card.listId === list.id)
+      .filter((card) => card.listId === list.id && !card.archived)
       .slice()
       .sort((a, b) => a.rank - b.rank);
     for (const card of cards) {

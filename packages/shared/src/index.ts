@@ -3,6 +3,8 @@ export type {
   BoardSnapshot,
   Card,
   CardTemplate,
+  CardVote,
+  MyVote,
   List,
   MoveBoardBody,
   UnsavedEdit,

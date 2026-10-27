@@ -1,4 +1,4 @@
-import { bigint, boolean, integer, pgTable, text } from "drizzle-orm/pg-core";
+import { bigint, boolean, integer, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -77,6 +77,18 @@ export const cards = pgTable("cards", {
   archived: boolean("archived").notNull().default(false),
   archivedWithList: boolean("archived_with_list").notNull().default(false),
   number: integer("number").notNull().default(0),
+  voteQuestion: text("vote_question").notNull().default(""),
+  votePublic: boolean("vote_public").notNull().default(true),
   rank: bigint("rank", { mode: "number" }).notNull(),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
+
+export const cardBallots = pgTable(
+  "card_ballots",
+  {
+    cardId: text("card_id").notNull(),
+    userId: text("user_id").notNull(),
+    choice: text("choice").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.cardId, table.userId] })],
+);

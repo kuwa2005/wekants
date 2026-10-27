@@ -20,6 +20,7 @@ import { formatCardKey, normalizeKey, parseCardKey, titlesFromInput } from "@wek
 import { api } from "../api";
 import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
+import { VotePanel } from "../VotePanel";
 
 type Props = {
   user: UserPublic | null;
@@ -147,6 +148,11 @@ function Ticket({
         <span className="marks unsaved">未保存の本文</span>
       ) : card.description ? (
         <span className="marks">本文</span>
+      ) : null}
+      {card.vote?.question ? (
+        <span className="marks vote">
+          投票 {card.vote.positive}-{card.vote.negative}
+        </span>
       ) : null}
     </article>
   );
@@ -673,6 +679,23 @@ export function BoardPage({ user, onLogout }: Props) {
           return {
             ...current,
             unsaved: [...rest, { cardId: edit.cardId, title: edit.title, description: edit.description }],
+          };
+        });
+        return;
+      }
+      if (event.type === "card.voted") {
+        if (event.payload.userId !== user?.id) {
+          return;
+        }
+        const { cardId, choice } = event.payload;
+        setSnapshot((current) => {
+          if (!current) {
+            return current;
+          }
+          const rest = (current.myVotes ?? []).filter((row) => row.cardId !== cardId);
+          return {
+            ...current,
+            myVotes: choice ? [...rest, { cardId, choice }] : rest,
           };
         });
         return;
@@ -1375,6 +1398,47 @@ export function BoardPage({ user, onLogout }: Props) {
             rows={12}
           />
           <Markdown source={editing.description} />
+          <VotePanel
+            card={snapshot.cards.find((card) => card.id === editing.id) ?? editing}
+            mine={
+              snapshot.myVotes?.find((row) => row.cardId === editing.id)?.choice ?? null
+            }
+            canAsk={snapshot.board.ownerId === user?.id}
+            canVote={Boolean(user)}
+            onAsk={async (question, visible) => {
+              const updated = await api.setVoteQuestion(boardId, editing.id, {
+                question,
+                public: visible,
+              });
+              setSnapshot((current) =>
+                current
+                  ? {
+                      ...current,
+                      cards: upsertById(current.cards, [updated]),
+                      myVotes: updated.vote
+                        ? current.myVotes
+                        : (current.myVotes ?? []).filter((row) => row.cardId !== updated.id),
+                    }
+                  : current,
+              );
+            }}
+            onVote={async (choice) => {
+              const result = await api.castVote(boardId, editing.id, choice);
+              setSnapshot((current) => {
+                if (!current) {
+                  return current;
+                }
+                const rest = (current.myVotes ?? []).filter((row) => row.cardId !== editing.id);
+                return {
+                  ...current,
+                  cards: upsertById(current.cards, [result.card]),
+                  myVotes: result.choice
+                    ? [...rest, { cardId: editing.id, choice: result.choice }]
+                    : rest,
+                };
+              });
+            }}
+          />
           <div className="composer">
             {snapshot.board.ownerId === user?.id ? (
             <>

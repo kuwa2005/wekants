@@ -644,6 +644,28 @@ a {
   border-color: var(--rust);
 }
 
+.vote-box {
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--paper-edge);
+}
+
+.vote-box h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.vote-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.vote-box button.voted {
+  background: var(--rivet);
+  color: var(--paper);
+}
+
 .ticket p {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;

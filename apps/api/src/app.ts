@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import {
   assertBoardAccess,
   hashPassword,
@@ -22,7 +22,17 @@ import {
   type List,
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
-import { boards, cardTemplates, cardUnsaved, cards, lists, sessions, users, workspaces } from "./schema.ts";
+import {
+  boards,
+  cardBallots,
+  cardTemplates,
+  cardUnsaved,
+  cards,
+  lists,
+  sessions,
+  users,
+  workspaces,
+} from "./schema.ts";
 import { broadcast, broadcastToUser, closeGuests } from "./hub.ts";
 
 export type Env = {
@@ -94,6 +104,16 @@ function mapCard(row: typeof cards.$inferSelect): Card {
     archived: Boolean(row.archived),
     archivedWithList: Boolean(row.archivedWithList),
     number: row.number,
+    vote: row.voteQuestion
+      ? {
+          question: row.voteQuestion,
+          public: row.votePublic,
+          positive: 0,
+          negative: 0,
+          positiveNames: [],
+          negativeNames: [],
+        }
+      : null,
   };
 }
 
@@ -342,6 +362,53 @@ export function createApp(db: AppDb): Hono<Env> {
     }
   }
 
+  async function withCounts(items: Card[]): Promise<Card[]> {
+    const pending = items.filter((card) => card.vote);
+    if (pending.length === 0) {
+      return items;
+    }
+    const ballots = await db
+      .select()
+      .from(cardBallots)
+      .where(
+        inArray(
+          cardBallots.cardId,
+          pending.map((card) => card.id),
+        ),
+      );
+    const voterIds = [...new Set(ballots.map((row) => row.userId))];
+    const people =
+      voterIds.length === 0
+        ? []
+        : await db
+            .select({ id: users.id, username: users.username })
+            .from(users)
+            .where(inArray(users.id, voterIds));
+    const nameOf = new Map(people.map((row) => [row.id, row.username]));
+    return items.map((card) => {
+      if (!card.vote) {
+        return card;
+      }
+      const rows = ballots.filter((row) => row.cardId === card.id);
+      const positive = rows.filter((row) => row.choice === "positive");
+      const negative = rows.filter((row) => row.choice === "negative");
+      return {
+        ...card,
+        vote: {
+          ...card.vote,
+          positive: positive.length,
+          negative: negative.length,
+          positiveNames: card.vote.public ? positive.map((row) => nameOf.get(row.userId) ?? "") : [],
+          negativeNames: card.vote.public ? negative.map((row) => nameOf.get(row.userId) ?? "") : [],
+        },
+      };
+    });
+  }
+
+  async function present(card: Card): Promise<Card> {
+    return (await withCounts([card]))[0] ?? card;
+  }
+
   async function snapshot(boardId: string): Promise<BoardSnapshot> {
     const board = await one(db.select().from(boards).where(eq(boards.id, boardId)).limit(1));
     if (!board) {
@@ -360,7 +427,7 @@ export function createApp(db: AppDb): Hono<Env> {
     return {
       board: mapBoard(board),
       lists: boardLists.map(mapList),
-      cards: boardCards.map(mapCard),
+      cards: await withCounts(boardCards.map(mapCard)),
     };
   }
 
@@ -656,6 +723,14 @@ export function createApp(db: AppDb): Hono<Env> {
           .from(cardUnsaved)
           .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.boardId, boardId)))
       : [];
+    const votedIds = snap.cards.filter((card) => card.vote).map((card) => card.id);
+    const mine =
+      userId && votedIds.length > 0
+        ? await db
+            .select()
+            .from(cardBallots)
+            .where(and(eq(cardBallots.userId, userId), inArray(cardBallots.cardId, votedIds)))
+        : [];
     return c.json({
       ...snap,
       home: viewer?.homeBoardId === boardId,
@@ -664,6 +739,9 @@ export function createApp(db: AppDb): Hono<Env> {
         title: row.title,
         description: row.description,
       })),
+      myVotes: mine
+        .filter((row) => row.choice === "positive" || row.choice === "negative")
+        .map((row) => ({ cardId: row.cardId, choice: row.choice as "positive" | "negative" })),
     });
   });
 
@@ -1092,7 +1170,7 @@ export function createApp(db: AppDb): Hono<Env> {
       for (const card of open) {
         broadcast(boardId, {
           type: "card.upserted",
-          payload: { ...mapCard(card), archived: true, archivedWithList: true },
+          payload: await present({ ...mapCard(card), archived: true, archivedWithList: true }),
           actorId: userId,
         });
       }
@@ -1110,7 +1188,7 @@ export function createApp(db: AppDb): Hono<Env> {
       for (const card of tied) {
         broadcast(boardId, {
           type: "card.upserted",
-          payload: { ...mapCard(card), archived: false, archivedWithList: false },
+          payload: await present({ ...mapCard(card), archived: false, archivedWithList: false }),
           actorId: userId,
         });
       }
@@ -1167,6 +1245,15 @@ export function createApp(db: AppDb): Hono<Env> {
     const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
     if (!list || list.boardId !== boardId) {
       throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const doomed = await db.select({ id: cards.id }).from(cards).where(eq(cards.listId, listId));
+    if (doomed.length > 0) {
+      await db.delete(cardBallots).where(
+        inArray(
+          cardBallots.cardId,
+          doomed.map((row) => row.id),
+        ),
+      );
     }
     await db.delete(cards).where(eq(cards.listId, listId));
     await db.delete(lists).where(eq(lists.id, listId));
@@ -1239,8 +1326,8 @@ export function createApp(db: AppDb): Hono<Env> {
       rank,
       createdAt: now(),
     });
-    const card = mapCard(
-      (await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!,
+    const card = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!),
     );
     broadcast(boardId, { type: "card.upserted", payload: card, actorId: userId });
     return c.json(card, 201);
@@ -1288,7 +1375,7 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(
       {
         template: { id: templateId, title: card.title, description: card.description },
-        card: mapCard(kept!),
+        card: await present(mapCard(kept!)),
       },
       201,
     );
@@ -1349,8 +1436,8 @@ export function createApp(db: AppDb): Hono<Env> {
       rank,
       createdAt: now(),
     });
-    const copied = mapCard(
-      (await one(db.select().from(cards).where(eq(cards.id, copiedId)).limit(1)))!,
+    const copied = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, copiedId)).limit(1)))!),
     );
     broadcast(targetBoardId, { type: "card.upserted", payload: copied, actorId: userId });
     return c.json(copied, 201);
@@ -1465,8 +1552,8 @@ export function createApp(db: AppDb): Hono<Env> {
           : {}),
       })
       .where(eq(cards.id, cardId));
-    const updated = mapCard(
-      (await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!,
+    const updated = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!),
     );
     if (typeof body.title === "string" || typeof body.description === "string") {
       await db
@@ -1491,6 +1578,7 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!card || card.boardId !== boardId) {
       throw new HTTPException(404, { message: "見つかりません" });
     }
+    await db.delete(cardBallots).where(eq(cardBallots.cardId, cardId));
     await db.delete(cards).where(eq(cards.id, cardId));
     await db.delete(cardUnsaved).where(eq(cardUnsaved.cardId, cardId));
     broadcast(boardId, { type: "card.deleted", payload: { id: cardId }, actorId: userId });
@@ -1553,11 +1641,88 @@ export function createApp(db: AppDb): Hono<Env> {
         .set({ listId: list.id, rank: placed.rank })
         .where(eq(cards.id, cardId));
     }
-    const updated = mapCard(
-      (await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!,
+    const updated = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!),
     );
     broadcast(boardId, { type: "card.moved", payload: updated, actorId: userId });
     return c.json(updated);
+  });
+
+  app.put("/api/boards/:boardId/cards/:cardId/vote", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{ question?: string; public?: boolean }>();
+    const question = (body.question ?? "").trim();
+    if (question.length > 300) {
+      throw new HTTPException(400, { message: "投票の質問は300文字までです" });
+    }
+    if (body.public !== undefined && typeof body.public !== "boolean") {
+      throw new HTTPException(400, { message: "公開の指定が不正です" });
+    }
+    const visible = body.public ?? true;
+    await db
+      .update(cards)
+      .set({ voteQuestion: question, votePublic: visible })
+      .where(eq(cards.id, cardId));
+    if (!question) {
+      await db.delete(cardBallots).where(eq(cardBallots.cardId, cardId));
+    }
+    const updated = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!),
+    );
+    broadcast(boardId, { type: "card.upserted", payload: updated, actorId: userId });
+    return c.json(updated);
+  });
+
+  app.post("/api/boards/:boardId/cards/:cardId/vote", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) {
+      throw new HTTPException(401, { message: "ログインが必要です" });
+    }
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await visibleBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    if (!card.voteQuestion) {
+      throw new HTTPException(400, { message: "投票の質問がありません" });
+    }
+    const body = await c.req.json<{ choice?: string }>();
+    if (body.choice !== "positive" && body.choice !== "negative") {
+      throw new HTTPException(400, { message: "賛成か反対を選んでください" });
+    }
+    const existing = await one(
+      db
+        .select()
+        .from(cardBallots)
+        .where(and(eq(cardBallots.cardId, cardId), eq(cardBallots.userId, userId)))
+        .limit(1),
+    );
+    const choice = existing?.choice === body.choice ? null : body.choice;
+    await db
+      .delete(cardBallots)
+      .where(and(eq(cardBallots.cardId, cardId), eq(cardBallots.userId, userId)));
+    if (choice) {
+      await db.insert(cardBallots).values({ cardId, userId, choice });
+    }
+    const updated = await present(
+      mapCard((await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!),
+    );
+    broadcast(boardId, { type: "card.upserted", payload: updated, actorId: userId });
+    broadcastToUser(boardId, userId, {
+      type: "card.voted",
+      payload: { cardId, choice, userId },
+      actorId: userId,
+    });
+    return c.json({ card: updated, choice });
   });
 
   app.onError((err, c) => {

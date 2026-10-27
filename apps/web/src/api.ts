@@ -186,6 +186,19 @@ export const api = {
     request<{ ok: true }>(`/api/boards/${boardId}/cards/${cardId}/unsaved`, {
       method: "DELETE",
     }),
+  setVoteQuestion: (boardId: string, cardId: string, body: { question: string; public: boolean }) =>
+    request<Card>(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  castVote: (boardId: string, cardId: string, choice: "positive" | "negative") =>
+    request<{ card: Card; choice: "positive" | "negative" | null }>(
+      `/api/boards/${boardId}/cards/${cardId}/vote`,
+      {
+        method: "POST",
+        body: JSON.stringify({ choice }),
+      },
+    ),
   patchCard: (
     boardId: string,
     cardId: string,

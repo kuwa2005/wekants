@@ -43,6 +43,20 @@ export type CardTemplate = {
   description: string;
 };
 
+export type CardVote = {
+  question: string;
+  public: boolean;
+  positive: number;
+  negative: number;
+  positiveNames: string[];
+  negativeNames: string[];
+};
+
+export type MyVote = {
+  cardId: string;
+  choice: "positive" | "negative";
+};
+
 export type Card = {
   id: string;
   boardId: string;
@@ -53,6 +67,7 @@ export type Card = {
   archived: boolean;
   archivedWithList: boolean;
   number: number;
+  vote: CardVote | null;
 };
 
 export type UnsavedEdit = {
@@ -67,6 +82,7 @@ export type BoardSnapshot = {
   cards: Card[];
   home?: boolean;
   unsaved?: UnsavedEdit[];
+  myVotes?: MyVote[];
 };
 
 export type WorkspaceTree = {
@@ -85,7 +101,12 @@ export type WsEvent =
   | { type: "workspace.moved"; payload: Board; actorId: string }
   | { type: "board.updated"; payload: Board; actorId: string }
   | { type: "card.unsaved"; payload: UnsavedEdit & { userId: string }; actorId: string }
-  | { type: "card.unsavedCleared"; payload: { cardId: string; userId: string }; actorId: string };
+  | { type: "card.unsavedCleared"; payload: { cardId: string; userId: string }; actorId: string }
+  | {
+      type: "card.voted";
+      payload: { cardId: string; choice: "positive" | "negative" | null; userId: string };
+      actorId: string;
+    };
 
 export type MoveCardBody = {
   listId: string;

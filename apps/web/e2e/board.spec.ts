@@ -658,3 +658,22 @@ test("change the password while staying signed in", async ({ page }) => {
   await page.getByRole("button", { name: "入る" }).click();
   await expect(page.getByRole("heading", { name: "wekants" })).toBeVisible();
 });
+
+test("a card question collects one vote per person", async ({ page }) => {
+  await register(page, `vote_${stamp}`);
+  await hangBoard(page, `Ballot ${stamp}`);
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Ship");
+  await ready.getByRole("button", { name: "+" }).click();
+  await ready.locator("[data-card-id]").click();
+  await page.getByLabel("投票の質問").fill("Ship it?");
+  await page.getByRole("button", { name: "質問を保存" }).click();
+  await expect(page.locator(".vote-box")).toContainText("Ship it?");
+  await page.getByRole("button", { name: "賛成" }).click();
+  await expect(page.getByRole("button", { name: "賛成" })).toHaveClass(/voted/);
+  await expect(page.getByLabel("賛成の票")).toHaveText("1");
+  await expect(ready.locator(".marks.vote")).toHaveText("投票 1-0");
+  await page.getByRole("button", { name: "賛成" }).click();
+  await expect(page.getByLabel("賛成の票")).toHaveText("0");
+  await expect(page.getByRole("button", { name: "賛成" })).not.toHaveClass(/voted/);
+});

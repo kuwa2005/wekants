@@ -54,7 +54,7 @@ describe("auth, boards, markdown, workspaces", () => {
 
   beforeEach(async () => {
     await sql.unsafe(
-      "TRUNCATE card_unsaved, card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
+      "TRUNCATE card_ballots, card_unsaved, card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
     );
     app = createApp(db);
   });
@@ -1503,6 +1503,133 @@ Use **3mm** steel.
       leaveBoard(boardId, otherTab.socket);
       leaveBoard(boardId, guest.socket);
       leaveBoard(boardId, anon.socket);
+    }
+  });
+
+  it("keeps a card vote with the caller and hides names when the question is private", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada", password: "password1" }),
+    });
+    const adaJar = cookie(ada);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Ballot" }),
+    });
+    const snapshot = await created.json();
+    const boardId = snapshot.board.id as string;
+    const listId = snapshot.lists[0].id as string;
+    const made = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ listId, title: "Ship" }),
+    });
+    const cardId = (await made.json()).id as string;
+    const asked = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ question: "Ship it?", public: true }),
+    });
+    expect(asked.status).toBe(200);
+    expect((await asked.json()).vote).toMatchObject({ question: "Ship it?", positive: 0, negative: 0 });
+
+    const bob = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "bob", password: "password1" }),
+    });
+    const bobJar = cookie(bob);
+    const hidden = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: bobJar },
+      body: JSON.stringify({ choice: "positive" }),
+    });
+    expect(hidden.status).toBe(404);
+
+    const published = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(published.status).toBe(200);
+
+    const adaSocket = listen();
+    const bobSocket = listen();
+    joinBoard(boardId, adaSocket.socket, (await (await app.request("/api/auth/me", { headers: { cookie: adaJar } })).json()).id);
+    const bobUser = await (await app.request("/api/auth/me", { headers: { cookie: bobJar } })).json();
+    joinBoard(boardId, bobSocket.socket, bobUser.id);
+    try {
+      const yes = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ choice: "positive", userId: bobUser.id }),
+      });
+      expect(yes.status).toBe(200);
+      const yesBody = await yes.json();
+      expect(yesBody.choice).toBe("positive");
+      expect(yesBody.card.vote.positive).toBe(1);
+      expect(yesBody.card.vote.positiveNames).toEqual(["ada"]);
+      const adaEvent = JSON.parse(adaSocket.messages.at(-1) ?? "{}") as { type?: string };
+      expect(adaEvent.type).toBe("card.voted");
+      const bobEvent = JSON.parse(bobSocket.messages.at(-1) ?? "{}") as {
+        type?: string;
+        payload?: { vote?: { positive?: number; positiveNames?: string[] } };
+      };
+      expect(bobEvent.type).toBe("card.upserted");
+      expect(bobEvent.payload?.vote?.positive).toBe(1);
+      expect(bobSocket.messages.join("\n")).not.toContain("card.voted");
+
+      const no = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: bobJar },
+        body: JSON.stringify({ choice: "negative" }),
+      });
+      expect((await no.json()).card.vote).toMatchObject({ positive: 1, negative: 1 });
+
+      const again = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ choice: "positive" }),
+      });
+      const againBody = await again.json();
+      expect(againBody.choice).toBeNull();
+      expect(againBody.card.vote.positive).toBe(0);
+
+      const adaView = await app.request(`/api/boards/${boardId}`, { headers: { cookie: adaJar } });
+      expect((await adaView.json()).myVotes).toEqual([]);
+      const bobView = await app.request(`/api/boards/${boardId}`, { headers: { cookie: bobJar } });
+      expect((await bobView.json()).myVotes).toEqual([{ cardId, choice: "negative" }]);
+
+      const quiet = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ question: "Ship it?", public: false }),
+      });
+      const quietBody = await quiet.json();
+      expect(quietBody.vote.positiveNames).toEqual([]);
+      expect(quietBody.vote.negativeNames).toEqual([]);
+      expect(quietBody.vote.negative).toBe(1);
+
+      const cleared = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ question: "  " }),
+      });
+      expect((await cleared.json()).vote).toBeNull();
+      const after = await app.request(`/api/boards/${boardId}`, { headers: { cookie: bobJar } });
+      expect((await after.json()).myVotes).toEqual([]);
+
+      const anon = await app.request(`/api/boards/${boardId}/cards/${cardId}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ choice: "positive" }),
+      });
+      expect(anon.status).toBe(401);
+    } finally {
+      leaveBoard(boardId, adaSocket.socket);
+      leaveBoard(boardId, bobSocket.socket);
     }
   });
 });

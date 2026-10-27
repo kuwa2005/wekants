@@ -133,6 +133,20 @@ export const api = {
     request<{ ok: boolean }>(`/api/boards/${boardId}/cards/${cardId}`, { method: "DELETE" }),
   deleteList: (boardId: string, listId: string) =>
     request<{ ok: boolean }>(`/api/boards/${boardId}/lists/${listId}`, { method: "DELETE" }),
+  copyList: (boardId: string, listId: string, body: { targetBoardId?: string; title?: string } = {}) =>
+    request<{ list: List; cards: Card[] }>(`/api/boards/${boardId}/lists/${listId}/copy`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  copyCard: (
+    boardId: string,
+    cardId: string,
+    body: { targetBoardId?: string; targetListId: string; title?: string; at?: "start" | "end" },
+  ) =>
+    request<Card>(`/api/boards/${boardId}/cards/${cardId}/copy`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   moveList: (
     boardId: string,
     listId: string,

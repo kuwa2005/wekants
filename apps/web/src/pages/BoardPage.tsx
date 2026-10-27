@@ -24,6 +24,30 @@ type Props = {
   onLogout: () => void;
 };
 
+function upsertById<T extends { id: string }>(rows: T[], incoming: T[]): T[] {
+  const next = [...rows];
+  for (const row of incoming) {
+    const index = next.findIndex((item) => item.id === row.id);
+    if (index < 0) {
+      next.push(row);
+    } else {
+      next[index] = row;
+    }
+  }
+  return next;
+}
+
+function uniqueById<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) {
+      return false;
+    }
+    seen.add(row.id);
+    return true;
+  });
+}
+
 function neighborRanks(
   listCards: Array<{ id: string; rank: number }>,
   movingId: string,
@@ -76,7 +100,10 @@ function ListColumn({
   onRename,
   onToggle,
   onPatch,
+  onCopy,
   canEdit,
+  boards,
+  boardId,
 }: {
   list: List;
   cards: Card[];
@@ -87,12 +114,16 @@ function ListColumn({
   onRename: (title: string) => Promise<void>;
   onToggle: (collapsed: boolean) => Promise<void>;
   onPatch: (patch: Partial<Pick<List, "width" | "wipLimit" | "archived" | "color" | "cardEdit">>) => Promise<void>;
+  onCopy: (targetBoardId: string) => Promise<void>;
   canEdit: boolean;
+  boards: Array<{ id: string; title: string }>;
+  boardId: string;
 }) {
   const [title, setTitle] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(list.title);
   const [wipDraft, setWipDraft] = useState(list.wipLimit == null ? "" : String(list.wipLimit));
+  const [copyBoardId, setCopyBoardId] = useState(boardId);
   const skipCommit = useRef(false);
   useEffect(() => {
     setWipDraft(list.wipLimit == null ? "" : String(list.wipLimit));
@@ -299,6 +330,27 @@ function ListColumn({
         >
           保管
         </button>
+        {boards.length > 1 ? (
+          <select
+            aria-label={`${list.title} の複製先`}
+            value={copyBoardId}
+            onChange={(event) => setCopyBoardId(event.target.value)}
+          >
+            {boards.map((board) => (
+              <option key={board.id} value={board.id}>
+                {board.title}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <button
+          type="button"
+          className="fold"
+          aria-label={`${list.title} を複製`}
+          onClick={() => void onCopy(copyBoardId)}
+        >
+          複製
+        </button>
       </div>
       ) : null}
       <div ref={setNodeRef} className="list-cards">
@@ -354,11 +406,42 @@ export function BoardPage({ user, onLogout }: Props) {
   const { boardId = "" } = useParams();
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
+  const [copyBoardId, setCopyBoardId] = useState(boardId);
+  const [copyListId, setCopyListId] = useState("");
+  const [ownedBoards, setOwnedBoards] = useState<Array<{ id: string; title: string }>>([]);
+  const [foreignLists, setForeignLists] = useState<List[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
     api.board(boardId).then(setSnapshot).catch(() => setSnapshot(null));
   }, [boardId]);
+
+  useEffect(() => {
+    api
+      .workspaces()
+      .then((tree) => {
+        setOwnedBoards(
+          tree.workspaces.flatMap((space) =>
+            space.boards.map((board) => ({ id: board.id, title: board.title })),
+          ),
+        );
+      })
+      .catch(() => setOwnedBoards([]));
+  }, [boardId]);
+
+  useEffect(() => {
+    if (!editing || copyBoardId === boardId) {
+      return;
+    }
+    api
+      .board(copyBoardId)
+      .then((next) => {
+        const open = next.lists.filter((list) => !list.archived);
+        setForeignLists(open);
+        setCopyListId((current) => (open.some((list) => list.id === current) ? current : (open[0]?.id ?? "")));
+      })
+      .catch(() => setForeignLists([]));
+  }, [copyBoardId, boardId, editing]);
 
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -378,6 +461,12 @@ export function BoardPage({ user, onLogout }: Props) {
           return current;
         }
         if (event.actorId === user.id && event.type !== "card.moved") {
+          if (event.type === "card.upserted") {
+            return { ...current, cards: upsertById(current.cards, [event.payload]) };
+          }
+          if (event.type === "list.upserted") {
+            return { ...current, lists: upsertById(current.lists, [event.payload]) };
+          }
           return current;
         }
         if (event.type === "board") {
@@ -421,7 +510,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const lists = useMemo(
     () =>
       snapshot
-        ? snapshot.lists
+        ? uniqueById(snapshot.lists)
             .filter((list) => !list.archived)
             .slice()
             .sort((a, b) => a.rank - b.rank)
@@ -429,7 +518,7 @@ export function BoardPage({ user, onLogout }: Props) {
     [snapshot],
   );
   const archivedCards = useMemo(
-    () => (snapshot ? snapshot.cards.filter((card) => card.archived) : []),
+    () => (snapshot ? uniqueById(snapshot.cards).filter((card) => card.archived) : []),
     [snapshot],
   );
   const archivedLists = useMemo(
@@ -453,7 +542,7 @@ export function BoardPage({ user, onLogout }: Props) {
     const input = event.currentTarget.elements.namedItem("listTitle") as HTMLInputElement;
     const list = await api.createList(boardId, input.value);
     setSnapshot((current) =>
-      current ? { ...current, lists: [...current.lists, list] } : current,
+      current ? { ...current, lists: upsertById(current.lists, [list]) } : current,
     );
     input.value = "";
   }
@@ -461,7 +550,7 @@ export function BoardPage({ user, onLogout }: Props) {
   async function addCard(listId: string, title: string) {
     const card = await api.createCard(boardId, listId, title);
     setSnapshot((current) =>
-      current ? { ...current, cards: [...current.cards, card] } : current,
+      current ? { ...current, cards: upsertById(current.cards, [card]) } : current,
     );
   }
 
@@ -647,13 +736,39 @@ export function BoardPage({ user, onLogout }: Props) {
             <ListColumn
               key={list.id}
               canEdit={snapshot.board.ownerId === user.id}
+              boardId={boardId}
+              boards={
+                ownedBoards.some((board) => board.id === snapshot.board.id)
+                  ? ownedBoards
+                  : [{ id: snapshot.board.id, title: snapshot.board.title }, ...ownedBoards]
+              }
               list={list}
-              cards={snapshot.cards
+              cards={uniqueById(snapshot.cards)
                 .filter((card) => card.listId === list.id && !card.archived)
                 .slice()
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
-              onOpen={setEditing}
+              onOpen={(card) => {
+                setEditing(card);
+                setCopyBoardId(boardId);
+                setCopyListId(card.listId);
+              }}
+              onCopy={(targetBoardId) =>
+                api.copyList(boardId, list.id, { targetBoardId }).then((copied) => {
+                  if (targetBoardId !== boardId) {
+                    return;
+                  }
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          lists: upsertById(current.lists, [copied.list]),
+                          cards: upsertById(current.cards, copied.cards),
+                        }
+                      : current,
+                  );
+                })
+              }
               onToggle={(collapsed) =>
                 api.setListCollapsed(boardId, list.id, collapsed).then(applyList)
               }
@@ -676,7 +791,7 @@ export function BoardPage({ user, onLogout }: Props) {
               onImportMd={(markdown, filename) =>
                 api.importMarkdownCard(boardId, list.id, markdown, filename).then((card) => {
                   setSnapshot((current) =>
-                    current ? { ...current, cards: [...current.cards, card] } : current,
+                    current ? { ...current, cards: upsertById(current.cards, [card]) } : current,
                   );
                 })
               }
@@ -745,6 +860,71 @@ export function BoardPage({ user, onLogout }: Props) {
           <Markdown source={editing.description} />
           <div className="composer">
             {snapshot.board.ownerId === user.id ? (
+            <>
+            <label className="hint">
+              複製先のボード
+              <select
+                aria-label="複製先のボード"
+                value={copyBoardId}
+                onChange={(event) => {
+                  const nextBoardId = event.target.value;
+                  setCopyBoardId(nextBoardId);
+                  if (nextBoardId === boardId) {
+                    setCopyListId(editing.listId);
+                  }
+                }}
+              >
+                {(ownedBoards.some((board) => board.id === snapshot.board.id)
+                  ? ownedBoards
+                  : [{ id: snapshot.board.id, title: snapshot.board.title }, ...ownedBoards]
+                ).map((board) => (
+                  <option key={board.id} value={board.id}>
+                    {board.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="hint">
+              複製先のリスト
+              <select
+                aria-label="複製先のリスト"
+                value={copyListId}
+                onChange={(event) => setCopyListId(event.target.value)}
+              >
+                {(copyBoardId === boardId
+                  ? snapshot.lists.filter((list) => !list.archived)
+                  : foreignLists
+                ).map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              aria-label={`${editing.title} を複製`}
+              onClick={() => {
+                const targetListId = copyListId || editing.listId;
+                void api
+                  .copyCard(boardId, editing.id, {
+                    targetBoardId: copyBoardId,
+                    targetListId,
+                  })
+                  .then((copied) => {
+                    if (copyBoardId !== boardId) {
+                      return;
+                    }
+                    setSnapshot((current) =>
+                      current
+                        ? { ...current, cards: upsertById(current.cards, [copied]) }
+                        : current,
+                    );
+                  });
+              }}
+            >
+              複製
+            </button>
             <button
               type="button"
               onClick={async () => {
@@ -767,6 +947,7 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               保存
             </button>
+            </>
             ) : null}
             <button type="button" className="ghost" onClick={() => setEditing(null)}>
               閉じる

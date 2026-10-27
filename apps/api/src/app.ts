@@ -99,6 +99,10 @@ function placeRank(prev: number | null, next: number | null): { rank: number; ne
   return moveCard(prev, next);
 }
 
+function copyTitle(source: string): string {
+  return [...`${source} の複製`].slice(0, 200).join("");
+}
+
 export function createApp(db: AppDb): Hono<Env> {
   const app = new Hono<Env>();
 
@@ -323,6 +327,26 @@ export function createApp(db: AppDb): Hono<Env> {
         createdAt: now(),
       });
     }
+  }
+
+  async function placeAmong(
+    rows: Array<{ id: string; rank: number }>,
+    at: "start" | "end",
+    write: (id: string, rank: number) => Promise<void>,
+  ): Promise<number> {
+    const ordered = rows.slice().sort((a, b) => a.rank - b.rank);
+    const prev = at === "end" ? (ordered.at(-1)?.rank ?? null) : null;
+    const next = at === "start" ? (ordered[0]?.rank ?? null) : null;
+    const placed = placeRank(prev, next);
+    if (!placed.needsRebalance) {
+      return placed.rank;
+    }
+    const ranks = rebalanceRanks(ordered.length + 1);
+    const offset = at === "start" ? 1 : 0;
+    for (const [index, row] of ordered.entries()) {
+      await write(row.id, ranks[index + offset] ?? 0);
+    }
+    return ranks[at === "start" ? 0 : ordered.length] ?? 0;
   }
 
   async function appendRank(
@@ -781,6 +805,83 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(list, 201);
   });
 
+  app.post("/api/boards/:boardId/lists/:listId/copy", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const listId = c.req.param("listId");
+    await ownedBoard(userId, boardId);
+    const source = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
+    if (!source || source.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    let body: { targetBoardId?: string; title?: string } = {};
+    try {
+      body = await c.req.json<{ targetBoardId?: string; title?: string }>();
+    } catch {
+      body = {};
+    }
+    const targetBoardId = body.targetBoardId ?? boardId;
+    await ownedBoard(userId, targetBoardId);
+    const title = body.title ?? copyTitle(source.title);
+    try {
+      validateTitle(title);
+    } catch (err) {
+      throw new HTTPException(400, { message: String(err) });
+    }
+    const siblings = await db
+      .select()
+      .from(lists)
+      .where(eq(lists.boardId, targetBoardId))
+      .orderBy(asc(lists.rank));
+    const rank = await placeAmong(siblings, "end", async (id, nextRank) => {
+      await db.update(lists).set({ rank: nextRank }).where(eq(lists.id, id));
+    });
+    const copiedListId = id();
+    await db.insert(lists).values({
+      id: copiedListId,
+      boardId: targetBoardId,
+      title: title.trim(),
+      rank,
+      collapsed: false,
+      width: source.width,
+      wipLimit: source.wipLimit,
+      archived: false,
+      color: source.color,
+      cardEdit: source.cardEdit,
+      createdAt: now(),
+    });
+    const sourceCards = await db
+      .select()
+      .from(cards)
+      .where(and(eq(cards.listId, source.id), eq(cards.archived, false)))
+      .orderBy(asc(cards.rank));
+    const cardRanks = rebalanceRanks(sourceCards.length);
+    const copiedCards = [];
+    for (const [index, card] of sourceCards.entries()) {
+      const cardId = id();
+      await db.insert(cards).values({
+        id: cardId,
+        boardId: targetBoardId,
+        listId: copiedListId,
+        title: card.title,
+        description: card.description,
+        archived: false,
+        rank: cardRanks[index] ?? index * 1024,
+        createdAt: now(),
+      });
+      const stored = mapCard(
+        (await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1)))!,
+      );
+      copiedCards.push(stored);
+      broadcast(targetBoardId, { type: "card.upserted", payload: stored, actorId: userId });
+    }
+    const copiedList = mapList(
+      (await one(db.select().from(lists).where(eq(lists.id, copiedListId)).limit(1)))!,
+    );
+    broadcast(targetBoardId, { type: "list.upserted", payload: copiedList, actorId: userId });
+    return c.json({ list: copiedList, cards: copiedCards }, 201);
+  });
+
   app.patch("/api/boards/:boardId/lists/:listId", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
@@ -967,6 +1068,67 @@ export function createApp(db: AppDb): Hono<Env> {
     );
     broadcast(boardId, { type: "card.upserted", payload: card, actorId: userId });
     return c.json(card, 201);
+  });
+
+  app.post("/api/boards/:boardId/cards/:cardId/copy", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const source = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!source || source.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{
+      targetBoardId?: string;
+      targetListId?: string;
+      title?: string;
+      at?: string;
+    }>();
+    if (!body.targetListId) {
+      throw new HTTPException(400, { message: "複製先のリストを指定してください" });
+    }
+    if (body.at !== undefined && body.at !== "start" && body.at !== "end") {
+      throw new HTTPException(400, { message: "複製位置が不正です" });
+    }
+    const targetBoardId = body.targetBoardId ?? boardId;
+    await ownedBoard(userId, targetBoardId);
+    const targetList = await one(db.select().from(lists).where(eq(lists.id, body.targetListId)).limit(1));
+    if (!targetList || targetList.boardId !== targetBoardId) {
+      throw new HTTPException(400, { message: "このボードのリストではありません" });
+    }
+    await assertListAcceptsCard(targetList.id, true);
+    const title = body.title ?? copyTitle(source.title);
+    try {
+      validateTitle(title);
+    } catch (err) {
+      throw new HTTPException(400, { message: String(err) });
+    }
+    const siblings = await db
+      .select()
+      .from(cards)
+      .where(and(eq(cards.listId, targetList.id), eq(cards.archived, false)))
+      .orderBy(asc(cards.rank));
+    const at = body.at === "start" ? "start" : "end";
+    const rank = await placeAmong(siblings, at, async (id, nextRank) => {
+      await db.update(cards).set({ rank: nextRank }).where(eq(cards.id, id));
+    });
+    const copiedId = id();
+    await db.insert(cards).values({
+      id: copiedId,
+      boardId: targetBoardId,
+      listId: targetList.id,
+      title: title.trim(),
+      description: source.description,
+      archived: false,
+      rank,
+      createdAt: now(),
+    });
+    const copied = mapCard(
+      (await one(db.select().from(cards).where(eq(cards.id, copiedId)).limit(1)))!,
+    );
+    broadcast(targetBoardId, { type: "card.upserted", payload: copied, actorId: userId });
+    return c.json(copied, 201);
   });
 
   app.patch("/api/boards/:boardId/cards/:cardId", async (c) => {

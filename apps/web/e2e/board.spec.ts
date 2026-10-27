@@ -178,6 +178,33 @@ test("archive a card and restore it", async ({ page }) => {
   await expect(page.locator("[data-card-id]")).toContainText("Spare");
 });
 
+test("copy a list and a card, and another session sees the card", async ({ page, browser }) => {
+  const name = `copy_${stamp}`;
+  await register(page, name);
+  await hangBoard(page, "Patterns");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Template");
+  await ready.getByRole("button", { name: "+" }).click();
+  await ready.getByRole("button", { name: "未着手 を複製" }).click();
+  await expect(page.getByRole("button", { name: "未着手 の複製 の名前を変更" })).toBeVisible();
+
+  const contextB = await browser.newContext();
+  const other = await contextB.newPage();
+  await other.goto("/login");
+  await other.locator('input[name="username"]').fill(name);
+  await other.locator('input[name="password"]').fill("password1");
+  await other.getByRole("button", { name: "入る" }).click();
+  await other.getByRole("link", { name: "Patterns" }).click();
+  await expect(other.locator("[data-card-id]").first()).toContainText("Template");
+
+  await page.locator("[data-card-id]").first().dblclick();
+  await page.locator(".editor").getByLabel("複製先のリスト").selectOption({ label: "着手中" });
+  await page.locator(".editor").getByRole("button", { name: "Template を複製" }).click();
+  await expect(page.locator(".list").nth(1).locator("[data-card-id]")).toContainText("Template の複製");
+  await expect(other.locator(".list").nth(1).locator("[data-card-id]")).toContainText("Template の複製");
+  await contextB.close();
+});
+
 test("drag a workspace before the first workspace", async ({ page }) => {
   await register(page, `order_${stamp}`);
   await page.locator('input[name="workspaceTitle"]').fill("Bay 2");

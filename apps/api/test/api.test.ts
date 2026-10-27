@@ -461,4 +461,90 @@ Use **3mm** steel.
     });
     expect(await shown.text()).toContain("Spare");
   });
+
+  it("copies a card onto another board and a list with its open cards", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "cleo", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Source" }),
+    });
+    const source = await created.json();
+    const cardRes = await app.request(`/api/boards/${source.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({
+        listId: source.lists[0].id,
+        title: "Pattern",
+        description: "Keep the jig",
+      }),
+    });
+    const card = await cardRes.json();
+    const hiddenRes = await app.request(`/api/boards/${source.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: source.lists[0].id, title: "Hidden" }),
+    });
+    const hidden = await hiddenRes.json();
+    await app.request(`/api/boards/${source.board.id}/cards/${hidden.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: true }),
+    });
+    const other = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Destination" }),
+    });
+    const destination = await other.json();
+    const copiedCard = await app.request(`/api/boards/${source.board.id}/cards/${card.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({
+        targetBoardId: destination.board.id,
+        targetListId: destination.lists[0].id,
+        at: "start",
+      }),
+    });
+    expect(copiedCard.status).toBe(201);
+    const copy = await copiedCard.json();
+    expect(copy).toMatchObject({
+      title: "Pattern の複製",
+      description: "Keep the jig",
+      boardId: destination.board.id,
+      listId: destination.lists[0].id,
+      archived: false,
+    });
+
+    const copiedList = await app.request(
+      `/api/boards/${source.board.id}/lists/${source.lists[0].id}/copy`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: jar },
+        body: JSON.stringify({ targetBoardId: destination.board.id }),
+      },
+    );
+    expect(copiedList.status).toBe(201);
+    const listCopy = await copiedList.json();
+    expect(listCopy.list.title).toBe("未着手 の複製");
+    expect(listCopy.list.boardId).toBe(destination.board.id);
+    expect(listCopy.cards.map((row: { title: string }) => row.title)).toEqual(["Pattern"]);
+
+    const stranger = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "cleo2", password: "password1" }),
+    });
+    const denied = await app.request(`/api/boards/${source.board.id}/cards/${card.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookie(stranger) },
+      body: JSON.stringify({ targetListId: destination.lists[0].id }),
+    });
+    expect(denied.status).toBe(404);
+  });
 });

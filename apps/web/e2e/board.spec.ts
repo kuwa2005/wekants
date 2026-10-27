@@ -621,6 +621,27 @@ test("a board key numbers cards and search finds one", async ({ page }) => {
   await expect(page.locator("[data-card-id]").nth(1)).toContainText(`${nextKey}-2`);
 });
 
+test("a card address opens that card and a list address shows the list", async ({ page }) => {
+  await register(page, `link_${stamp}`);
+  await hangBoard(page, "Links");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Cut plate");
+  await ready.getByRole("button", { name: "+" }).click();
+  await ready.locator("[data-card-id]", { hasText: "Cut plate" }).click();
+  await expect(page).toHaveURL(/\/b\/[^/]+\/links\/[^/]+$/);
+  const cardUrl = page.url();
+  await expect(page.locator(".editor input").first()).toHaveValue("Cut plate");
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+  await expect(page.locator(".editor")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/b\/[^/]+\/links$/);
+  await page.goto(cardUrl);
+  await expect(page.locator(".editor input").first()).toHaveValue("Cut plate");
+  await page.locator(".editor").getByRole("button", { name: "閉じる" }).click();
+  const href = await page.getByRole("link", { name: "未着手 のリンク" }).getAttribute("href");
+  await page.goto(href ?? "");
+  await expect(page.locator(".list").first()).toHaveClass(/revealed/);
+});
+
 test("change the password while staying signed in", async ({ page }) => {
   const name = `lock_${stamp}`;
   await register(page, name);

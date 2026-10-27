@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   DndContext,
   DragEndEvent,
@@ -25,6 +25,27 @@ type Props = {
   user: UserPublic | null;
   onLogout: () => void;
 };
+
+function boardSlug(title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug || "board";
+}
+
+function readBoardPath(rest: string): { cardId: string; listId: string } {
+  const parts = rest.split("/").filter(Boolean);
+  if (parts.length >= 3 && parts[1] === "list" && parts[2]) {
+    return { cardId: "", listId: parts[2] };
+  }
+  if (parts.length >= 2 && parts[1] && parts[1] !== "list") {
+    return { cardId: parts[1], listId: "" };
+  }
+  return { cardId: "", listId: "" };
+}
 
 function upsertById<T extends { id: string }>(rows: T[], incoming: T[]): T[] {
   const next = [...rows];
@@ -150,6 +171,7 @@ function ListColumn({
   skipOpen,
   unsaved,
   boardKey,
+  slug,
 }: {
   list: List;
   cards: Card[];
@@ -169,6 +191,7 @@ function ListColumn({
   skipOpen: { current: boolean };
   unsaved: UnsavedEdit[];
   boardKey: string;
+  slug: string;
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -231,6 +254,7 @@ function ListColumn({
       ]
         .filter(Boolean)
         .join(" ")}
+      id={`list-${list.id}`}
       data-list-id={list.id}
       onDragOver={(event) => {
         if ([...event.dataTransfer.types].includes("Files")) {
@@ -305,6 +329,13 @@ function ListColumn({
             {list.title}
           </button>
         )}
+        <Link
+          className="list-link"
+          to={`/b/${boardId}/${slug}/list/${list.id}`}
+          aria-label={`${list.title} のリンク`}
+        >
+          リンク
+        </Link>
         {canEdit ? (
         <>
         <button
@@ -512,7 +543,10 @@ function ListColumn({
 }
 
 export function BoardPage({ user, onLogout }: Props) {
-  const { boardId = "" } = useParams();
+  const params = useParams();
+  const boardId = params.boardId ?? "";
+  const route = readBoardPath(params["*"] ?? "");
+  const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [missing, setMissing] = useState(false);
   const [isHome, setIsHome] = useState(false);
@@ -534,6 +568,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const [foreignLists, setForeignLists] = useState<List[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const skipOpen = useRef(false);
+  const openedRouteCard = useRef("");
 
   useEffect(() => {
     setMissing(false);
@@ -549,6 +584,36 @@ export function BoardPage({ user, onLogout }: Props) {
         setMissing(true);
       });
   }, [boardId]);
+
+  useEffect(() => {
+    if (!snapshot || !route.cardId || openedRouteCard.current === route.cardId) {
+      return;
+    }
+    const card = snapshot.cards.find((item) => item.id === route.cardId);
+    if (!card) {
+      return;
+    }
+    openedRouteCard.current = route.cardId;
+    const draft = snapshot.unsaved?.find((row) => row.cardId === card.id);
+    setEditing(draft ? { ...card, title: draft.title, description: draft.description } : card);
+    setTemplateSaved(false);
+    setCopyBoardId(boardId);
+    setCopyListId(card.listId);
+  }, [snapshot, route.cardId, boardId]);
+
+  useEffect(() => {
+    if (!snapshot || !route.listId) {
+      return;
+    }
+    const node = document.getElementById(`list-${route.listId}`);
+    if (!node) {
+      return;
+    }
+    node.scrollIntoView({ block: "nearest", inline: "center" });
+    node.classList.add("revealed");
+    const timer = window.setTimeout(() => node.classList.remove("revealed"), 5000);
+    return () => window.clearTimeout(timer);
+  }, [snapshot, route.listId]);
 
   useEffect(() => {
     if (!user) {
@@ -851,6 +916,13 @@ export function BoardPage({ user, onLogout }: Props) {
     });
   }
 
+  function leaveCard() {
+    setEditing(null);
+    if (route.cardId) {
+      navigate(`/b/${boardId}/${boardSlug(snapshot?.board.title ?? "board")}`, { replace: true });
+    }
+  }
+
   async function logout() {
     await api.logout();
     onLogout();
@@ -868,12 +940,12 @@ export function BoardPage({ user, onLogout }: Props) {
 
   async function closeEditor() {
     if (!editing || !snapshot || snapshot.board.ownerId !== user?.id) {
-      setEditing(null);
+      leaveCard();
       return;
     }
     const saved = snapshot.cards.find((card) => card.id === editing.id);
     if (!saved) {
-      setEditing(null);
+      leaveCard();
       return;
     }
     try {
@@ -888,7 +960,7 @@ export function BoardPage({ user, onLogout }: Props) {
         replaceUnsaved(editing.id, stored.unsaved);
       }
       setDraftError("");
-      setEditing(null);
+      leaveCard();
     } catch (err) {
       setDraftError(err instanceof Error ? err.message : "下書きを残せません");
     }
@@ -1151,6 +1223,7 @@ export function BoardPage({ user, onLogout }: Props) {
               skipOpen={skipOpen}
               unsaved={snapshot.unsaved ?? []}
               boardKey={snapshot.board.key}
+              slug={boardSlug(snapshot.board.title)}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)
@@ -1180,6 +1253,7 @@ export function BoardPage({ user, onLogout }: Props) {
                 setTemplateSaved(false);
                 setCopyBoardId(boardId);
                 setCopyListId(card.listId);
+                navigate(`/b/${boardId}/${boardSlug(snapshot.board.title)}/${card.id}`);
               }}
               onCopy={(targetBoardId) =>
                 api.copyList(boardId, list.id, { targetBoardId }).then((copied) => {
@@ -1403,7 +1477,7 @@ export function BoardPage({ user, onLogout }: Props) {
                     : current,
                 );
                 setDraftError("");
-                setEditing(null);
+                leaveCard();
               }}
             >
               保存
@@ -1492,7 +1566,7 @@ export function BoardPage({ user, onLogout }: Props) {
                         }
                       : current,
                   );
-                  setEditing(null);
+                  leaveCard();
                 });
               }}
             >
@@ -1518,7 +1592,7 @@ export function BoardPage({ user, onLogout }: Props) {
                         }
                       : current,
                   );
-                  setEditing(null);
+                  leaveCard();
                 });
               }}
             >

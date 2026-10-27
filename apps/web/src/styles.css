@@ -591,6 +591,17 @@ a {
   margin-left: auto;
 }
 
+.list.revealed {
+  outline: 2px solid var(--rust);
+  outline-offset: 3px;
+}
+
+.list-link {
+  color: var(--rivet);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
 .list-cards {
   display: flex;
   flex-direction: column;

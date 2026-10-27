@@ -53,7 +53,7 @@ export function App() {
       />
       <Route path="/public" element={<PublicBoardsPage />} />
       <Route
-        path="/b/:boardId"
+        path="/b/:boardId/*"
         element={<BoardPage user={user} onLogout={() => setUser(null)} />}
       />
     </Routes>

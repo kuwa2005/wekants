@@ -574,6 +574,16 @@ a {
   font-weight: 600;
 }
 
+.ticket .marks {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--paper-edge);
+  color: var(--rivet);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
 .ticket p {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;

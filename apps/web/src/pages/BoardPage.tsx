@@ -73,10 +73,12 @@ function Ticket({
   card,
   onOpen,
   draggable,
+  skipOpen,
 }: {
   card: Card;
   onOpen: (card: Card) => void;
   draggable: boolean;
+  skipOpen: { current: boolean };
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -88,18 +90,32 @@ function Ticket({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  function open() {
+    if (skipOpen.current) {
+      return;
+    }
+    onOpen(card);
+  }
   return (
     <article
       ref={setNodeRef}
       style={style}
       className={isDragging ? "ticket dragging" : "ticket"}
       data-card-id={card.id}
-      onDoubleClick={() => onOpen(card)}
       {...(draggable ? attributes : {})}
       {...(draggable ? listeners : {})}
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
     >
       <h3>{card.title}</h3>
-      {card.description ? <Markdown source={card.description} /> : null}
+      {card.description ? <span className="marks">本文</span> : null}
     </article>
   );
 }
@@ -120,6 +136,7 @@ function ListColumn({
   canEdit,
   boards,
   boardId,
+  skipOpen,
 }: {
   list: List;
   cards: Card[];
@@ -136,6 +153,7 @@ function ListColumn({
   canEdit: boolean;
   boards: Array<{ id: string; title: string }>;
   boardId: string;
+  skipOpen: { current: boolean };
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -389,7 +407,7 @@ function ListColumn({
           strategy={verticalListSortingStrategy}
         >
           {cards.map((card) => (
-            <Ticket key={card.id} card={card} onOpen={onOpen} draggable={canEdit} />
+            <Ticket key={card.id} card={card} onOpen={onOpen} draggable={canEdit} skipOpen={skipOpen} />
           ))}
         </SortableContext>
       </div>
@@ -488,6 +506,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const [ownedBoards, setOwnedBoards] = useState<Array<{ id: string; title: string }>>([]);
   const [foreignLists, setForeignLists] = useState<List[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const skipOpen = useRef(false);
 
   useEffect(() => {
     setMissing(false);
@@ -934,7 +953,23 @@ export function BoardPage({ user, onLogout }: Props) {
         <button type="submit">リストを追加</button>
       </form>
       ) : null}
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={() => {
+          skipOpen.current = true;
+        }}
+        onDragCancel={() => {
+          window.setTimeout(() => {
+            skipOpen.current = false;
+          }, 80);
+        }}
+        onDragEnd={(event) => {
+          void onDragEnd(event);
+          window.setTimeout(() => {
+            skipOpen.current = false;
+          }, 80);
+        }}
+      >
         <SortableContext
           items={lists.map((list) => `column:${list.id}`)}
           strategy={horizontalListSortingStrategy}
@@ -944,6 +979,7 @@ export function BoardPage({ user, onLogout }: Props) {
             <ListColumn
               key={list.id}
               canEdit={snapshot.board.ownerId === user?.id}
+              skipOpen={skipOpen}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)

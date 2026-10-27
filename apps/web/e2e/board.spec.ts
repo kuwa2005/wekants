@@ -43,6 +43,7 @@ test("drag a card to the next list", async ({ page }) => {
   const doing = page.locator(".list").nth(1);
   await dragOnto(page, ticket, doing.locator(".list-cards"));
   await expect(doing.locator("[data-card-id]")).toContainText("Cut plate");
+  await expect(page.locator(".editor")).toHaveCount(0);
 });
 
 test("second session sees the moved card", async ({ browser }) => {
@@ -82,10 +83,18 @@ test("card body renders markdown", async ({ page }) => {
   await ready.getByPlaceholder("新しいカード").fill("Cut plate");
   await ready.getByRole("button", { name: "+" }).click();
   const ticket = page.locator("[data-card-id]").first();
-  await ticket.dblclick();
+  await ticket.click();
   await page.locator(".editor textarea").fill("Use **3mm** steel.");
   await page.locator(".editor").getByRole("button", { name: "保存", exact: true }).click();
-  await expect(ticket.locator("strong")).toHaveText("3mm");
+  await expect(ticket.locator("p")).toHaveCount(0);
+  await expect(ticket.locator("strong")).toHaveCount(0);
+  await expect(ticket.locator(".marks")).toHaveText("本文");
+  await ticket.click();
+  await expect(page.locator(".editor strong")).toHaveText("3mm");
+  await page.reload();
+  const again = page.locator("[data-card-id]").first();
+  await expect(again.locator(".marks")).toHaveText("本文");
+  await expect(again.locator("p")).toHaveCount(0);
 });
 
 test("import a markdown file onto a list", async ({ page }) => {
@@ -99,7 +108,10 @@ test("import a markdown file onto a list", async ({ page }) => {
   });
   const ticket = ready.locator("[data-card-id]");
   await expect(ticket).toContainText("Cut plate");
-  await expect(ticket.locator("strong")).toHaveText("3mm");
+  await expect(ticket.locator("strong")).toHaveCount(0);
+  await expect(ticket.locator(".marks")).toHaveText("本文");
+  await ticket.click();
+  await expect(page.locator(".editor strong")).toHaveText("3mm");
 });
 
 test("a WIP limit blocks a new card and an archived list can return", async ({ page }) => {
@@ -157,7 +169,7 @@ test("delete a card from the editor", async ({ page }) => {
   await ready.getByPlaceholder("新しいカード").fill("Offcut");
   await ready.getByRole("button", { name: "+" }).click();
   await expect(page.locator("[data-card-id]")).toContainText("Offcut");
-  await page.locator("[data-card-id]").first().dblclick();
+  await page.locator("[data-card-id]").first().click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator(".editor").getByRole("button", { name: "削除" }).click();
   await expect(page.locator("[data-card-id]")).toHaveCount(0);
@@ -170,7 +182,7 @@ test("archive a card and restore it", async ({ page }) => {
   await ready.getByPlaceholder("新しいカード").fill("Spare");
   await ready.getByRole("button", { name: "+" }).click();
   await expect(page.locator("[data-card-id]")).toContainText("Spare");
-  await page.locator("[data-card-id]").first().dblclick();
+  await page.locator("[data-card-id]").first().click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator(".editor").getByRole("button", { name: "Spare を保管" }).click();
   await expect(page.locator("[data-card-id]")).toHaveCount(0);
@@ -197,7 +209,7 @@ test("copy a list and a card, and another session sees the card", async ({ page,
   await other.getByRole("link", { name: "Patterns" }).click();
   await expect(other.locator("[data-card-id]").first()).toContainText("Template");
 
-  await page.locator("[data-card-id]").first().dblclick();
+  await page.locator("[data-card-id]").first().click();
   await page.locator(".editor").getByLabel("複製先のリスト").selectOption({ label: "着手中" });
   await page.locator(".editor").getByRole("button", { name: "Template を複製" }).click();
   await expect(page.locator(".list").nth(1).locator("[data-card-id]")).toContainText("Template の複製");
@@ -328,7 +340,7 @@ test("move a card to the top and then the bottom of its list", async ({ page }) 
     await ready.getByRole("button", { name: "+" }).click();
     await expect(ready.locator("[data-card-id]", { hasText: title })).toBeVisible();
   }
-  await ready.locator("[data-card-id]").nth(2).dblclick();
+  await ready.locator("[data-card-id]").nth(2).click();
   await page.locator(".editor").getByRole("button", { name: "Gamma を先頭へ" }).click();
   await expect(ready.locator("[data-card-id]").first()).toContainText("Gamma");
   await page.locator(".editor").getByRole("button", { name: "Gamma を末尾へ" }).click();
@@ -389,7 +401,7 @@ test("archiving a list archives its open cards and restore leaves individual one
     await ready.getByRole("button", { name: "+" }).click();
     await expect(ready.locator("[data-card-id]", { hasText: title })).toBeVisible();
   }
-  await ready.locator("[data-card-id]", { hasText: "Kept" }).dblclick();
+  await ready.locator("[data-card-id]", { hasText: "Kept" }).click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator(".editor").getByRole("button", { name: "Kept を保管" }).click();
   await expect(page.getByRole("button", { name: "Kept を戻す" })).toBeVisible();
@@ -428,7 +440,7 @@ test("save a card as a template and add it again", async ({ page }) => {
   const ready = page.locator(".list").nth(0);
   await ready.getByPlaceholder("新しいカード").fill("Standup");
   await ready.getByRole("button", { name: "+" }).click();
-  await ready.locator("[data-card-id]").first().dblclick();
+  await ready.locator("[data-card-id]").first().click();
   await page.locator(".editor").getByRole("button", { name: "雛形として保存" }).click();
   await expect(page.getByText("雛形にしました。元のカードはそのままです。")).toBeVisible();
   await expect(ready.locator("[data-card-id]")).toHaveCount(1);

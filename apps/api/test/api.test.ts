@@ -1,8 +1,31 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { WebSocket } from "ws";
 import { createApp } from "../src/app.ts";
 import { openDatabase, type AppDb } from "../src/db.ts";
+import { joinBoard, leaveBoard } from "../src/hub.ts";
 import type postgres from "postgres";
 import { boardToMarkdown, markdownToBoardDraft, titlesFromInput } from "@wekants/shared";
+
+function listen() {
+  const messages: string[] = [];
+  let closed = 0;
+  const socket = {
+    readyState: 1,
+    OPEN: 1,
+    send(data: string) {
+      messages.push(data);
+    },
+    close() {
+      closed += 1;
+      this.readyState = 3;
+    },
+  };
+  return {
+    socket: socket as unknown as WebSocket,
+    messages,
+    closed: () => closed,
+  };
+}
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -845,5 +868,79 @@ Use **3mm** steel.
       body: JSON.stringify({ username: "lock", password: "password2" }),
     });
     expect(nextLogin.status).toBe(200);
+  });
+
+  it("pushes a board rename to open viewers and hides it when unpublished", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada2", password: "password1" }),
+    });
+    const adaJar = cookie(ada);
+    const adaId = (await ada.json()).id as string;
+    const bob = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "bob2", password: "password1" }),
+    });
+    const bobJar = cookie(bob);
+    const bobId = (await bob.json()).id as string;
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Lathe" }),
+    });
+    const boardId = (await created.json()).board.id as string;
+    const published = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(published.status).toBe(200);
+
+    const owner = listen();
+    const otherTab = listen();
+    const guest = listen();
+    joinBoard(boardId, owner.socket, adaId);
+    joinBoard(boardId, otherTab.socket, adaId);
+    joinBoard(boardId, guest.socket, bobId);
+
+    const renamed = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Mill" }),
+    });
+    expect(renamed.status).toBe(200);
+    for (const viewer of [owner, otherTab, guest]) {
+      const event = JSON.parse(viewer.messages.at(-1) ?? "{}") as {
+        type?: string;
+        payload?: { title?: string; isPublic?: boolean };
+      };
+      expect(event.type).toBe("board.updated");
+      expect(event.payload).toMatchObject({ title: "Mill", isPublic: true });
+      expect(viewer.closed()).toBe(0);
+    }
+
+    const hidden = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ isPublic: false }),
+    });
+    expect(hidden.status).toBe(200);
+    expect(guest.closed()).toBe(1);
+    expect(owner.closed()).toBe(0);
+    expect(otherTab.closed()).toBe(0);
+    const denied = await app.request(`/api/boards/${boardId}`, { headers: { cookie: bobJar } });
+    expect(denied.status).toBe(404);
+    const guestWrite = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: bobJar },
+      body: JSON.stringify({ title: "Stolen", isPublic: true }),
+    });
+    expect(guestWrite.status).toBe(404);
+    const kept = await app.request(`/api/boards/${boardId}`, { headers: { cookie: adaJar } });
+    expect((await kept.json()).board).toMatchObject({ title: "Mill", isPublic: false });
+    leaveBoard(boardId, owner.socket);
+    leaveBoard(boardId, otherTab.socket);
   });
 });

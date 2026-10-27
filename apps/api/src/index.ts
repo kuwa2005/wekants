@@ -51,7 +51,7 @@ wss.on("connection", (socket: WebSocket, request) => {
       socket.close(4404, "見つかりません");
       return;
     }
-    joinBoard(boardId, socket);
+    joinBoard(boardId, socket, session.userId);
     socket.on("close", () => leaveBoard(boardId, socket));
   })();
 });

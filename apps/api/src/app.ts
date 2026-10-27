@@ -20,7 +20,7 @@ import {
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
 import { boards, cards, lists, sessions, users, workspaces } from "./schema.ts";
-import { broadcast } from "./hub.ts";
+import { broadcast, closeGuests } from "./hub.ts";
 
 export type Env = {
   Variables: {
@@ -619,8 +619,14 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(400, { message: "変更がありません" });
     }
     await db.update(boards).set(patch).where(eq(boards.id, board.id));
-    const updated = await one(db.select().from(boards).where(eq(boards.id, board.id)).limit(1));
-    return c.json(mapBoard(updated!));
+    const updated = mapBoard(
+      (await one(db.select().from(boards).where(eq(boards.id, board.id)).limit(1)))!,
+    );
+    broadcast(board.id, { type: "board.updated", payload: updated, actorId: userId });
+    if (updated.isPublic === false) {
+      closeGuests(board.id, board.ownerId);
+    }
+    return c.json(updated);
   });
 
   app.post("/api/boards/:boardId/copy", async (c) => {

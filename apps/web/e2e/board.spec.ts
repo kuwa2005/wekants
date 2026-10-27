@@ -335,6 +335,47 @@ test("move a card to the top and then the bottom of its list", async ({ page }) 
   await expect(ready.locator("[data-card-id]").last()).toContainText("Gamma");
 });
 
+test("a board rename reaches another open view and unpublishing hides it", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const ownerAgain = await ownerContext.newPage();
+  const name = `mill_${stamp}`;
+  await register(owner, name);
+  await hangBoard(owner, "Lathe");
+  await owner.getByRole("button", { name: "公開する" }).click();
+  await expect(owner.getByRole("button", { name: "公開をやめる" })).toBeVisible();
+  const boardUrl = owner.url();
+
+  await ownerAgain.goto(boardUrl);
+  await expect(ownerAgain.getByRole("heading", { name: "Lathe" })).toBeVisible();
+
+  const guest = await guestContext.newPage();
+  await guest.goto("/register");
+  await guest.locator('input[name="username"]').fill(`guest_${stamp}`);
+  await guest.locator('input[name="password"]').fill("password1");
+  await guest.getByRole("button", { name: "登録する" }).click();
+  await guest.getByRole("link", { name: "Lathe" }).click();
+  await expect(guest.getByRole("heading", { name: "Lathe", level: 1 })).toBeVisible();
+
+  await owner.getByRole("heading", { name: "Lathe の名前を変更" }).click();
+  const field = owner.getByLabel("ボード名");
+  await field.fill("Mill");
+  await field.press("Enter");
+  await expect(owner.getByRole("heading", { name: "Mill の名前を変更" })).toBeVisible();
+  await expect(ownerAgain.getByRole("heading", { name: "Mill の名前を変更" })).toBeVisible();
+  await expect(guest.getByRole("heading", { name: "Mill", level: 1 })).toBeVisible();
+
+  await owner.getByRole("button", { name: "公開をやめる" }).click();
+  await expect(guest.getByText("このボードは見られません")).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByRole("heading", { name: "Mill の名前を変更" })).toBeVisible();
+  await guest.reload();
+  await expect(guest.getByText("このボードは見られません")).toBeVisible();
+  await ownerContext.close();
+  await guestContext.close();
+});
+
 test("deleting a workspace keeps its board open", async ({ page }) => {
   await register(page, `keep_${stamp}`);
   await hangBoard(page, "Kept");

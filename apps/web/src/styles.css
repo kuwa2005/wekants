@@ -148,6 +148,20 @@ a {
   cursor: pointer;
 }
 
+.rail button.board-name,
+.rail input.board-name {
+  flex: 1;
+  font-family: var(--display);
+  font-size: 1.35rem;
+  margin: 0;
+  background: transparent;
+  color: var(--paper);
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .bays {
   display: flex;
   gap: 1rem;

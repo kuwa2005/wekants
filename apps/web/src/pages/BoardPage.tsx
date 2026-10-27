@@ -426,6 +426,10 @@ function ListColumn({
 export function BoardPage({ user, onLogout }: Props) {
   const { boardId = "" } = useParams();
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const skipTitle = useRef(false);
   const [editing, setEditing] = useState<Card | null>(null);
   const [listTitle, setListTitle] = useState("");
   const [listBatch, setListBatch] = useState<TitleBatch>("one");
@@ -436,7 +440,17 @@ export function BoardPage({ user, onLogout }: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
-    api.board(boardId).then(setSnapshot).catch(() => setSnapshot(null));
+    setMissing(false);
+    api
+      .board(boardId)
+      .then((next) => {
+        setSnapshot(next);
+        setMissing(false);
+      })
+      .catch(() => {
+        setSnapshot(null);
+        setMissing(true);
+      });
   }, [boardId]);
 
   useEffect(() => {
@@ -473,6 +487,15 @@ export function BoardPage({ user, onLogout }: Props) {
     );
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data) as WsEvent;
+      if (event.type === "board.updated") {
+        if (!event.payload.isPublic && event.payload.ownerId !== user.id) {
+          setMissing(true);
+          setSnapshot(null);
+          return;
+        }
+        setSnapshot((current) => (current ? { ...current, board: event.payload } : current));
+        return;
+      }
       if (event.type === "card.deleted") {
         setEditing((current) => (current?.id === event.payload.id ? null : current));
       }
@@ -696,8 +719,12 @@ export function BoardPage({ user, onLogout }: Props) {
     onLogout();
   }
 
-  if (!snapshot) {
-    return <div className="gate">ボードを開いています…</div>;
+  if (missing || !snapshot) {
+    return (
+      <div className="gate">
+        {missing ? "このボードは見られません" : "ボードを開いています…"}
+      </div>
+    );
   }
 
   return (
@@ -706,7 +733,57 @@ export function BoardPage({ user, onLogout }: Props) {
         <Link className="ghost" to="/">
           すべてのボード
         </Link>
-        <h1>{snapshot.board.title}</h1>
+        {snapshot.board.ownerId === user.id ? (
+          renaming ? (
+            <input
+              className="board-name"
+              aria-label="ボード名"
+              value={titleDraft}
+              autoFocus
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => {
+                if (skipTitle.current) {
+                  skipTitle.current = false;
+                  setRenaming(false);
+                  return;
+                }
+                const next = titleDraft.trim();
+                setRenaming(false);
+                if (!next || next === snapshot.board.title) {
+                  return;
+                }
+                void api.patchBoard(boardId, { title: next }).then((board) => {
+                  setSnapshot((current) => (current ? { ...current, board } : current));
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  skipTitle.current = true;
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="board-name"
+              role="heading"
+              aria-level={1}
+              aria-label={`${snapshot.board.title} の名前を変更`}
+              onClick={() => {
+                setTitleDraft(snapshot.board.title);
+                setRenaming(true);
+              }}
+            >
+              {snapshot.board.title}
+            </button>
+          )
+        ) : (
+          <h1>{snapshot.board.title}</h1>
+        )}
         {snapshot.board.ownerId === user.id ? (
           <>
             <button

@@ -479,7 +479,8 @@ test("login opens the home board without moving it", async ({ page }) => {
 
 test("an unsigned visitor can read a public board but not a private one", async ({ page, browser }) => {
   await register(page, `pub_${stamp}`);
-  await hangBoard(page, "Open");
+  const title = `Open ${stamp}`;
+  await hangBoard(page, title);
   const ready = page.locator(".list").nth(0);
   await ready.getByPlaceholder("新しいカード").fill("Shown");
   await ready.getByRole("button", { name: "+" }).click();
@@ -490,7 +491,7 @@ test("an unsigned visitor can read a public board but not a private one", async 
   const guest = await guestContext.newPage();
   await guest.goto("/login");
   await guest.getByRole("link", { name: "公開ボード" }).click();
-  await guest.getByRole("link", { name: "Open", exact: true }).click();
+  await guest.getByRole("link", { name: title, exact: true }).click();
   await expect(guest.locator("[data-card-id]")).toContainText("Shown");
   await expect(guest.getByPlaceholder("新しいカード")).toHaveCount(0);
   await guest.reload();

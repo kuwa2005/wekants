@@ -32,6 +32,12 @@ export function leaveBoard(boardId: string, socket: WebSocket): void {
   }
 }
 
+function send(viewer: Viewer, data: string): void {
+  if (viewer.socket.readyState === viewer.socket.OPEN) {
+    viewer.socket.send(data);
+  }
+}
+
 export function broadcast(boardId: string, event: WsEvent): void {
   const room = rooms.get(boardId);
   if (!room) {
@@ -39,8 +45,19 @@ export function broadcast(boardId: string, event: WsEvent): void {
   }
   const data = JSON.stringify(event);
   for (const viewer of room) {
-    if (viewer.socket.readyState === viewer.socket.OPEN) {
-      viewer.socket.send(data);
+    send(viewer, data);
+  }
+}
+
+export function broadcastToUser(boardId: string, userId: string, event: WsEvent): void {
+  const room = rooms.get(boardId);
+  if (!room) {
+    return;
+  }
+  const data = JSON.stringify(event);
+  for (const viewer of room) {
+    if (viewer.userId === userId) {
+      send(viewer, data);
     }
   }
 }

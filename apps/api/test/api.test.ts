@@ -1417,4 +1417,92 @@ Use **3mm** steel.
     });
     expect(digit.status).toBe(400);
   });
+
+  it("does not send an unsaved draft to other viewers", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada", password: "password1" }),
+    });
+    const adaJar = cookie(ada);
+    const adaId = (await ada.json()).id as string;
+    const bob = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "bob", password: "password1" }),
+    });
+    const bobJar = cookie(bob);
+    const bobId = (await bob.json()).id as string;
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Open" }),
+    });
+    const snapshot = await created.json();
+    const boardId = snapshot.board.id as string;
+    const listId = snapshot.lists[0].id as string;
+    await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    const cardRes = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ listId, title: "Cut plate", description: "saved body" }),
+    });
+    const cardId = (await cardRes.json()).id as string;
+
+    const owner = listen();
+    const otherTab = listen();
+    const guest = listen();
+    const anon = listen();
+    joinBoard(boardId, owner.socket, adaId);
+    joinBoard(boardId, otherTab.socket, adaId);
+    joinBoard(boardId, guest.socket, bobId);
+    joinBoard(boardId, anon.socket, "");
+    try {
+      const draft = await app.request(`/api/boards/${boardId}/cards/${cardId}/unsaved`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ title: "Cut plate", description: "secret draft" }),
+      });
+      expect(draft.status).toBe(200);
+      for (const viewer of [owner, otherTab]) {
+        const event = JSON.parse(viewer.messages.at(-1) ?? "{}") as {
+          type?: string;
+          payload?: { description?: string };
+        };
+        expect(event.type).toBe("card.unsaved");
+        expect(event.payload?.description).toBe("secret draft");
+      }
+      for (const viewer of [guest, anon]) {
+        expect(viewer.messages.join("\n")).not.toContain("secret draft");
+      }
+      const bobView = await app.request(`/api/boards/${boardId}`, { headers: { cookie: bobJar } });
+      const anonView = await app.request(`/api/boards/${boardId}`);
+      expect((await bobView.json()).unsaved).toEqual([]);
+      expect((await anonView.json()).unsaved).toEqual([]);
+
+      const saved = await app.request(`/api/boards/${boardId}/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: adaJar },
+        body: JSON.stringify({ title: "Cut plate", description: "published body" }),
+      });
+      expect(saved.status).toBe(200);
+      const seen = JSON.parse(guest.messages.at(-1) ?? "{}") as {
+        type?: string;
+        payload?: { description?: string };
+      };
+      expect(seen.type).toBe("card.upserted");
+      expect(seen.payload?.description).toBe("published body");
+      expect(guest.messages.join("\n")).not.toContain("secret draft");
+      expect(anon.messages.join("\n")).not.toContain("secret draft");
+    } finally {
+      leaveBoard(boardId, owner.socket);
+      leaveBoard(boardId, otherTab.socket);
+      leaveBoard(boardId, guest.socket);
+      leaveBoard(boardId, anon.socket);
+    }
+  });
 });

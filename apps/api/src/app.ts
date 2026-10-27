@@ -23,7 +23,7 @@ import {
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
 import { boards, cardTemplates, cardUnsaved, cards, lists, sessions, users, workspaces } from "./schema.ts";
-import { broadcast, closeGuests } from "./hub.ts";
+import { broadcast, broadcastToUser, closeGuests } from "./hub.ts";
 
 export type Env = {
   Variables: {
@@ -1381,7 +1381,7 @@ export function createApp(db: AppDb): Hono<Env> {
       await db
         .delete(cardUnsaved)
         .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
-      broadcast(boardId, {
+      broadcastToUser(boardId, userId, {
         type: "card.unsavedCleared",
         payload: { cardId, userId },
         actorId: userId,
@@ -1411,7 +1411,7 @@ export function createApp(db: AppDb): Hono<Env> {
       });
     }
     const unsaved = { cardId, title, description };
-    broadcast(boardId, {
+    broadcastToUser(boardId, userId, {
       type: "card.unsaved",
       payload: { ...unsaved, userId },
       actorId: userId,
@@ -1431,7 +1431,7 @@ export function createApp(db: AppDb): Hono<Env> {
     await db
       .delete(cardUnsaved)
       .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
-    broadcast(boardId, {
+    broadcastToUser(boardId, userId, {
       type: "card.unsavedCleared",
       payload: { cardId, userId },
       actorId: userId,
@@ -1472,7 +1472,7 @@ export function createApp(db: AppDb): Hono<Env> {
       await db
         .delete(cardUnsaved)
         .where(and(eq(cardUnsaved.userId, userId), eq(cardUnsaved.cardId, cardId)));
-      broadcast(boardId, {
+      broadcastToUser(boardId, userId, {
         type: "card.unsavedCleared",
         payload: { cardId, userId },
         actorId: userId,

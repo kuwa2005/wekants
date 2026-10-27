@@ -50,6 +50,7 @@ export type Card = {
   description: string;
   rank: number;
   archived: boolean;
+  archivedWithList: boolean;
 };
 
 export type BoardSnapshot = {

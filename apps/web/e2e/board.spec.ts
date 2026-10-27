@@ -376,6 +376,52 @@ test("a board rename reaches another open view and unpublishing hides it", async
   await guestContext.close();
 });
 
+test("archiving a list archives its open cards and restore leaves individual ones", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const page = await contextA.newPage();
+  const name = `shelf_${stamp}`;
+  await register(page, name);
+  await hangBoard(page, "Shelf");
+  const ready = page.locator(".list").nth(0);
+  for (const title of ["One", "Two", "Kept"]) {
+    await ready.getByPlaceholder("新しいカード").fill(title);
+    await ready.getByRole("button", { name: "+" }).click();
+    await expect(ready.locator("[data-card-id]", { hasText: title })).toBeVisible();
+  }
+  await ready.locator("[data-card-id]", { hasText: "Kept" }).dblclick();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator(".editor").getByRole("button", { name: "Kept を保管" }).click();
+  await expect(page.getByRole("button", { name: "Kept を戻す" })).toBeVisible();
+
+  const other = await contextB.newPage();
+  await other.goto("/login");
+  await other.locator('input[name="username"]').fill(name);
+  await other.locator('input[name="password"]').fill("password1");
+  await other.getByRole("button", { name: "入る" }).click();
+  await other.getByRole("link", { name: "Shelf", exact: true }).click();
+  await expect(other.locator(".list").nth(0).locator("[data-card-id]")).toHaveCount(2);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await ready.getByRole("button", { name: "未着手 を保管" }).click();
+  await expect(page.getByRole("button", { name: "One を戻す" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Two を戻す" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Kept を戻す" })).toBeVisible();
+  await expect(other.getByRole("button", { name: "One を戻す" })).toBeVisible();
+  await expect(other.getByRole("button", { name: "Two を戻す" })).toBeVisible();
+
+  await page.getByRole("button", { name: "未着手 を戻す" }).click();
+  await expect(page.locator(".list").nth(0).locator("[data-card-id]")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Kept を戻す" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "One を戻す" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".list").nth(0).locator("[data-card-id]")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Kept を戻す" })).toBeVisible();
+  await expect(other.locator(".list").nth(0).locator("[data-card-id]")).toHaveCount(2);
+  await contextA.close();
+  await contextB.close();
+});
+
 test("save a card as a template and add it again", async ({ page }) => {
   await register(page, `tpl_${stamp}`);
   await hangBoard(page, "Patterns");

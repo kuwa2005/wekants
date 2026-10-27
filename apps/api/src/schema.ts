@@ -64,6 +64,7 @@ export const cards = pgTable("cards", {
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   archived: boolean("archived").notNull().default(false),
+  archivedWithList: boolean("archived_with_list").notNull().default(false),
   rank: bigint("rank", { mode: "number" }).notNull(),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });

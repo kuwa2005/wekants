@@ -88,6 +88,7 @@ function mapCard(row: typeof cards.$inferSelect): Card {
     description: row.description,
     rank: Number(row.rank),
     archived: Boolean(row.archived),
+    archivedWithList: Boolean(row.archivedWithList),
   };
 }
 
@@ -1025,6 +1026,43 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(400, { message: "変更がありません" });
     }
     await db.update(lists).set(patch).where(eq(lists.id, listId));
+    if (patch.archived === true) {
+      const open = await db
+        .select()
+        .from(cards)
+        .where(and(eq(cards.listId, listId), eq(cards.archived, false)));
+      if (open.length > 0) {
+        await db
+          .update(cards)
+          .set({ archived: true, archivedWithList: true })
+          .where(and(eq(cards.listId, listId), eq(cards.archived, false)));
+      }
+      for (const card of open) {
+        broadcast(boardId, {
+          type: "card.upserted",
+          payload: { ...mapCard(card), archived: true, archivedWithList: true },
+          actorId: userId,
+        });
+      }
+    } else if (patch.archived === false) {
+      const tied = await db
+        .select()
+        .from(cards)
+        .where(and(eq(cards.listId, listId), eq(cards.archivedWithList, true)));
+      if (tied.length > 0) {
+        await db
+          .update(cards)
+          .set({ archived: false, archivedWithList: false })
+          .where(and(eq(cards.listId, listId), eq(cards.archivedWithList, true)));
+      }
+      for (const card of tied) {
+        broadcast(boardId, {
+          type: "card.upserted",
+          payload: { ...mapCard(card), archived: false, archivedWithList: false },
+          actorId: userId,
+        });
+      }
+    }
     const updated = mapList(
       (await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1)))!,
     );
@@ -1285,7 +1323,9 @@ export function createApp(db: AppDb): Hono<Env> {
       .set({
         title: title.trim(),
         description: body.description ?? card.description,
-        ...(typeof body.archived === "boolean" ? { archived: body.archived } : {}),
+        ...(typeof body.archived === "boolean"
+          ? { archived: body.archived, archivedWithList: false }
+          : {}),
       })
       .where(eq(cards.id, cardId));
     const updated = mapCard(

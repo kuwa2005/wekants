@@ -1182,4 +1182,76 @@ Use **3mm** steel.
     const theirs = await app.request("/api/card-templates", { headers: { cookie: strangerJar } });
     expect((await theirs.json()).templates).toEqual([]);
   });
+
+  it("archives open cards with a list and restores only those", async () => {
+    const nora = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nora", password: "password1" }),
+    });
+    const jar = cookie(nora);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Shelf" }),
+    });
+    const snapshot = await created.json();
+    const listId = snapshot.lists[0].id as string;
+    for (const title of ["One", "Two", "Three"]) {
+      const res = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: jar },
+        body: JSON.stringify({ listId, title }),
+      });
+      expect(res.status).toBe(201);
+    }
+    const held = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, title: "Kept" }),
+    });
+    const kept = await held.json();
+    const alone = await app.request(`/api/boards/${snapshot.board.id}/cards/${kept.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect((await alone.json()).archivedWithList).toBe(false);
+
+    const archived = await app.request(`/api/boards/${snapshot.board.id}/lists/${listId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(archived.status).toBe(200);
+    const hidden = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const hiddenCards = (await hidden.json()).cards as Array<{
+      title: string;
+      archived: boolean;
+      archivedWithList: boolean;
+    }>;
+    expect(hiddenCards.filter((card) => card.title !== "Kept").every((card) => card.archived && card.archivedWithList)).toBe(true);
+    expect(hiddenCards.find((card) => card.title === "Kept")).toMatchObject({
+      archived: true,
+      archivedWithList: false,
+    });
+
+    const restored = await app.request(`/api/boards/${snapshot.board.id}/lists/${listId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ archived: false }),
+    });
+    expect(restored.status).toBe(200);
+    const shown = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const shownCards = (await shown.json()).cards as Array<{
+      title: string;
+      archived: boolean;
+    }>;
+    expect(shownCards.filter((card) => !card.archived).map((card) => card.title).sort()).toEqual([
+      "One",
+      "Three",
+      "Two",
+    ]);
+    expect(shownCards.find((card) => card.title === "Kept")?.archived).toBe(true);
+  });
 });

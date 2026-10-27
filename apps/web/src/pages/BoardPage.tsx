@@ -990,7 +990,16 @@ export function BoardPage({ user, onLogout }: Props) {
                 api.setListCollapsed(boardId, list.id, collapsed).then(applyList)
               }
               onRename={(title) => api.renameList(boardId, list.id, title).then(applyList)}
-              onPatch={(patch) => api.patchList(boardId, list.id, patch).then(applyList)}
+              onPatch={(patch) =>
+                api.patchList(boardId, list.id, patch).then(async (updated) => {
+                  applyList(updated);
+                  if (typeof patch.archived === "boolean") {
+                    const next = await api.board(boardId);
+                    setSnapshot(next);
+                    setIsHome(Boolean(next.home));
+                  }
+                })
+              }
               onDelete={() =>
                 api.deleteList(boardId, list.id).then(() => {
                   setSnapshot((current) =>
@@ -1026,7 +1035,13 @@ export function BoardPage({ user, onLogout }: Props) {
               type="button"
               className="ghost"
               aria-label={`${list.title} を戻す`}
-              onClick={() => void api.patchList(boardId, list.id, { archived: false }).then(applyList)}
+              onClick={() =>
+                void api.patchList(boardId, list.id, { archived: false }).then(async () => {
+                  const next = await api.board(boardId);
+                  setSnapshot(next);
+                  setIsHome(Boolean(next.home));
+                })
+              }
             >
               {list.title} を戻す
             </button>

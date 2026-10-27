@@ -626,16 +626,14 @@ export function createApp(db: AppDb): Hono<Env> {
 
   app.post("/api/boards/:boardId/copy", async (c) => {
     const userId = c.get("userId");
-    const source = await visibleBoard(userId, c.req.param("boardId"));
-    if (!source.isTemplate) {
-      throw new HTTPException(400, { message: "雛形ではありません" });
-    }
-    const body = await c.req.json<{ workspaceId?: string }>();
+    const source = await ownedBoard(userId, c.req.param("boardId"));
+    const body = await c.req.json<{ workspaceId?: string; cards?: boolean }>();
     if (!body.workspaceId) {
       throw new HTTPException(400, { message: "ワークスペースを指定してください" });
     }
+    const includeCards = body.cards !== false;
     await ownedWorkspace(userId, body.workspaceId);
-    const copyTitle = [...`${source.title} の複製`].slice(0, 200).join("");
+    const title = copyTitle(source.title);
     const siblings = await db
       .select()
       .from(boards)
@@ -653,7 +651,7 @@ export function createApp(db: AppDb): Hono<Env> {
     const boardId = id();
     await db.insert(boards).values({
       id: boardId,
-      title: copyTitle,
+      title,
       archived: false,
       ownerId: userId,
       workspaceId: body.workspaceId,
@@ -667,11 +665,6 @@ export function createApp(db: AppDb): Hono<Env> {
       .from(lists)
       .where(eq(lists.boardId, source.id))
       .orderBy(asc(lists.rank));
-    const sourceCards = await db
-      .select()
-      .from(cards)
-      .where(eq(cards.boardId, source.id))
-      .orderBy(asc(cards.rank));
     const listRanks = rebalanceRanks(sourceLists.length);
     const listIds = new Map<string, string>();
     for (const [index, list] of sourceLists.entries()) {
@@ -691,29 +684,36 @@ export function createApp(db: AppDb): Hono<Env> {
         createdAt: now(),
       });
     }
-    const cardsByList = new Map<string, typeof sourceCards>();
-    for (const card of sourceCards) {
-      const bucket = cardsByList.get(card.listId) ?? [];
-      bucket.push(card);
-      cardsByList.set(card.listId, bucket);
-    }
-    for (const [sourceListId, copied] of cardsByList) {
-      const listId = listIds.get(sourceListId);
-      if (!listId) {
-        continue;
+    if (includeCards) {
+      const sourceCards = await db
+        .select()
+        .from(cards)
+        .where(eq(cards.boardId, source.id))
+        .orderBy(asc(cards.rank));
+      const cardsByList = new Map<string, typeof sourceCards>();
+      for (const card of sourceCards) {
+        const bucket = cardsByList.get(card.listId) ?? [];
+        bucket.push(card);
+        cardsByList.set(card.listId, bucket);
       }
-      const cardRanks = rebalanceRanks(copied.length);
-      for (const [index, card] of copied.entries()) {
-        await db.insert(cards).values({
-          id: id(),
-          boardId,
-          listId,
-          title: card.title,
-          description: card.description,
-          archived: card.archived,
-          rank: cardRanks[index] ?? index * 1024,
-          createdAt: now(),
-        });
+      for (const [sourceListId, copied] of cardsByList) {
+        const listId = listIds.get(sourceListId);
+        if (!listId) {
+          continue;
+        }
+        const cardRanks = rebalanceRanks(copied.length);
+        for (const [index, card] of copied.entries()) {
+          await db.insert(cards).values({
+            id: id(),
+            boardId,
+            listId,
+            title: card.title,
+            description: card.description,
+            archived: card.archived,
+            rank: cardRanks[index] ?? index * 1024,
+            createdAt: now(),
+          });
+        }
       }
     }
     return c.json(await snapshot(boardId), 201);

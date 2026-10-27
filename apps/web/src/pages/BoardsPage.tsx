@@ -44,6 +44,37 @@ function neighborRanks(
   return { prevRank: prev?.rank ?? null, nextRank: next?.rank ?? null };
 }
 
+function BoardCopy({
+  board,
+  onCopy,
+}: {
+  board: Board;
+  onCopy: (boardId: string, cards: boolean) => Promise<void>;
+}) {
+  const [cards, setCards] = useState(true);
+  return (
+    <div className="copy-row">
+      <label>
+        <input
+          type="checkbox"
+          checked={cards}
+          aria-label={`${board.title} のカードを含める`}
+          onChange={(event) => setCards(event.target.checked)}
+        />
+        カードを含める
+      </label>
+      <button
+        type="button"
+        className="ghost"
+        aria-label={`${board.title} を複製`}
+        onClick={() => void onCopy(board.id, cards)}
+      >
+        複製
+      </button>
+    </div>
+  );
+}
+
 function BoardTicket({ board }: { board: Board }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -90,7 +121,7 @@ function WorkspaceColumn({
   onRename: (title: string) => Promise<void>;
   onStar: (starred: boolean) => Promise<void>;
   onDelete: () => Promise<void>;
-  onCopy: (boardId: string) => Promise<void>;
+  onCopy: (boardId: string, cards: boolean) => Promise<void>;
 }) {
   const {
     attributes,
@@ -226,11 +257,7 @@ function WorkspaceColumn({
           {shown.map((board) => (
             <div key={board.id} className="ticket-row">
               <BoardTicket board={board} />
-              {board.isTemplate ? (
-                <button type="button" className="ghost" onClick={() => void onCopy(board.id)}>
-                  複製
-                </button>
-              ) : null}
+              <BoardCopy board={board} onCopy={onCopy} />
             </div>
           ))}
         </SortableContext>
@@ -444,8 +471,8 @@ export function BoardsPage({ user, onLogout }: Props) {
                 await api.deleteWorkspace(workspace.id);
                 await reload();
               }}
-              onCopy={async (boardId) => {
-                const snapshot = await api.copyBoard(boardId, workspace.id);
+              onCopy={async (boardId, cards) => {
+                const snapshot = await api.copyBoard(boardId, workspace.id, cards);
                 navigate(`/b/${snapshot.board.id}`);
               }}
             />

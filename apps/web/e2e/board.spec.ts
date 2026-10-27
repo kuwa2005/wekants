@@ -251,6 +251,33 @@ test("rename a workspace, search boards, and copy a template", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Lathe の複製" })).toBeVisible();
 });
 
+test("copy a normal board with cards and without them", async ({ page }) => {
+  await register(page, `plain_${stamp}`);
+  await hangBoard(page, "Plain");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Bolt");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toContainText("Bolt");
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  await page.getByRole("button", { name: "Plain を複製" }).click();
+  await expect(page.getByRole("heading", { name: "Plain の複製" })).toBeVisible();
+  await expect(page.locator("[data-card-id]")).toContainText("Bolt");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Plain の複製" })).toBeVisible();
+  await expect(page.locator("[data-card-id]")).toContainText("Bolt");
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  const bay = page.locator(".workspace").first();
+  await expect(bay.getByRole("link", { name: "Plain", exact: true })).toBeVisible();
+  await bay.getByRole("checkbox", { name: "Plain のカードを含める" }).uncheck();
+  await bay.getByRole("button", { name: "Plain を複製" }).click();
+  await expect(page.getByRole("heading", { name: "Plain の複製" })).toBeVisible();
+  await expect(page.locator("[data-card-id]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "未着手 の名前を変更" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator("[data-card-id]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "未着手 の名前を変更" })).toBeVisible();
+});
+
 test("create one card with line breaks or many cards from lines", async ({ page }) => {
   await register(page, `lines_${stamp}`);
   await hangBoard(page, "Batch");

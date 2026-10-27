@@ -420,6 +420,91 @@ Use **3mm** steel.
     expect((await after.json()).workspaces).toEqual([]);
   });
 
+  it("copies an owned board with or without cards and refuses other people", async () => {
+    const owen = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "owen", password: "password1" }),
+    });
+    const jar = cookie(owen);
+    const tree = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const workspaceId = (await tree.json()).workspaces[0].id as string;
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Plain", workspaceId }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Bolt" }),
+    });
+    expect(cardRes.status).toBe(201);
+
+    const copied = await app.request(`/api/boards/${snapshot.board.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ workspaceId }),
+    });
+    expect(copied.status).toBe(201);
+    const copy = await copied.json();
+    expect(copy.board.id).not.toBe(snapshot.board.id);
+    expect(copy.board).toMatchObject({
+      title: "Plain の複製",
+      isTemplate: false,
+      isPublic: false,
+    });
+    expect(copy.lists.map((list: { title: string }) => list.title)).toEqual(
+      snapshot.lists.map((list: { title: string }) => list.title),
+    );
+    expect(copy.cards.map((card: { title: string }) => card.title)).toEqual(["Bolt"]);
+
+    const source = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    const sourceBody = await source.json();
+    expect(sourceBody.board.title).toBe("Plain");
+    expect(sourceBody.cards.map((card: { title: string }) => card.title)).toEqual(["Bolt"]);
+
+    const listsOnly = await app.request(`/api/boards/${snapshot.board.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ workspaceId, cards: false }),
+    });
+    expect(listsOnly.status).toBe(201);
+    const empty = await listsOnly.json();
+    expect(empty.lists.map((list: { title: string }) => list.title)).toEqual(
+      snapshot.lists.map((list: { title: string }) => list.title),
+    );
+    expect(empty.cards).toEqual([]);
+
+    const flagged = await app.request(`/api/boards/${snapshot.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(flagged.status).toBe(200);
+    const pia = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "pia", password: "password1" }),
+    });
+    const piaJar = cookie(pia);
+    const piaTree = await app.request("/api/workspaces", { headers: { cookie: piaJar } });
+    const piaWorkspaceId = (await piaTree.json()).workspaces[0].id as string;
+    const readable = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: piaJar },
+    });
+    expect(readable.status).toBe(200);
+    const denied = await app.request(`/api/boards/${snapshot.board.id}/copy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: piaJar },
+      body: JSON.stringify({ workspaceId: piaWorkspaceId }),
+    });
+    expect(denied.status).toBe(404);
+  });
+
   it("archives a card and restores it without deleting the row", async () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",

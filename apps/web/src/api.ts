@@ -72,10 +72,10 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
-  copyBoard: (boardId: string, workspaceId: string) =>
+  copyBoard: (boardId: string, workspaceId: string, cards = true) =>
     request<BoardSnapshot>(`/api/boards/${boardId}/copy`, {
       method: "POST",
-      body: JSON.stringify({ workspaceId }),
+      body: JSON.stringify({ workspaceId, cards }),
     }),
   createBoard: (title: string, workspaceId?: string) =>
     request<BoardSnapshot>("/api/boards", {

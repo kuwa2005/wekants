@@ -74,6 +74,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
+  setListCollapsed: (boardId: string, listId: string, collapsed: boolean) =>
+    request<List>(`/api/boards/${boardId}/lists/${listId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ collapsed }),
+    }),
   createCard: (boardId: string, listId: string, title: string, description = "") =>
     request<Card>(`/api/boards/${boardId}/cards`, {
       method: "POST",

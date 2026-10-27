@@ -102,6 +102,19 @@ test("import a markdown file onto a list", async ({ page }) => {
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
+test("collapse a list and open it again", async ({ page }) => {
+  await register(page, `fold_${stamp}`);
+  await hangBoard(page, "Clamp");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Offcut");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toContainText("Offcut");
+  await ready.getByRole("button", { name: "未着手 を折りたたむ" }).click();
+  await expect(ready.locator("[data-card-id]")).toHaveCount(0);
+  await ready.getByRole("button", { name: "未着手 を開く" }).click();
+  await expect(ready.locator("[data-card-id]")).toContainText("Offcut");
+});
+
 test("rename a list from its title", async ({ page }) => {
   await register(page, `list_${stamp}`);
   await hangBoard(page, "Saw");

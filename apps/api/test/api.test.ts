@@ -196,6 +196,20 @@ Use **3mm** steel.
     );
     expect(renamed.status).toBe(200);
     expect((await renamed.json()).title).toBe("切断");
+    const folded = await app.request(
+      `/api/boards/${snapshot.board.id}/lists/${snapshot.lists[0].id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: jar },
+        body: JSON.stringify({ collapsed: true }),
+      },
+    );
+    expect(folded.status).toBe(200);
+    expect((await folded.json()).collapsed).toBe(true);
+    const again = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    expect((await again.json()).lists[0].collapsed).toBe(true);
   });
 
   it("deletes a card and a list with its cards", async () => {

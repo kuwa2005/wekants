@@ -67,6 +67,7 @@ function mapList(row: typeof lists.$inferSelect): List {
     boardId: row.boardId,
     title: row.title,
     rank: Number(row.rank),
+    collapsed: row.collapsed,
   };
 }
 
@@ -552,13 +553,23 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!list || list.boardId !== boardId) {
       throw new HTTPException(404, { message: "見つかりません" });
     }
-    const body = await c.req.json<{ title?: string }>();
-    try {
-      validateTitle(body.title ?? "");
-    } catch (err) {
-      throw new HTTPException(400, { message: String(err) });
+    const body = await c.req.json<{ title?: string; collapsed?: boolean }>();
+    const patch: { title?: string; collapsed?: boolean } = {};
+    if (typeof body.title === "string") {
+      try {
+        validateTitle(body.title);
+      } catch (err) {
+        throw new HTTPException(400, { message: String(err) });
+      }
+      patch.title = body.title.trim();
     }
-    await db.update(lists).set({ title: (body.title ?? "").trim() }).where(eq(lists.id, listId));
+    if (typeof body.collapsed === "boolean") {
+      patch.collapsed = body.collapsed;
+    }
+    if (patch.title === undefined && patch.collapsed === undefined) {
+      throw new HTTPException(400, { message: "変更がありません" });
+    }
+    await db.update(lists).set(patch).where(eq(lists.id, listId));
     const updated = mapList(
       (await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1)))!,
     );

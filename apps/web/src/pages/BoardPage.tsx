@@ -70,6 +70,7 @@ function ListColumn({
   onImportMd,
   onDelete,
   onRename,
+  onToggle,
 }: {
   list: List;
   cards: Card[];
@@ -78,6 +79,7 @@ function ListColumn({
   onImportMd: (markdown: string, filename: string) => Promise<void>;
   onDelete: () => Promise<void>;
   onRename: (title: string) => Promise<void>;
+  onToggle: (collapsed: boolean) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -99,7 +101,7 @@ function ListColumn({
 
   return (
     <section
-      className="list"
+      className={list.collapsed ? "list collapsed" : "list"}
       data-list-id={list.id}
       onDragOver={(event) => {
         if ([...event.dataTransfer.types].includes("Files")) {
@@ -163,6 +165,14 @@ function ListColumn({
         )}
         <button
           type="button"
+          className="fold"
+          aria-label={list.collapsed ? `${list.title} を開く` : `${list.title} を折りたたむ`}
+          onClick={() => void onToggle(!list.collapsed)}
+        >
+          {list.collapsed ? "開く" : "畳む"}
+        </button>
+        <button
+          type="button"
           className="danger"
           aria-label={`${list.title} を削除`}
           onClick={() => {
@@ -174,6 +184,8 @@ function ListColumn({
           削除
         </button>
       </div>
+      {list.collapsed ? null : (
+      <>
       <div ref={setNodeRef} className="list-cards">
         <SortableContext
           items={cards.map((card) => card.id)}
@@ -209,6 +221,8 @@ function ListColumn({
           }}
         />
       </label>
+      </>
+      )}
     </section>
   );
 }
@@ -402,6 +416,20 @@ export function BoardPage({ user, onLogout }: Props) {
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
               onOpen={setEditing}
+              onToggle={(collapsed) =>
+                api.setListCollapsed(boardId, list.id, collapsed).then((updated) => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          lists: current.lists.map((row) =>
+                            row.id === updated.id ? updated : row,
+                          ),
+                        }
+                      : current,
+                  );
+                })
+              }
               onRename={(title) =>
                 api.renameList(boardId, list.id, title).then((updated) => {
                   setSnapshot((current) =>

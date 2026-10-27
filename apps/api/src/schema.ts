@@ -36,6 +36,7 @@ export const lists = pgTable("lists", {
   boardId: text("board_id").notNull(),
   title: text("title").notNull(),
   rank: bigint("rank", { mode: "number" }).notNull(),
+  collapsed: boolean("collapsed").notNull().default(false),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

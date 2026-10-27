@@ -24,6 +24,7 @@ export type List = {
   boardId: string;
   title: string;
   rank: number;
+  collapsed: boolean;
 };
 
 export type Card = {

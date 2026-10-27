@@ -380,6 +380,37 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(mapWorkspace(workspace!), 201);
   });
 
+  app.post("/api/workspaces/:workspaceId/move", async (c) => {
+    const userId = c.get("userId");
+    const workspaceId = c.req.param("workspaceId");
+    const workspace = await ownedWorkspace(userId, workspaceId);
+    const body = await c.req.json<{ prevRank?: number | null; nextRank?: number | null }>();
+    const prevRank = body.prevRank ?? null;
+    const nextRank = body.nextRank ?? null;
+    const placed = placeRank(prevRank, nextRank);
+    const owned = await db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.ownerId, userId))
+      .orderBy(asc(workspaces.rank));
+    if (placed.needsRebalance) {
+      const siblings = owned.filter((row) => row.id !== workspace.id);
+      const insertAt =
+        prevRank == null ? 0 : siblings.findIndex((row) => Number(row.rank) === prevRank) + 1;
+      const ordered = [...siblings.slice(0, insertAt), workspace, ...siblings.slice(insertAt)];
+      const ranks = rebalanceRanks(ordered.length);
+      for (const [index, row] of ordered.entries()) {
+        await db.update(workspaces).set({ rank: ranks[index] ?? 0 }).where(eq(workspaces.id, row.id));
+      }
+    } else {
+      await db.update(workspaces).set({ rank: placed.rank }).where(eq(workspaces.id, workspace.id));
+    }
+    const moved = await one(
+      db.select().from(workspaces).where(eq(workspaces.id, workspace.id)).limit(1),
+    );
+    return c.json(mapWorkspace(moved!));
+  });
+
   app.post("/api/boards", async (c) => {
     const userId = c.get("userId");
     const body = await c.req.json<{ title?: string; workspaceId?: string; markdown?: string }>();

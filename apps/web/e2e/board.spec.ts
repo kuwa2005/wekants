@@ -163,6 +163,16 @@ test("delete a card from the editor", async ({ page }) => {
   await expect(page.locator("[data-card-id]")).toHaveCount(0);
 });
 
+test("drag a workspace before the first workspace", async ({ page }) => {
+  await register(page, `order_${stamp}`);
+  await page.locator('input[name="workspaceTitle"]').fill("Bay 2");
+  await page.getByRole("button", { name: "ワークスペースを追加" }).click();
+  const bay2 = page.locator(".workspace").filter({ has: page.getByRole("heading", { name: "Bay 2" }) });
+  const first = page.locator(".workspace").first();
+  await dragOnto(page, bay2.getByRole("button", { name: "Bay 2 を移動" }), first);
+  await expect(page.locator(".workspace").first().getByRole("heading", { name: "Bay 2" })).toBeVisible();
+});
+
 test("drag a board into another workspace", async ({ page }) => {
   await register(page, `bay_${stamp}`);
   const floor = page.locator(".workspace").first();

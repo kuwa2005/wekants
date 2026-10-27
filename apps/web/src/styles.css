@@ -167,6 +167,14 @@ a {
   border-color: var(--rust);
 }
 
+.workspace.dragging {
+  opacity: 0.55;
+}
+
+.workspace .list-head h2 {
+  margin: 0;
+}
+
 .workspace h2 {
   font-family: var(--display);
   font-size: 1rem;

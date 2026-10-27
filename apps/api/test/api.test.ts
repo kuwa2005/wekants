@@ -144,6 +144,31 @@ Use **3mm** steel.
     expect(boardToMarkdown(snapshot)).toContain("### Cut plate");
   });
 
+  it("moves a workspace before another workspace", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "june", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const extra = await app.request("/api/workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Bay 2" }),
+    });
+    const bay = await extra.json();
+    const tree = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const first = (await tree.json()).workspaces[0];
+    const moved = await app.request(`/api/workspaces/${bay.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ prevRank: null, nextRank: first.rank }),
+    });
+    expect(moved.status).toBe(200);
+    const again = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    expect((await again.json()).workspaces[0].id).toBe(bay.id);
+  });
+
   it("moves a board between workspaces with rust ranks", async () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",

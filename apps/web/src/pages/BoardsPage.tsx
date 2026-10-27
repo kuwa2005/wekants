@@ -8,7 +8,12 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, rectSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Board, UserPublic, WorkspaceTree } from "@wekants/shared";
 import { api } from "../api";
@@ -19,7 +24,7 @@ type Props = {
 };
 
 function neighborRanks(
-  boards: Board[],
+  boards: Array<{ id: string; rank: number }>,
   movingId: string,
   beforeId: string | null,
 ): { prevRank: number | null; nextRank: number | null } {
@@ -70,6 +75,17 @@ function WorkspaceColumn({
   onImport: (markdown: string, name: string) => Promise<void>;
   onCreateBoard: (title: string) => Promise<void>;
 }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setBayRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `bay:${workspace.id}`,
+    data: { type: "workspace-column", workspaceId: workspace.id },
+  });
   const { setNodeRef, isOver } = useDroppable({
     id: `workspace:${workspace.id}`,
     data: { type: "workspace", workspaceId: workspace.id },
@@ -88,7 +104,9 @@ function WorkspaceColumn({
 
   return (
     <section
-      className={isOver ? "workspace over" : "workspace"}
+      ref={setBayRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={isDragging ? "workspace dragging" : isOver ? "workspace over" : "workspace"}
       data-workspace-id={workspace.id}
       onDragOver={(event) => {
         if ([...event.dataTransfer.types].includes("Files")) {
@@ -97,7 +115,18 @@ function WorkspaceColumn({
       }}
       onDrop={onDropFile}
     >
-      <h2>{workspace.title}</h2>
+      <div className="list-head">
+        <button
+          type="button"
+          className="grip"
+          {...attributes}
+          {...listeners}
+          aria-label={`${workspace.title} を移動`}
+        >
+          移動
+        </button>
+        <h2>{workspace.title}</h2>
+      </div>
       <div ref={setNodeRef} className="workspace-boards">
         <SortableContext items={boards.map((board) => board.id)} strategy={rectSortingStrategy}>
           {boards.map((board) => (
@@ -155,6 +184,25 @@ export function BoardsPage({ user, onLogout }: Props) {
     if (!tree || !event.over) {
       return;
     }
+    if (event.active.data.current?.type === "workspace-column") {
+      const movingId = String(event.active.data.current.workspaceId ?? "");
+      const overId = String(event.over.id);
+      let beforeId: string | null = null;
+      if (overId.startsWith("bay:") || overId.startsWith("workspace:")) {
+        beforeId = overId.slice(overId.indexOf(":") + 1);
+      } else {
+        beforeId =
+          tree.workspaces.flatMap((space) => space.boards).find((board) => board.id === overId)
+            ?.workspaceId ?? null;
+      }
+      if (!beforeId || beforeId === movingId) {
+        return;
+      }
+      const { prevRank, nextRank } = neighborRanks(tree.workspaces, movingId, beforeId);
+      await api.moveWorkspace(movingId, { prevRank, nextRank });
+      await reload();
+      return;
+    }
     const boardId = String(event.active.id);
     const moving = tree.workspaces.flatMap((space) => space.boards).find((board) => board.id === boardId);
     if (!moving) {
@@ -210,6 +258,10 @@ export function BoardsPage({ user, onLogout }: Props) {
       </form>
       {/* ワークスペースの並び替えは新規実装。legacy WeKan の DnD は移植しない。 */}
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <SortableContext
+          items={tree.workspaces.map((workspace) => `bay:${workspace.id}`)}
+          strategy={horizontalListSortingStrategy}
+        >
         <div className="bays">
           {tree.workspaces.map((workspace) => (
             <WorkspaceColumn
@@ -227,6 +279,7 @@ export function BoardsPage({ user, onLogout }: Props) {
             />
           ))}
         </div>
+        </SortableContext>
       </DndContext>
     </div>
   );

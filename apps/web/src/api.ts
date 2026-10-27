@@ -46,6 +46,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title }),
     }),
+  moveWorkspace: (
+    workspaceId: string,
+    body: { prevRank: number | null; nextRank: number | null },
+  ) =>
+    request<Workspace>(`/api/workspaces/${workspaceId}/move`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   createBoard: (title: string, workspaceId?: string) =>
     request<BoardSnapshot>("/api/boards", {
       method: "POST",

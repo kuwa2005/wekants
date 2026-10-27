@@ -69,6 +69,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title }),
     }),
+  renameList: (boardId: string, listId: string, title: string) =>
+    request<List>(`/api/boards/${boardId}/lists/${listId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
   createCard: (boardId: string, listId: string, title: string, description = "") =>
     request<Card>(`/api/boards/${boardId}/cards`, {
       method: "POST",

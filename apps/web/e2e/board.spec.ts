@@ -102,6 +102,17 @@ test("import a markdown file onto a list", async ({ page }) => {
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
+test("rename a list from its title", async ({ page }) => {
+  await register(page, `list_${stamp}`);
+  await hangBoard(page, "Saw");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByRole("button", { name: "未着手 の名前を変更" }).click();
+  const field = ready.getByLabel("リスト名");
+  await field.fill("切断");
+  await field.press("Enter");
+  await expect(ready.getByRole("button", { name: "切断 の名前を変更" })).toBeVisible();
+});
+
 test("delete a card from the editor", async ({ page }) => {
   await register(page, `scrap_${stamp}`);
   await hangBoard(page, "Offcuts");

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   DndContext,
@@ -69,6 +69,7 @@ function ListColumn({
   onOpen,
   onImportMd,
   onDelete,
+  onRename,
 }: {
   list: List;
   cards: Card[];
@@ -76,8 +77,12 @@ function ListColumn({
   onOpen: (card: Card) => void;
   onImportMd: (markdown: string, filename: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onRename: (title: string) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(list.title);
+  const skipCommit = useRef(false);
   const { setNodeRef } = useDroppable({
     id: `list:${list.id}`,
     data: { type: "list", listId: list.id },
@@ -111,7 +116,51 @@ function ListColumn({
       }}
     >
       <div className="list-head">
-        <h2>{list.title}</h2>
+        {renaming ? (
+          <input
+            className="list-title"
+            aria-label="リスト名"
+            value={draft}
+            autoFocus
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              if (skipCommit.current) {
+                skipCommit.current = false;
+                setDraft(list.title);
+                setRenaming(false);
+                return;
+              }
+              const next = draft.trim();
+              setRenaming(false);
+              if (!next || next === list.title) {
+                setDraft(list.title);
+                return;
+              }
+              void onRename(next);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                skipCommit.current = true;
+                event.currentTarget.blur();
+              }
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="list-title"
+            aria-label={`${list.title} の名前を変更`}
+            onClick={() => {
+              setDraft(list.title);
+              setRenaming(true);
+            }}
+          >
+            {list.title}
+          </button>
+        )}
         <button
           type="button"
           className="danger"
@@ -353,6 +402,20 @@ export function BoardPage({ user, onLogout }: Props) {
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
               onOpen={setEditing}
+              onRename={(title) =>
+                api.renameList(boardId, list.id, title).then((updated) => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          lists: current.lists.map((row) =>
+                            row.id === updated.id ? updated : row,
+                          ),
+                        }
+                      : current,
+                  );
+                })
+              }
               onDelete={() =>
                 api.deleteList(boardId, list.id).then(() => {
                   setSnapshot((current) =>

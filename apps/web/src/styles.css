@@ -298,12 +298,25 @@ a {
   margin: 0 0 0.6rem;
 }
 
-.list h2 {
+.list-title {
   font-family: var(--display);
   font-size: 1rem;
   margin: 0;
   padding: 0.2rem 0.3rem;
   flex: 1;
+  min-width: 0;
+  background: transparent;
+  color: var(--paper);
+  border: 0;
+  text-align: left;
+  cursor: text;
+}
+
+.list-head input.list-title {
+  width: 100%;
+  background: #0f1215;
+  border: 1px solid var(--rust);
+  color: var(--paper);
 }
 
 .danger {

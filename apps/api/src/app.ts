@@ -543,6 +543,29 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(list, 201);
   });
 
+  app.patch("/api/boards/:boardId/lists/:listId", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const listId = c.req.param("listId");
+    await ownedBoard(userId, boardId);
+    const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
+    if (!list || list.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{ title?: string }>();
+    try {
+      validateTitle(body.title ?? "");
+    } catch (err) {
+      throw new HTTPException(400, { message: String(err) });
+    }
+    await db.update(lists).set({ title: (body.title ?? "").trim() }).where(eq(lists.id, listId));
+    const updated = mapList(
+      (await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1)))!,
+    );
+    broadcast(boardId, { type: "list.upserted", payload: updated, actorId: userId });
+    return c.json(updated);
+  });
+
   app.delete("/api/boards/:boardId/lists/:listId", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");

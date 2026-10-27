@@ -173,6 +173,31 @@ Use **3mm** steel.
     expect((await moved.json()).workspaceId).toBe(bay.id);
   });
 
+  it("renames a list", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "gina", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Names" }),
+    });
+    const snapshot = await created.json();
+    const renamed = await app.request(
+      `/api/boards/${snapshot.board.id}/lists/${snapshot.lists[0].id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: jar },
+        body: JSON.stringify({ title: "切断" }),
+      },
+    );
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).title).toBe("切断");
+  });
+
   it("deletes a card and a list with its cards", async () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",

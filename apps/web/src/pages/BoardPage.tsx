@@ -68,12 +68,14 @@ function ListColumn({
   onAdd,
   onOpen,
   onImportMd,
+  onDelete,
 }: {
   list: List;
   cards: Card[];
   onAdd: (title: string) => Promise<void>;
   onOpen: (card: Card) => void;
   onImportMd: (markdown: string, filename: string) => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const { setNodeRef } = useDroppable({
@@ -108,7 +110,21 @@ function ListColumn({
         await onImportMd(await file.text(), file.name);
       }}
     >
-      <h2>{list.title}</h2>
+      <div className="list-head">
+        <h2>{list.title}</h2>
+        <button
+          type="button"
+          className="danger"
+          aria-label={`${list.title} を削除`}
+          onClick={() => {
+            if (window.confirm(`「${list.title}」とそのカードを削除しますか？`)) {
+              void onDelete();
+            }
+          }}
+        >
+          削除
+        </button>
+      </div>
       <div ref={setNodeRef} className="list-cards">
         <SortableContext
           items={cards.map((card) => card.id)}
@@ -165,6 +181,12 @@ export function BoardPage({ user, onLogout }: Props) {
     );
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data) as WsEvent;
+      if (event.type === "card.deleted") {
+        setEditing((current) => (current?.id === event.payload.id ? null : current));
+      }
+      if (event.type === "list.deleted") {
+        setEditing((current) => (current?.listId === event.payload.id ? null : current));
+      }
       setSnapshot((current) => {
         if (!current) {
           return current;
@@ -182,6 +204,19 @@ export function BoardPage({ user, onLogout }: Props) {
               )
             : [...current.lists, event.payload];
           return { ...current, lists };
+        }
+        if (event.type === "list.deleted") {
+          return {
+            ...current,
+            lists: current.lists.filter((list) => list.id !== event.payload.id),
+            cards: current.cards.filter((card) => card.listId !== event.payload.id),
+          };
+        }
+        if (event.type === "card.deleted") {
+          return {
+            ...current,
+            cards: current.cards.filter((card) => card.id !== event.payload.id),
+          };
         }
         if (event.type === "workspace.moved") {
           return current;
@@ -318,6 +353,20 @@ export function BoardPage({ user, onLogout }: Props) {
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
               onOpen={setEditing}
+              onDelete={() =>
+                api.deleteList(boardId, list.id).then(() => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          lists: current.lists.filter((row) => row.id !== list.id),
+                          cards: current.cards.filter((card) => card.listId !== list.id),
+                        }
+                      : current,
+                  );
+                  setEditing((current) => (current?.listId === list.id ? null : current));
+                })
+              }
               onImportMd={(markdown, filename) =>
                 api.importMarkdownCard(boardId, list.id, markdown, filename).then((card) => {
                   setSnapshot((current) =>
@@ -367,6 +416,29 @@ export function BoardPage({ user, onLogout }: Props) {
             </button>
             <button type="button" className="ghost" onClick={() => setEditing(null)}>
               閉じる
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => {
+                if (!window.confirm(`「${editing.title}」を削除しますか？`)) {
+                  return;
+                }
+                const cardId = editing.id;
+                void api.deleteCard(boardId, cardId).then(() => {
+                  setSnapshot((current) =>
+                    current
+                      ? {
+                          ...current,
+                          cards: current.cards.filter((card) => card.id !== cardId),
+                        }
+                      : current,
+                  );
+                  setEditing(null);
+                });
+              }}
+            >
+              削除
             </button>
           </div>
         </aside>

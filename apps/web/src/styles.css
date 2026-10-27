@@ -291,11 +291,32 @@ a {
   padding: 0.6rem;
 }
 
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+}
+
 .list h2 {
   font-family: var(--display);
   font-size: 1rem;
-  margin: 0 0 0.6rem;
+  margin: 0;
   padding: 0.2rem 0.3rem;
+  flex: 1;
+}
+
+.danger {
+  background: transparent;
+  color: var(--rust);
+  border: 1px solid var(--rust);
+  cursor: pointer;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.editor .danger {
+  margin-left: auto;
 }
 
 .list-cards {

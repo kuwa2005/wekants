@@ -172,4 +172,44 @@ Use **3mm** steel.
     expect(moved.status).toBe(200);
     expect((await moved.json()).workspaceId).toBe(bay.id);
   });
+
+  it("deletes a card and a list with its cards", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "faye", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Scrap" }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Offcut" }),
+    });
+    const card = await cardRes.json();
+    const removed = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "DELETE",
+      headers: { cookie: jar },
+    });
+    expect(removed.status).toBe(200);
+    const afterCard = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    expect((await afterCard.json()).cards).toEqual([]);
+    const dropped = await app.request(
+      `/api/boards/${snapshot.board.id}/lists/${snapshot.lists[0].id}`,
+      { method: "DELETE", headers: { cookie: jar } },
+    );
+    expect(dropped.status).toBe(200);
+    const afterList = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    const body = await afterList.json();
+    expect(body.lists.map((list: { id: string }) => list.id)).not.toContain(snapshot.lists[0].id);
+  });
 });

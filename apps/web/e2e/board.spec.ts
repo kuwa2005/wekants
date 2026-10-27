@@ -102,6 +102,19 @@ test("import a markdown file onto a list", async ({ page }) => {
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
+test("delete a card from the editor", async ({ page }) => {
+  await register(page, `scrap_${stamp}`);
+  await hangBoard(page, "Offcuts");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Offcut");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(page.locator("[data-card-id]")).toContainText("Offcut");
+  await page.locator("[data-card-id]").first().dblclick();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator(".editor").getByRole("button", { name: "削除" }).click();
+  await expect(page.locator("[data-card-id]")).toHaveCount(0);
+});
+
 test("drag a board into another workspace", async ({ page }) => {
   await register(page, `bay_${stamp}`);
   const floor = page.locator(".workspace").first();

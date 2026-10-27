@@ -84,6 +84,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ listId, markdown, filename }),
     }),
+  deleteCard: (boardId: string, cardId: string) =>
+    request<{ ok: boolean }>(`/api/boards/${boardId}/cards/${cardId}`, { method: "DELETE" }),
+  deleteList: (boardId: string, listId: string) =>
+    request<{ ok: boolean }>(`/api/boards/${boardId}/lists/${listId}`, { method: "DELETE" }),
   patchCard: (
     boardId: string,
     cardId: string,

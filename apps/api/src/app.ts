@@ -543,6 +543,21 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(list, 201);
   });
 
+  app.delete("/api/boards/:boardId/lists/:listId", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const listId = c.req.param("listId");
+    await ownedBoard(userId, boardId);
+    const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
+    if (!list || list.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    await db.delete(cards).where(eq(cards.listId, listId));
+    await db.delete(lists).where(eq(lists.id, listId));
+    broadcast(boardId, { type: "list.deleted", payload: { id: listId }, actorId: userId });
+    return c.json({ ok: true });
+  });
+
   app.post("/api/boards/:boardId/cards", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
@@ -630,6 +645,20 @@ export function createApp(db: AppDb): Hono<Env> {
     );
     broadcast(boardId, { type: "card.upserted", payload: updated, actorId: userId });
     return c.json(updated);
+  });
+
+  app.delete("/api/boards/:boardId/cards/:cardId", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    await db.delete(cards).where(eq(cards.id, cardId));
+    broadcast(boardId, { type: "card.deleted", payload: { id: cardId }, actorId: userId });
+    return c.json({ ok: true });
   });
 
   app.post("/api/boards/:boardId/cards/:cardId/move", async (c) => {

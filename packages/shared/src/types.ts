@@ -49,7 +49,9 @@ export type WsEvent =
   | { type: "board"; payload: BoardSnapshot; actorId: string }
   | { type: "card.moved"; payload: Card; actorId: string }
   | { type: "card.upserted"; payload: Card; actorId: string }
+  | { type: "card.deleted"; payload: { id: string }; actorId: string }
   | { type: "list.upserted"; payload: List; actorId: string }
+  | { type: "list.deleted"; payload: { id: string }; actorId: string }
   | { type: "workspace.moved"; payload: Board; actorId: string };
 
 export type MoveCardBody = {

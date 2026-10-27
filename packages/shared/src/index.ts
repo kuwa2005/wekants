@@ -22,6 +22,7 @@ export {
   markdownToCardDraft,
 } from "./markdown.ts";
 export { titlesFromInput, type TitleBatch } from "./titles.ts";
+export { normalizeText, rankSimilarCards, trigrams, type SimilarCard } from "./similarCards.ts";
 export {
   formatCardKey,
   isValidKey,

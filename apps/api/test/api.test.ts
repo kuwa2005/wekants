@@ -4,7 +4,7 @@ import { createApp } from "../src/app.ts";
 import { openDatabase, type AppDb } from "../src/db.ts";
 import { joinBoard, leaveBoard } from "../src/hub.ts";
 import type postgres from "postgres";
-import { boardToMarkdown, markdownToBoardDraft, titlesFromInput } from "@wekants/shared";
+import { boardToMarkdown, markdownToBoardDraft, rankSimilarCards, titlesFromInput } from "@wekants/shared";
 
 function listen() {
   const messages: string[] = [];
@@ -1722,5 +1722,22 @@ Use **3mm** steel.
     });
     expect(removed.status).toBe(200);
     expect((await removed.json()).groups).toEqual([]);
+  });
+
+  it("ranks near titles as duplicates and leaves distant or archived cards out", () => {
+    const cards = [
+      { id: "a", title: "Printer maintenance", listId: "l", description: "Replace the roller" },
+      { id: "b", title: "Printer maintanance", listId: "l", description: "" },
+      { id: "c", title: "予算会議", listId: "m", description: "" },
+      { id: "d", title: "Buy paint", listId: "l", archived: true },
+    ];
+    const ranked = rankSimilarCards({ title: "Printer maintenance", description: "Replace the roller" }, cards, {
+      excludeId: "a",
+    });
+    expect(ranked.map((card) => card.id)).toEqual(["b"]);
+    expect(ranked[0]?.duplicate).toBe(true);
+    const japanese = rankSimilarCards({ title: "予算の会議" }, [{ id: "c", title: "予算会議", listId: "m" }]);
+    expect(japanese.map((card) => card.id)).toEqual(["c"]);
+    expect(rankSimilarCards({ title: "Zebra" }, cards)).toEqual([]);
   });
 });

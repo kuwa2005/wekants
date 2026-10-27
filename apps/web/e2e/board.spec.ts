@@ -693,3 +693,18 @@ test("a shared WIP limit blocks the next list", async ({ page }) => {
   await expect(doing.locator("[data-card-id]")).toContainText("One");
   await expect(page.locator(".list").nth(2).getByText("仕掛かりの共通上限です")).toBeVisible();
 });
+
+test("typing a close title offers the existing card", async ({ page }) => {
+  await register(page, `alike_${stamp}`);
+  await hangBoard(page, `Match ${stamp}`);
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Printer maintenance");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toContainText("Printer maintenance");
+  const field = ready.getByPlaceholder("新しいカード");
+  await field.fill("Printer maintanance");
+  await expect(ready.getByRole("button", { name: /重複の可能性 Printer maintenance/ })).toBeVisible();
+  await ready.getByRole("button", { name: /重複の可能性 Printer maintenance/ }).click();
+  await expect(page.locator(".editor input").first()).toHaveValue("Printer maintenance");
+  await expect(field).toHaveValue("Printer maintanance");
+});

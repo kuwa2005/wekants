@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { BoardSnapshot, Card, CardTemplate, List, TitleBatch, UnsavedEdit, UserPublic, WsEvent } from "@wekants/shared";
-import { formatCardKey, normalizeKey, parseCardKey, titlesFromInput } from "@wekants/shared";
+import { formatCardKey, normalizeKey, parseCardKey, rankSimilarCards, titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
 import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
@@ -113,6 +113,36 @@ function neighborRanks(
   return { prevRank: prev?.rank ?? null, nextRank: next?.rank ?? null };
 }
 
+function SimilarCards({
+  cards,
+  lists,
+  onOpen,
+}: {
+  cards: ReturnType<typeof rankSimilarCards>;
+  lists: List[];
+  onOpen: (cardId: string) => void;
+}) {
+  if (cards.length === 0) {
+    return null;
+  }
+  const nameOf = new Map(lists.map((list) => [list.id, list.title]));
+  return (
+    <section className="similar-block">
+      <h3>似たカード {cards.length}</h3>
+      <ul className="similar">
+        {cards.map((item) => (
+          <li key={item.id}>
+            <button type="button" className={item.duplicate ? "duplicate" : undefined} onClick={() => onOpen(item.id)}>
+              {item.duplicate ? "重複の可能性" : "類似"} {item.title}
+              {nameOf.get(item.listId) ? `（${nameOf.get(item.listId)}）` : ""}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Ticket({
   card,
   onOpen,
@@ -201,6 +231,7 @@ function ListColumn({
   boardKey,
   slug,
   groupFull,
+  openCards,
 }: {
   list: List;
   cards: Card[];
@@ -222,6 +253,7 @@ function ListColumn({
   boardKey: string;
   slug: string;
   groupFull: boolean;
+  openCards: Card[];
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -230,7 +262,18 @@ function ListColumn({
   const [wipDraft, setWipDraft] = useState(list.wipLimit == null ? "" : String(list.wipLimit));
   const [copyBoardId, setCopyBoardId] = useState(boardId);
   const [templateId, setTemplateId] = useState("");
+  const [similar, setSimilar] = useState<ReturnType<typeof rankSimilarCards>>([]);
   const skipCommit = useRef(false);
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const query = title
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) ?? "";
+      setSimilar(rankSimilarCards({ title: query }, openCards, { limit: 3 }));
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [title, openCards]);
   useEffect(() => {
     setWipDraft(list.wipLimit == null ? "" : String(list.wipLimit));
   }, [list.wipLimit]);
@@ -520,6 +563,26 @@ function ListColumn({
         />
         <button type="submit">+</button>
       </form>
+      {similar.length > 0 ? (
+        <ul className="similar" aria-label="似たカード">
+          {similar.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                className={item.duplicate ? "duplicate" : undefined}
+                onClick={() => {
+                  const card = openCards.find((row) => row.id === item.id);
+                  if (card) {
+                    onOpen(card);
+                  }
+                }}
+              >
+                {item.duplicate ? "重複の可能性" : "類似"} {item.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {templates.length > 0 ? (
         <form
           className="batch"
@@ -1303,6 +1366,7 @@ export function BoardPage({ user, onLogout }: Props) {
               boardKey={snapshot.board.key}
               slug={boardSlug(snapshot.board.title)}
               groupFull={sharedWipBlocks(snapshot, list.id, null)}
+              openCards={uniqueById(snapshot.cards).filter((card) => !card.archived)}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)
@@ -1493,6 +1557,28 @@ export function BoardPage({ user, onLogout }: Props) {
                     : rest,
                 };
               });
+            }}
+          />
+          <SimilarCards
+            cards={rankSimilarCards(
+              {
+                title: (snapshot.cards.find((card) => card.id === editing.id) ?? editing).title,
+                description: (snapshot.cards.find((card) => card.id === editing.id) ?? editing).description,
+              },
+              snapshot.cards,
+              { limit: 5, excludeId: editing.id },
+            )}
+            lists={snapshot.lists}
+            onOpen={(cardId) => {
+              const card = snapshot.cards.find((row) => row.id === cardId);
+              if (!card) {
+                return;
+              }
+              const draft = snapshot.unsaved?.find((row) => row.cardId === card.id);
+              setEditing(draft ? { ...card, title: draft.title, description: draft.description } : card);
+              setDraftError("");
+              setTemplateSaved(false);
+              navigate(`/b/${boardId}/${boardSlug(snapshot.board.title)}/${card.id}`);
             }}
           />
           <div className="composer">

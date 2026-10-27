@@ -701,6 +701,31 @@ a {
   border-top: 1px solid var(--paper-edge);
 }
 
+.similar {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+.similar button {
+  font-size: 0.78rem;
+}
+
+.similar button.duplicate {
+  color: var(--rust);
+}
+
+.similar-block {
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--paper-edge);
+}
+
+.similar-block h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
 .ticket p {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;

@@ -98,6 +98,15 @@ export const api = {
     request<{ ok: boolean }>(`/api/boards/${boardId}/cards/${cardId}`, { method: "DELETE" }),
   deleteList: (boardId: string, listId: string) =>
     request<{ ok: boolean }>(`/api/boards/${boardId}/lists/${listId}`, { method: "DELETE" }),
+  moveList: (
+    boardId: string,
+    listId: string,
+    body: { prevRank: number | null; nextRank: number | null },
+  ) =>
+    request<List>(`/api/boards/${boardId}/lists/${listId}/move`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   patchCard: (
     boardId: string,
     cardId: string,

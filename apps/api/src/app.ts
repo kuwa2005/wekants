@@ -577,6 +577,43 @@ export function createApp(db: AppDb): Hono<Env> {
     return c.json(updated);
   });
 
+  app.post("/api/boards/:boardId/lists/:listId/move", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const listId = c.req.param("listId");
+    await ownedBoard(userId, boardId);
+    const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
+    if (!list || list.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{ prevRank?: number | null; nextRank?: number | null }>();
+    const prevRank = body.prevRank ?? null;
+    const nextRank = body.nextRank ?? null;
+    const placed = placeRank(prevRank, nextRank);
+    if (placed.needsRebalance) {
+      const siblings = (
+        await db.select().from(lists).where(eq(lists.boardId, boardId)).orderBy(asc(lists.rank))
+      ).filter((row) => row.id !== listId);
+      const insertAt =
+        prevRank == null ? 0 : siblings.findIndex((row) => Number(row.rank) === prevRank) + 1;
+      const ordered = [...siblings.slice(0, insertAt), list, ...siblings.slice(insertAt)];
+      const ranks = rebalanceRanks(ordered.length);
+      for (const [index, row] of ordered.entries()) {
+        await db
+          .update(lists)
+          .set({ rank: ranks[index] ?? 0 })
+          .where(eq(lists.id, row.id));
+      }
+    } else {
+      await db.update(lists).set({ rank: placed.rank }).where(eq(lists.id, listId));
+    }
+    const moved = mapList(
+      (await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1)))!,
+    );
+    broadcast(boardId, { type: "list.upserted", payload: moved, actorId: userId });
+    return c.json(moved);
+  });
+
   app.delete("/api/boards/:boardId/lists/:listId", async (c) => {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");

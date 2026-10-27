@@ -10,7 +10,11 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import type { BoardSnapshot, Card, List, UserPublic, WsEvent } from "@wekants/shared";
 import { api } from "../api";
 import { Markdown } from "../Markdown";
@@ -21,7 +25,7 @@ type Props = {
 };
 
 function neighborRanks(
-  listCards: Card[],
+  listCards: Array<{ id: string; rank: number }>,
   movingId: string,
   beforeId: string | null,
 ): { prevRank: number | null; nextRank: number | null } {
@@ -85,6 +89,17 @@ function ListColumn({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(list.title);
   const skipCommit = useRef(false);
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setColumnRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `column:${list.id}`,
+    data: { type: "list-column", listId: list.id },
+  });
   const { setNodeRef } = useDroppable({
     id: `list:${list.id}`,
     data: { type: "list", listId: list.id },
@@ -101,7 +116,17 @@ function ListColumn({
 
   return (
     <section
-      className={list.collapsed ? "list collapsed" : "list"}
+      ref={setColumnRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={
+        list.collapsed
+          ? isDragging
+            ? "list collapsed dragging"
+            : "list collapsed"
+          : isDragging
+            ? "list dragging"
+            : "list"
+      }
       data-list-id={list.id}
       onDragOver={(event) => {
         if ([...event.dataTransfer.types].includes("Files")) {
@@ -118,6 +143,15 @@ function ListColumn({
       }}
     >
       <div className="list-head">
+        <button
+          type="button"
+          className="grip"
+          {...attributes}
+          {...listeners}
+          aria-label={`${list.title} を移動`}
+        >
+          移動
+        </button>
         {renaming ? (
           <input
             className="list-title"
@@ -321,6 +355,43 @@ export function BoardPage({ user, onLogout }: Props) {
     if (!snapshot || !event.over) {
       return;
     }
+    const activeType = event.active.data.current?.type;
+    if (activeType === "list-column") {
+      const movingListId = String(event.active.data.current?.listId ?? "");
+      const overId = String(event.over.id);
+      let beforeId: string | null = null;
+      if (overId.startsWith("column:") || overId.startsWith("list:")) {
+        beforeId = overId.slice(overId.indexOf(":") + 1);
+      } else {
+        beforeId = snapshot.cards.find((card) => card.id === overId)?.listId ?? null;
+      }
+      if (!beforeId || beforeId === movingListId) {
+        return;
+      }
+      const { prevRank, nextRank } = neighborRanks(snapshot.lists, movingListId, beforeId);
+      setSnapshot((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          lists: current.lists.map((list) =>
+            list.id === movingListId ? { ...list, rank: (prevRank ?? 0) + 1 } : list,
+          ),
+        };
+      });
+      const updated = await api.moveList(boardId, movingListId, { prevRank, nextRank });
+      setSnapshot((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          lists: current.lists.map((list) => (list.id === movingListId ? updated : list)),
+        };
+      });
+      return;
+    }
     const cardId = String(event.active.id);
     const moving = snapshot.cards.find((card) => card.id === cardId);
     if (!moving) {
@@ -329,8 +400,8 @@ export function BoardPage({ user, onLogout }: Props) {
     const overId = String(event.over.id);
     let listId = moving.listId;
     let beforeId: string | null = null;
-    if (overId.startsWith("list:")) {
-      listId = overId.slice(5);
+    if (overId.startsWith("list:") || overId.startsWith("column:")) {
+      listId = overId.slice(overId.indexOf(":") + 1);
     } else {
       const overCard = snapshot.cards.find((card) => card.id === overId);
       if (!overCard) {
@@ -405,6 +476,10 @@ export function BoardPage({ user, onLogout }: Props) {
         <button type="submit">リストを追加</button>
       </form>
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <SortableContext
+          items={lists.map((list) => `column:${list.id}`)}
+          strategy={horizontalListSortingStrategy}
+        >
         <div className="board">
           {lists.map((list) => (
             <ListColumn
@@ -468,6 +543,7 @@ export function BoardPage({ user, onLogout }: Props) {
             />
           ))}
         </div>
+        </SortableContext>
       </DndContext>
       {editing ? (
         <aside className="editor">

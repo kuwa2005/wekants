@@ -102,6 +102,15 @@ test("import a markdown file onto a list", async ({ page }) => {
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
+test("drag a list before the first list", async ({ page }) => {
+  await register(page, `shift_${stamp}`);
+  await hangBoard(page, "Bench");
+  const doing = page.locator(".list").nth(1);
+  const ready = page.locator(".list").nth(0);
+  await dragOnto(page, doing.getByRole("button", { name: "着手中 を移動" }), ready);
+  await expect(page.locator(".list").nth(0).getByRole("button", { name: "着手中 の名前を変更" })).toBeVisible();
+});
+
 test("collapse a list and open it again", async ({ page }) => {
   await register(page, `fold_${stamp}`);
   await hangBoard(page, "Clamp");

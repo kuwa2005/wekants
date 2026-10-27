@@ -308,6 +308,19 @@ a {
   padding: 0.45rem 0.1rem;
 }
 
+.grip {
+  background: transparent;
+  color: var(--mute);
+  border: 1px solid var(--mute);
+  cursor: grab;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.list.dragging {
+  opacity: 0.55;
+}
+
 .fold {
   background: transparent;
   color: var(--paper);

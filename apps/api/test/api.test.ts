@@ -173,6 +173,33 @@ Use **3mm** steel.
     expect((await moved.json()).workspaceId).toBe(bay.id);
   });
 
+  it("moves a list before another list", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "hiro", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Order" }),
+    });
+    const snapshot = await created.json();
+    const [first, second] = snapshot.lists;
+    const moved = await app.request(`/api/boards/${snapshot.board.id}/lists/${second.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ prevRank: null, nextRank: first.rank }),
+    });
+    expect(moved.status).toBe(200);
+    const again = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    const titles = (await again.json()).lists.map((list: { title: string }) => list.title);
+    expect(titles[0]).toBe(second.title);
+  });
+
   it("renames a list", async () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",

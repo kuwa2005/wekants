@@ -26,14 +26,18 @@ export function App() {
       <Route
         path="/login"
         element={
-          user ? <Navigate to="/" replace /> : <GatePage mode="login" onAuth={setUser} />
+          user ? (
+            <Navigate to={user.homeBoardId ? `/b/${user.homeBoardId}` : "/"} replace />
+          ) : (
+            <GatePage mode="login" onAuth={setUser} />
+          )
         }
       />
       <Route
         path="/register"
         element={
           user ? (
-            <Navigate to="/" replace />
+            <Navigate to={user.homeBoardId ? `/b/${user.homeBoardId}` : "/"} replace />
           ) : (
             <GatePage mode="register" onAuth={setUser} />
           )

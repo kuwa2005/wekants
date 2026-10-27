@@ -4,6 +4,7 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  homeBoardId: text("home_board_id"),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

@@ -1,6 +1,7 @@
 export type UserPublic = {
   id: string;
   username: string;
+  homeBoardId: string | null;
 };
 
 export type Workspace = {
@@ -49,11 +50,13 @@ export type BoardSnapshot = {
   board: Board;
   lists: List[];
   cards: Card[];
+  home?: boolean;
 };
 
 export type WorkspaceTree = {
   workspaces: Array<Workspace & { boards: Board[] }>;
   looseBoards: Board[];
+  homeBoardId: string | null;
 };
 
 export type WsEvent =

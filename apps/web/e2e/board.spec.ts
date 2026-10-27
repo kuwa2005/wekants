@@ -376,6 +376,32 @@ test("a board rename reaches another open view and unpublishing hides it", async
   await guestContext.close();
 });
 
+test("login opens the home board without moving it", async ({ page }) => {
+  const name = `home_${stamp}`;
+  await register(page, name);
+  await hangBoard(page, "Daily");
+  await page.getByRole("button", { name: "ホームにする" }).click();
+  await expect(page.getByRole("button", { name: "ホームをやめる" })).toBeVisible();
+  await page.getByRole("button", { name: "出る" }).click();
+  await page.goto("/login");
+  await page.locator('input[name="username"]').fill(name);
+  await page.locator('input[name="password"]').fill("password1");
+  await page.getByRole("button", { name: "入る" }).click();
+  await expect(page.getByRole("heading", { name: "Daily の名前を変更" })).toBeVisible();
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  const home = page.locator(".loose-boards").filter({ has: page.getByRole("heading", { name: "ホーム" }) });
+  await expect(home.getByRole("link", { name: "Daily", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace").first().getByRole("link", { name: "Daily", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Daily のホームをやめる" }).click();
+  await expect(page.getByText("ログイン後に開くボードはありません")).toBeVisible();
+  await page.getByRole("button", { name: "出る" }).click();
+  await page.goto("/login");
+  await page.locator('input[name="username"]').fill(name);
+  await page.locator('input[name="password"]').fill("password1");
+  await page.getByRole("button", { name: "入る" }).click();
+  await expect(page.getByRole("heading", { name: "wekants" })).toBeVisible();
+});
+
 test("an unsigned visitor can read a public board but not a private one", async ({ page, browser }) => {
   await register(page, `pub_${stamp}`);
   await hangBoard(page, "Open");

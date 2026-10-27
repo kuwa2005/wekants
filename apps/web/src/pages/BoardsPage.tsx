@@ -113,6 +113,8 @@ function WorkspaceColumn({
   onStar,
   onDelete,
   onCopy,
+  homeBoardId,
+  onHome,
 }: {
   workspace: WorkspaceTree["workspaces"][number];
   boards: Board[];
@@ -122,6 +124,8 @@ function WorkspaceColumn({
   onStar: (starred: boolean) => Promise<void>;
   onDelete: () => Promise<void>;
   onCopy: (boardId: string, cards: boolean) => Promise<void>;
+  homeBoardId: string | null;
+  onHome: (boardId: string, home: boolean) => Promise<void>;
 }) {
   const {
     attributes,
@@ -258,6 +262,18 @@ function WorkspaceColumn({
             <div key={board.id} className="ticket-row">
               <BoardTicket board={board} />
               <BoardCopy board={board} onCopy={onCopy} />
+              <button
+                type="button"
+                className="ghost"
+                aria-label={
+                  board.id === homeBoardId
+                    ? `${board.title} のホームをやめる`
+                    : `${board.title} をホームにする`
+                }
+                onClick={() => void onHome(board.id, board.id !== homeBoardId)}
+              >
+                {board.id === homeBoardId ? "ホームをやめる" : "ホーム"}
+              </button>
             </div>
           ))}
         </SortableContext>
@@ -368,7 +384,7 @@ export function BoardsPage({ user, onLogout }: Props) {
   }
 
   useEffect(() => {
-    reload().catch(() => setTree({ workspaces: [], looseBoards: [] }));
+    reload().catch(() => setTree({ workspaces: [], looseBoards: [], homeBoardId: null }));
   }, []);
 
   async function addWorkspace(event: FormEvent) {
@@ -515,11 +531,34 @@ export function BoardsPage({ user, onLogout }: Props) {
                 const snapshot = await api.copyBoard(boardId, workspace.id, cards);
                 navigate(`/b/${snapshot.board.id}`);
               }}
+              homeBoardId={tree.homeBoardId}
+              onHome={async (boardId, home) => {
+                await api.patchBoard(boardId, { home });
+                await reload();
+              }}
             />
           ))}
         </div>
         </SortableContext>
       </DndContext>
+      <section className="loose-boards">
+        <h2>ホーム</h2>
+        {tree.homeBoardId ? (
+          <div className="workspace-boards">
+            {tree.workspaces
+              .flatMap((workspace) => workspace.boards)
+              .concat(tree.looseBoards)
+              .filter((board) => board.id === tree.homeBoardId)
+              .map((board) => (
+                <Link key={board.id} className="board-ticket" to={`/b/${board.id}`}>
+                  {board.title}
+                </Link>
+              ))}
+          </div>
+        ) : (
+          <p className="hint">ログイン後に開くボードはありません</p>
+        )}
+      </section>
       {tree.looseBoards.length > 0 ? (
         <section className="loose-boards">
           <h2>置き場のないボード</h2>

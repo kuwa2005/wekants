@@ -439,6 +439,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const { boardId = "" } = useParams();
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [missing, setMissing] = useState(false);
+  const [isHome, setIsHome] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitle = useRef(false);
@@ -457,6 +458,7 @@ export function BoardPage({ user, onLogout }: Props) {
       .board(boardId)
       .then((next) => {
         setSnapshot(next);
+        setIsHome(Boolean(next.home));
         setMissing(false);
       })
       .catch(() => {
@@ -821,6 +823,14 @@ export function BoardPage({ user, onLogout }: Props) {
               }
             >
               {snapshot.board.isPublic ? "公開をやめる" : "公開する"}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void api.patchBoard(boardId, { home: !isHome }).then(() => setIsHome((current) => !current))
+              }
+            >
+              {isHome ? "ホームをやめる" : "ホームにする"}
             </button>
           </>
         ) : (

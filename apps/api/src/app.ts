@@ -189,7 +189,8 @@ export function createApp(db: AppDb): Hono<Env> {
       createdAt: now(),
     });
     await issueSession(c, userId);
-    return c.json({ id: userId, username });
+    const created = await one(db.select().from(users).where(eq(users.id, userId)).limit(1));
+    return c.json(await publicUser(created!));
   });
 
   app.post("/api/auth/login", async (c) => {
@@ -201,7 +202,7 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(401, { message: "ユーザー名かパスワードが違います" });
     }
     await issueSession(c, user.id);
-    return c.json({ id: user.id, username: user.username });
+    return c.json(await publicUser(user));
   });
 
   app.post("/api/auth/password", async (c) => {
@@ -237,7 +238,7 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!user) {
       throw new HTTPException(401, { message: "ログインが必要です" });
     }
-    return c.json({ id: user.id, username: user.username });
+    return c.json(await publicUser(user));
   });
 
   app.use("/api/workspaces", async (c, next) => {
@@ -271,6 +272,17 @@ export function createApp(db: AppDb): Hono<Env> {
     c.set("userId", "");
     await next();
   });
+
+  async function publicUser(user: typeof users.$inferSelect) {
+    let homeBoardId = user.homeBoardId;
+    if (homeBoardId) {
+      const board = await one(db.select().from(boards).where(eq(boards.id, homeBoardId)).limit(1));
+      if (!board || board.ownerId !== user.id || board.archived) {
+        homeBoardId = null;
+      }
+    }
+    return { id: user.id, username: user.username, homeBoardId };
+  }
 
   async function ownedWorkspace(userId: string, workspaceId: string) {
     const workspace = await one(
@@ -410,6 +422,9 @@ export function createApp(db: AppDb): Hono<Env> {
           .map(mapBoard),
       })),
       looseBoards: boardRows.filter((board) => board.workspaceId == null).map(mapBoard),
+      homeBoardId: (await publicUser(
+        (await one(db.select().from(users).where(eq(users.id, userId)).limit(1)))!,
+      )).homeBoardId,
     });
   });
 
@@ -608,13 +623,22 @@ export function createApp(db: AppDb): Hono<Env> {
     const userId = c.get("userId");
     const boardId = c.req.param("boardId");
     await visibleBoard(userId, boardId);
-    return c.json(await snapshot(boardId));
+    const snap = await snapshot(boardId);
+    const viewer = userId
+      ? await one(db.select().from(users).where(eq(users.id, userId)).limit(1))
+      : undefined;
+    return c.json({ ...snap, home: viewer?.homeBoardId === boardId });
   });
 
   app.patch("/api/boards/:boardId", async (c) => {
     const userId = c.get("userId");
     const board = await ownedBoard(userId, c.req.param("boardId"));
-    const body = await c.req.json<{ title?: string; isTemplate?: boolean; isPublic?: boolean }>();
+    const body = await c.req.json<{
+      title?: string;
+      isTemplate?: boolean;
+      isPublic?: boolean;
+      home?: boolean;
+    }>();
     const patch: { title?: string; isTemplate?: boolean; isPublic?: boolean } = {};
     if (typeof body.title === "string") {
       try {
@@ -630,16 +654,28 @@ export function createApp(db: AppDb): Hono<Env> {
     if (typeof body.isPublic === "boolean") {
       patch.isPublic = body.isPublic;
     }
-    if (Object.keys(patch).length === 0) {
+    if (Object.keys(patch).length === 0 && typeof body.home !== "boolean") {
       throw new HTTPException(400, { message: "変更がありません" });
     }
-    await db.update(boards).set(patch).where(eq(boards.id, board.id));
+    if (Object.keys(patch).length > 0) {
+      await db.update(boards).set(patch).where(eq(boards.id, board.id));
+    }
+    if (body.home === true) {
+      await db.update(users).set({ homeBoardId: board.id }).where(eq(users.id, userId));
+    } else if (body.home === false) {
+      await db
+        .update(users)
+        .set({ homeBoardId: null })
+        .where(and(eq(users.id, userId), eq(users.homeBoardId, board.id)));
+    }
     const updated = mapBoard(
       (await one(db.select().from(boards).where(eq(boards.id, board.id)).limit(1)))!,
     );
-    broadcast(board.id, { type: "board.updated", payload: updated, actorId: userId });
-    if (updated.isPublic === false) {
-      closeGuests(board.id, board.ownerId);
+    if (Object.keys(patch).length > 0) {
+      broadcast(board.id, { type: "board.updated", payload: updated, actorId: userId });
+      if (updated.isPublic === false) {
+        closeGuests(board.id, board.ownerId);
+      }
     }
     return c.json(updated);
   });

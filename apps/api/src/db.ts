@@ -9,8 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  home_board_id TEXT,
   created_at BIGINT NOT NULL
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS home_board_id TEXT;
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

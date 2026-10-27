@@ -67,7 +67,10 @@ export const api = {
   deleteWorkspace: (workspaceId: string) =>
     request<{ ok: boolean }>(`/api/workspaces/${workspaceId}`, { method: "DELETE" }),
   publicBoards: () => request<{ boards: Board[] }>("/api/boards/public"),
-  patchBoard: (boardId: string, patch: { title?: string; isTemplate?: boolean; isPublic?: boolean }) =>
+  patchBoard: (
+    boardId: string,
+    patch: { title?: string; isTemplate?: boolean; isPublic?: boolean; home?: boolean },
+  ) =>
     request<Board>(`/api/boards/${boardId}`, {
       method: "PATCH",
       body: JSON.stringify(patch),

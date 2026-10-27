@@ -1022,4 +1022,87 @@ Use **3mm** steel.
       snapshot.board.id,
     );
   });
+
+  it("remembers one home board and leaves it in its workspace", async () => {
+    const kim = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "kim", password: "password1" }),
+    });
+    const jar = cookie(kim);
+    expect((await kim.json()).homeBoardId).toBeNull();
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Daily" }),
+    });
+    const snapshot = await created.json();
+    const boardId = snapshot.board.id as string;
+    const workspaceId = snapshot.board.workspaceId as string;
+    const marked = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ home: true }),
+    });
+    expect(marked.status).toBe(200);
+    const me = await app.request("/api/auth/me", { headers: { cookie: jar } });
+    expect((await me.json()).homeBoardId).toBe(boardId);
+    const opened = await app.request(`/api/boards/${boardId}`, { headers: { cookie: jar } });
+    expect((await opened.json()).home).toBe(true);
+    const tree = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const listed = await tree.json();
+    expect(listed.homeBoardId).toBe(boardId);
+    expect(listed.workspaces[0].id).toBe(workspaceId);
+    expect(listed.workspaces[0].boards.map((board: { id: string }) => board.id)).toContain(boardId);
+
+    const other = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Other", workspaceId }),
+    });
+    const otherId = (await other.json()).board.id as string;
+    const replaced = await app.request(`/api/boards/${otherId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ home: true }),
+    });
+    expect(replaced.status).toBe(200);
+    const after = await app.request("/api/auth/me", { headers: { cookie: jar } });
+    expect((await after.json()).homeBoardId).toBe(otherId);
+    const cleared = await app.request(`/api/boards/${otherId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ home: false }),
+    });
+    expect(cleared.status).toBe(200);
+    const none = await app.request("/api/auth/me", { headers: { cookie: jar } });
+    expect((await none.json()).homeBoardId).toBeNull();
+
+    const stranger = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "kai", password: "password1" }),
+    });
+    const strangerJar = cookie(stranger);
+    const denied = await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: strangerJar },
+      body: JSON.stringify({ home: true }),
+    });
+    expect(denied.status).toBe(404);
+
+    await app.request(`/api/boards/${boardId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ home: true }),
+    });
+    await app.request("/api/auth/logout", { method: "POST", headers: { cookie: jar } });
+    const logged = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "kim", password: "password1" }),
+    });
+    expect(logged.status).toBe(200);
+    expect((await logged.json()).homeBoardId).toBe(boardId);
+  });
 });

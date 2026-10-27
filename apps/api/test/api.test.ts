@@ -54,7 +54,7 @@ describe("auth, boards, markdown, workspaces", () => {
 
   beforeEach(async () => {
     await sql.unsafe(
-      "TRUNCATE cards, lists, boards, workspaces, sessions, users CASCADE",
+      "TRUNCATE card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
     );
     app = createApp(db);
   });
@@ -1104,5 +1104,82 @@ Use **3mm** steel.
     });
     expect(logged.status).toBe(200);
     expect((await logged.json()).homeBoardId).toBe(boardId);
+  });
+
+  it("saves a card as a template and creates another card from it", async () => {
+    const ira = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ira", password: "password1" }),
+    });
+    const jar = cookie(ira);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Patterns" }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Standup" }),
+    });
+    const card = await cardRes.json();
+    const described = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ description: "毎朝" }),
+    });
+    expect(described.status).toBe(200);
+    const saved = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}/template`, {
+      method: "POST",
+      headers: { cookie: jar },
+    });
+    expect(saved.status).toBe(201);
+    const savedBody = await saved.json();
+    expect(savedBody.template).toMatchObject({ title: "Standup", description: "毎朝" });
+    expect(savedBody.card).toMatchObject({ id: card.id, title: "Standup", description: "毎朝" });
+    const listed = await app.request("/api/card-templates", { headers: { cookie: jar } });
+    expect((await listed.json()).templates).toEqual([
+      expect.objectContaining({ id: savedBody.template.id, title: "Standup" }),
+    ]);
+    const made = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[1].id, templateId: savedBody.template.id }),
+    });
+    expect(made.status).toBe(201);
+    expect(await made.json()).toMatchObject({
+      listId: snapshot.lists[1].id,
+      title: "Standup",
+      description: "毎朝",
+    });
+    const board = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const titles = (await board.json()).cards.map((item: { title: string }) => item.title);
+    expect(titles).toEqual(["Standup", "Standup"]);
+
+    const stranger = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ivo", password: "password1" }),
+    });
+    const strangerJar = cookie(stranger);
+    const own = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: strangerJar },
+      body: JSON.stringify({ title: "Mine" }),
+    });
+    const ownBody = await own.json();
+    const stolen = await app.request(`/api/boards/${ownBody.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: strangerJar },
+      body: JSON.stringify({
+        listId: ownBody.lists[0].id,
+        templateId: savedBody.template.id,
+      }),
+    });
+    expect(stolen.status).toBe(404);
+    const theirs = await app.request("/api/card-templates", { headers: { cookie: strangerJar } });
+    expect((await theirs.json()).templates).toEqual([]);
   });
 });

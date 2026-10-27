@@ -15,7 +15,7 @@ import {
   horizontalListSortingStrategy,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { BoardSnapshot, Card, List, TitleBatch, UserPublic, WsEvent } from "@wekants/shared";
+import type { BoardSnapshot, Card, CardTemplate, List, TitleBatch, UserPublic, WsEvent } from "@wekants/shared";
 import { titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
 import { LineBatch } from "../LineBatch";
@@ -115,6 +115,8 @@ function ListColumn({
   onToggle,
   onPatch,
   onCopy,
+  templates,
+  onFromTemplate,
   canEdit,
   boards,
   boardId,
@@ -129,6 +131,8 @@ function ListColumn({
   onToggle: (collapsed: boolean) => Promise<void>;
   onPatch: (patch: Partial<Pick<List, "width" | "wipLimit" | "archived" | "color" | "cardEdit">>) => Promise<void>;
   onCopy: (targetBoardId: string) => Promise<void>;
+  templates: CardTemplate[];
+  onFromTemplate: (templateId: string) => Promise<void>;
   canEdit: boolean;
   boards: Array<{ id: string; title: string }>;
   boardId: string;
@@ -139,6 +143,7 @@ function ListColumn({
   const [draft, setDraft] = useState(list.title);
   const [wipDraft, setWipDraft] = useState(list.wipLimit == null ? "" : String(list.wipLimit));
   const [copyBoardId, setCopyBoardId] = useState(boardId);
+  const [templateId, setTemplateId] = useState("");
   const skipCommit = useRef(false);
   useEffect(() => {
     setWipDraft(list.wipLimit == null ? "" : String(list.wipLimit));
@@ -393,6 +398,7 @@ function ListColumn({
       ) : list.wipLimit != null && cards.length >= list.wipLimit ? (
         <p className="hint">WIP の上限です</p>
       ) : (
+      <>
       <form className="batch" onSubmit={submit}>
         <textarea
           aria-label={`${list.title} の新しいカード`}
@@ -410,6 +416,35 @@ function ListColumn({
         />
         <button type="submit">+</button>
       </form>
+      {templates.length > 0 ? (
+        <form
+          className="batch"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!templateId) {
+              return;
+            }
+            void onFromTemplate(templateId);
+          }}
+        >
+          <select
+            aria-label={`${list.title} の雛形`}
+            value={templateId}
+            onChange={(event) => setTemplateId(event.target.value)}
+          >
+            <option value="">雛形を選ぶ</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.title}
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={!templateId}>
+            雛形から追加
+          </button>
+        </form>
+      ) : null}
+      </>
       )}
       {!canEdit || list.cardEdit === "deny" ? null : (
       <label className="hint">
@@ -440,6 +475,8 @@ export function BoardPage({ user, onLogout }: Props) {
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [missing, setMissing] = useState(false);
   const [isHome, setIsHome] = useState(false);
+  const [templates, setTemplates] = useState<CardTemplate[]>([]);
+  const [templateSaved, setTemplateSaved] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitle = useRef(false);
@@ -466,6 +503,17 @@ export function BoardPage({ user, onLogout }: Props) {
         setMissing(true);
       });
   }, [boardId]);
+
+  useEffect(() => {
+    if (!user) {
+      setTemplates([]);
+      return;
+    }
+    api
+      .cardTemplates()
+      .then((next) => setTemplates(next.templates))
+      .catch(() => setTemplates([]));
+  }, [user]);
 
   useEffect(() => {
     api
@@ -908,8 +956,17 @@ export function BoardPage({ user, onLogout }: Props) {
                 .slice()
                 .sort((a, b) => a.rank - b.rank)}
               onAdd={(title) => addCard(list.id, title)}
+              templates={templates}
+              onFromTemplate={(templateId) =>
+                api.createCardFromTemplate(boardId, list.id, templateId).then((card) => {
+                  setSnapshot((current) =>
+                    current ? { ...current, cards: upsertById(current.cards, [card]) } : current,
+                  );
+                })
+              }
               onOpen={(card) => {
                 setEditing(card);
+                setTemplateSaved(false);
                 setCopyBoardId(boardId);
                 setCopyListId(card.listId);
               }}
@@ -1085,6 +1142,22 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               複製
             </button>
+            <button
+              type="button"
+              onClick={() =>
+                void api.saveCardTemplate(boardId, editing.id).then((saved) => {
+                  setTemplates((current) =>
+                    current.some((template) => template.id === saved.template.id)
+                      ? current
+                      : [...current, saved.template],
+                  );
+                  setTemplateSaved(true);
+                })
+              }
+            >
+              雛形として保存
+            </button>
+            {templateSaved ? <p className="hint">雛形にしました。元のカードはそのままです。</p> : null}
             <button
               type="button"
               onClick={async () => {

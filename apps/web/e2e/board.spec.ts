@@ -84,7 +84,7 @@ test("card body renders markdown", async ({ page }) => {
   const ticket = page.locator("[data-card-id]").first();
   await ticket.dblclick();
   await page.locator(".editor textarea").fill("Use **3mm** steel.");
-  await page.locator(".editor").getByRole("button", { name: "保存" }).click();
+  await page.locator(".editor").getByRole("button", { name: "保存", exact: true }).click();
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
@@ -374,6 +374,23 @@ test("a board rename reaches another open view and unpublishing hides it", async
   await expect(guest.getByText("このボードは見られません")).toBeVisible();
   await ownerContext.close();
   await guestContext.close();
+});
+
+test("save a card as a template and add it again", async ({ page }) => {
+  await register(page, `tpl_${stamp}`);
+  await hangBoard(page, "Patterns");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Standup");
+  await ready.getByRole("button", { name: "+" }).click();
+  await ready.locator("[data-card-id]").first().dblclick();
+  await page.locator(".editor").getByRole("button", { name: "雛形として保存" }).click();
+  await expect(page.getByText("雛形にしました。元のカードはそのままです。")).toBeVisible();
+  await expect(ready.locator("[data-card-id]")).toHaveCount(1);
+  const doing = page.locator(".list").nth(1);
+  await doing.getByLabel("着手中 の雛形").selectOption({ label: "Standup" });
+  await doing.getByRole("button", { name: "雛形から追加" }).click();
+  await expect(doing.locator("[data-card-id]")).toContainText("Standup");
+  await expect(ready.locator("[data-card-id]")).toContainText("Standup");
 });
 
 test("login opens the home board without moving it", async ({ page }) => {

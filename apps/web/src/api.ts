@@ -2,6 +2,7 @@ import type {
   Board,
   BoardSnapshot,
   Card,
+  CardTemplate,
   List,
   UserPublic,
   Workspace,
@@ -126,6 +127,17 @@ export const api = {
     request<Card>(`/api/boards/${boardId}/cards`, {
       method: "POST",
       body: JSON.stringify({ listId, title, description }),
+    }),
+  cardTemplates: () => request<{ templates: CardTemplate[] }>("/api/card-templates"),
+  saveCardTemplate: (boardId: string, cardId: string) =>
+    request<{ template: CardTemplate; card: Card }>(
+      `/api/boards/${boardId}/cards/${cardId}/template`,
+      { method: "POST" },
+    ),
+  createCardFromTemplate: (boardId: string, listId: string, templateId: string) =>
+    request<Card>(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      body: JSON.stringify({ listId, templateId }),
     }),
   importMarkdownCard: (
     boardId: string,

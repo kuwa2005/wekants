@@ -19,7 +19,7 @@ import {
   type List,
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
-import { boards, cards, lists, sessions, users, workspaces } from "./schema.ts";
+import { boards, cardTemplates, cards, lists, sessions, users, workspaces } from "./schema.ts";
 import { broadcast, closeGuests } from "./hub.ts";
 
 export type Env = {
@@ -1094,6 +1094,7 @@ export function createApp(db: AppDb): Hono<Env> {
       description?: string;
       markdown?: string;
       filename?: string;
+      templateId?: string;
     }>();
     const list = await one(
       db.select().from(lists).where(eq(lists.id, body.listId ?? "")).limit(1),
@@ -1102,12 +1103,22 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(400, { message: "このボードのリストではありません" });
     }
     await assertListAcceptsCard(list.id, true);
-    const draft = body.markdown
-      ? markdownToCardDraft(
-          body.markdown,
-          (body.filename ?? "note.md").replace(/\.md$/i, ""),
+    const template = body.templateId
+      ? await one(
+          db.select().from(cardTemplates).where(eq(cardTemplates.id, body.templateId)).limit(1),
         )
-      : { title: body.title ?? "", description: body.description ?? "" };
+      : undefined;
+    if (body.templateId && (!template || template.ownerId !== userId)) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const draft = template
+      ? { title: template.title, description: template.description }
+      : body.markdown
+        ? markdownToCardDraft(
+            body.markdown,
+            (body.filename ?? "note.md").replace(/\.md$/i, ""),
+          )
+        : { title: body.title ?? "", description: body.description ?? "" };
     try {
       validateTitle(draft.title);
     } catch (err) {
@@ -1142,6 +1153,54 @@ export function createApp(db: AppDb): Hono<Env> {
     );
     broadcast(boardId, { type: "card.upserted", payload: card, actorId: userId });
     return c.json(card, 201);
+  });
+
+  app.use("/api/card-templates", async (c, next) => {
+    await attachUser(c);
+    await next();
+  });
+
+  app.get("/api/card-templates", async (c) => {
+    const userId = c.get("userId");
+    const rows = await db
+      .select()
+      .from(cardTemplates)
+      .where(eq(cardTemplates.ownerId, userId))
+      .orderBy(asc(cardTemplates.createdAt));
+    return c.json({
+      templates: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+      })),
+    });
+  });
+
+  app.post("/api/boards/:boardId/cards/:cardId/template", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const cardId = c.req.param("cardId");
+    await ownedBoard(userId, boardId);
+    const card = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    if (!card || card.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const templateId = id();
+    await db.insert(cardTemplates).values({
+      id: templateId,
+      ownerId: userId,
+      title: card.title,
+      description: card.description,
+      createdAt: now(),
+    });
+    const kept = await one(db.select().from(cards).where(eq(cards.id, cardId)).limit(1));
+    return c.json(
+      {
+        template: { id: templateId, title: card.title, description: card.description },
+        card: mapCard(kept!),
+      },
+      201,
+    );
   });
 
   app.post("/api/boards/:boardId/cards/:cardId/copy", async (c) => {

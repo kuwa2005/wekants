@@ -49,6 +49,14 @@ export const lists = pgTable("lists", {
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
+export const cardTemplates = pgTable("card_templates", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
 export const cards = pgTable("cards", {
   id: text("id").primaryKey(),
   boardId: text("board_id").notNull(),

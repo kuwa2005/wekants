@@ -2,6 +2,7 @@ export type {
   Board,
   BoardSnapshot,
   Card,
+  CardTemplate,
   List,
   MoveBoardBody,
   MoveCardBody,

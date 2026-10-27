@@ -36,6 +36,12 @@ export type List = {
   cardEdit: "allow" | "deny";
 };
 
+export type CardTemplate = {
+  id: string;
+  title: string;
+  description: string;
+};
+
 export type Card = {
   id: string;
   boardId: string;

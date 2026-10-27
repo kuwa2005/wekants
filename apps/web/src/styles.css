@@ -291,6 +291,66 @@ a {
   padding: 0.6rem;
 }
 
+.list.narrow {
+  min-width: 12rem;
+  max-width: 12rem;
+}
+
+.list.wide {
+  min-width: 22rem;
+  max-width: 22rem;
+}
+
+.list.color-rust {
+  border-left: 6px solid var(--rust);
+}
+
+.list.color-moss {
+  border-left: 6px solid var(--moss);
+}
+
+.list.color-rivet {
+  border-left: 6px solid var(--rivet);
+}
+
+.list.wip-full {
+  box-shadow: inset 0 0 0 1px var(--rust);
+}
+
+.list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  margin: 0 0 0.5rem;
+}
+
+.list-tools form {
+  margin: 0;
+}
+
+.list-tools input {
+  width: 3.2rem;
+  background: #0f1215;
+  border: 1px solid #2e363d;
+  color: var(--paper);
+  padding: 0.15rem 0.3rem;
+}
+
+.archive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.6rem 1rem 1rem;
+}
+
+.archive h2 {
+  font-family: var(--display);
+  font-size: 0.95rem;
+  margin: 0 0.4rem 0 0;
+}
+
 .list.collapsed {
   min-width: 2.8rem;
   max-width: 2.8rem;

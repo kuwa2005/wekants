@@ -173,6 +173,46 @@ Use **3mm** steel.
     expect((await moved.json()).workspaceId).toBe(bay.id);
   });
 
+  it("stores list width, color, WIP, archive, and edit lock", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ines", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Finish" }),
+    });
+    const snapshot = await created.json();
+    const listId = snapshot.lists[0].id;
+    const patched = await app.request(`/api/boards/${snapshot.board.id}/lists/${listId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({
+        width: "wide",
+        color: "moss",
+        wipLimit: 0,
+        cardEdit: "deny",
+        archived: true,
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const list = await patched.json();
+    expect(list.width).toBe("wide");
+    expect(list.color).toBe("moss");
+    expect(list.wipLimit).toBe(0);
+    expect(list.cardEdit).toBe("deny");
+    expect(list.archived).toBe(true);
+    const blocked = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, title: "Nope" }),
+    });
+    expect(blocked.status).toBe(400);
+  });
+
   it("moves a list before another list", async () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",

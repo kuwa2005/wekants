@@ -68,6 +68,11 @@ function mapList(row: typeof lists.$inferSelect): List {
     title: row.title,
     rank: Number(row.rank),
     collapsed: row.collapsed,
+    width: row.width === "narrow" || row.width === "wide" ? row.width : "normal",
+    wipLimit: row.wipLimit,
+    archived: row.archived,
+    color: row.color === "rust" || row.color === "moss" || row.color === "rivet" ? row.color : "",
+    cardEdit: row.cardEdit === "deny" ? "deny" : "allow",
   };
 }
 
@@ -255,6 +260,22 @@ export function createApp(db: AppDb): Hono<Env> {
       throw new HTTPException(404, { message: "見つかりません" });
     }
     return board;
+  }
+
+  async function assertListAcceptsCard(listId: string, adding: boolean) {
+    const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
+    if (!list) {
+      throw new HTTPException(400, { message: "このボードのリストではありません" });
+    }
+    if (list.cardEdit === "deny") {
+      throw new HTTPException(400, { message: "このリストは編集できません" });
+    }
+    if (adding && list.wipLimit != null) {
+      const sitting = await db.select().from(cards).where(eq(cards.listId, list.id));
+      if (sitting.length >= list.wipLimit) {
+        throw new HTTPException(400, { message: "WIP の上限に達しています" });
+      }
+    }
   }
 
   async function snapshot(boardId: string): Promise<BoardSnapshot> {
@@ -553,8 +574,24 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!list || list.boardId !== boardId) {
       throw new HTTPException(404, { message: "見つかりません" });
     }
-    const body = await c.req.json<{ title?: string; collapsed?: boolean }>();
-    const patch: { title?: string; collapsed?: boolean } = {};
+    const body = await c.req.json<{
+      title?: string;
+      collapsed?: boolean;
+      width?: string;
+      wipLimit?: number | null;
+      archived?: boolean;
+      color?: string;
+      cardEdit?: string;
+    }>();
+    const patch: {
+      title?: string;
+      collapsed?: boolean;
+      width?: string;
+      wipLimit?: number | null;
+      archived?: boolean;
+      color?: string;
+      cardEdit?: string;
+    } = {};
     if (typeof body.title === "string") {
       try {
         validateTitle(body.title);
@@ -566,7 +603,34 @@ export function createApp(db: AppDb): Hono<Env> {
     if (typeof body.collapsed === "boolean") {
       patch.collapsed = body.collapsed;
     }
-    if (patch.title === undefined && patch.collapsed === undefined) {
+    if (body.width !== undefined) {
+      if (body.width !== "narrow" && body.width !== "normal" && body.width !== "wide") {
+        throw new HTTPException(400, { message: "幅が不正です" });
+      }
+      patch.width = body.width;
+    }
+    if (body.wipLimit !== undefined) {
+      if (body.wipLimit !== null && (!Number.isInteger(body.wipLimit) || body.wipLimit < 0)) {
+        throw new HTTPException(400, { message: "WIP の上限が不正です" });
+      }
+      patch.wipLimit = body.wipLimit;
+    }
+    if (typeof body.archived === "boolean") {
+      patch.archived = body.archived;
+    }
+    if (body.color !== undefined) {
+      if (body.color !== "" && body.color !== "rust" && body.color !== "moss" && body.color !== "rivet") {
+        throw new HTTPException(400, { message: "色が不正です" });
+      }
+      patch.color = body.color;
+    }
+    if (body.cardEdit !== undefined) {
+      if (body.cardEdit !== "allow" && body.cardEdit !== "deny") {
+        throw new HTTPException(400, { message: "権限が不正です" });
+      }
+      patch.cardEdit = body.cardEdit;
+    }
+    if (Object.keys(patch).length === 0) {
       throw new HTTPException(400, { message: "変更がありません" });
     }
     await db.update(lists).set(patch).where(eq(lists.id, listId));
@@ -646,6 +710,7 @@ export function createApp(db: AppDb): Hono<Env> {
     if (!list || list.boardId !== boardId) {
       throw new HTTPException(400, { message: "このボードのリストではありません" });
     }
+    await assertListAcceptsCard(list.id, true);
     const draft = body.markdown
       ? markdownToCardDraft(
           body.markdown,
@@ -751,6 +816,15 @@ export function createApp(db: AppDb): Hono<Env> {
     );
     if (!list || list.boardId !== boardId) {
       throw new HTTPException(400, { message: "このボードのリストではありません" });
+    }
+    if (card.listId !== list.id) {
+      const source = await one(db.select().from(lists).where(eq(lists.id, card.listId)).limit(1));
+      if (source?.cardEdit === "deny") {
+        throw new HTTPException(400, { message: "このリストは編集できません" });
+      }
+      await assertListAcceptsCard(list.id, true);
+    } else if (list.cardEdit === "deny") {
+      throw new HTTPException(400, { message: "このリストは編集できません" });
     }
     const prevRank = body.prevRank ?? null;
     const nextRank = body.nextRank ?? null;

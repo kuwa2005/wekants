@@ -79,6 +79,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ collapsed }),
     }),
+  patchList: (
+    boardId: string,
+    listId: string,
+    patch: Partial<Pick<List, "width" | "wipLimit" | "archived" | "color" | "cardEdit">>,
+  ) =>
+    request<List>(`/api/boards/${boardId}/lists/${listId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
   createCard: (boardId: string, listId: string, title: string, description = "") =>
     request<Card>(`/api/boards/${boardId}/cards`, {
       method: "POST",

@@ -25,6 +25,11 @@ export type List = {
   title: string;
   rank: number;
   collapsed: boolean;
+  width: "narrow" | "normal" | "wide";
+  wipLimit: number | null;
+  archived: boolean;
+  color: "" | "rust" | "moss" | "rivet";
+  cardEdit: "allow" | "deny";
 };
 
 export type Card = {

@@ -102,6 +102,21 @@ test("import a markdown file onto a list", async ({ page }) => {
   await expect(ticket.locator("strong")).toHaveText("3mm");
 });
 
+test("a WIP limit blocks a new card and an archived list can return", async ({ page }) => {
+  await register(page, `wip_${stamp}`);
+  await hangBoard(page, "Queue");
+  const ready = page.locator(".list").nth(0);
+  const limit = ready.getByLabel("未着手 の WIP");
+  await limit.fill("0");
+  await limit.press("Enter");
+  await expect(ready.getByText("WIP の上限です")).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await ready.getByRole("button", { name: "未着手 を保管" }).click();
+  await expect(page.locator(".list")).toHaveCount(2);
+  await page.getByRole("button", { name: "未着手 を戻す" }).click();
+  await expect(page.locator(".list")).toHaveCount(3);
+});
+
 test("drag a list before the first list", async ({ page }) => {
   await register(page, `shift_${stamp}`);
   await hangBoard(page, "Bench");

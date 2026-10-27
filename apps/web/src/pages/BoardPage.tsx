@@ -75,6 +75,7 @@ function ListColumn({
   onDelete,
   onRename,
   onToggle,
+  onPatch,
 }: {
   list: List;
   cards: Card[];
@@ -84,11 +85,16 @@ function ListColumn({
   onDelete: () => Promise<void>;
   onRename: (title: string) => Promise<void>;
   onToggle: (collapsed: boolean) => Promise<void>;
+  onPatch: (patch: Partial<Pick<List, "width" | "wipLimit" | "archived" | "color" | "cardEdit">>) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(list.title);
+  const [wipDraft, setWipDraft] = useState(list.wipLimit == null ? "" : String(list.wipLimit));
   const skipCommit = useRef(false);
+  useEffect(() => {
+    setWipDraft(list.wipLimit == null ? "" : String(list.wipLimit));
+  }, [list.wipLimit]);
   const {
     attributes,
     listeners,
@@ -118,15 +124,17 @@ function ListColumn({
     <section
       ref={setColumnRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={
-        list.collapsed
-          ? isDragging
-            ? "list collapsed dragging"
-            : "list collapsed"
-          : isDragging
-            ? "list dragging"
-            : "list"
-      }
+      className={[
+        "list",
+        list.collapsed ? "collapsed" : "",
+        list.width === "narrow" ? "narrow" : "",
+        list.width === "wide" ? "wide" : "",
+        list.color ? `color-${list.color}` : "",
+        list.wipLimit != null && cards.length >= list.wipLimit ? "wip-full" : "",
+        isDragging ? "dragging" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-list-id={list.id}
       onDragOver={(event) => {
         if ([...event.dataTransfer.types].includes("Files")) {
@@ -220,6 +228,67 @@ function ListColumn({
       </div>
       {list.collapsed ? null : (
       <>
+      <div className="list-tools">
+        <button
+          type="button"
+          className="fold"
+          aria-label={`${list.title} の幅`}
+          onClick={() => {
+            const order = ["narrow", "normal", "wide"] as const;
+            const next = order[(order.indexOf(list.width) + 1) % order.length] ?? "normal";
+            void onPatch({ width: next });
+          }}
+        >
+          {list.width === "narrow" ? "狭" : list.width === "wide" ? "広" : "普"}
+        </button>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const raw = wipDraft.trim();
+            void onPatch({ wipLimit: raw === "" ? null : Number(raw) });
+          }}
+        >
+          <input
+            aria-label={`${list.title} の WIP`}
+            inputMode="numeric"
+            placeholder="WIP"
+            value={wipDraft}
+            onChange={(event) => setWipDraft(event.target.value)}
+          />
+        </form>
+        <button
+          type="button"
+          className="fold"
+          aria-label={`${list.title} の色`}
+          onClick={() => {
+            const order = ["", "rust", "moss", "rivet"] as const;
+            const next = order[(order.indexOf(list.color) + 1) % order.length] ?? "";
+            void onPatch({ color: next });
+          }}
+        >
+          色
+        </button>
+        <button
+          type="button"
+          className="fold"
+          aria-label={`${list.title} の編集`}
+          onClick={() => void onPatch({ cardEdit: list.cardEdit === "deny" ? "allow" : "deny" })}
+        >
+          {list.cardEdit === "deny" ? "編集不可" : "編集可"}
+        </button>
+        <button
+          type="button"
+          className="danger"
+          aria-label={`${list.title} を保管`}
+          onClick={() => {
+            if (window.confirm(`「${list.title}」を保管しますか？`)) {
+              void onPatch({ archived: true });
+            }
+          }}
+        >
+          保管
+        </button>
+      </div>
       <div ref={setNodeRef} className="list-cards">
         <SortableContext
           items={cards.map((card) => card.id)}
@@ -230,6 +299,11 @@ function ListColumn({
           ))}
         </SortableContext>
       </div>
+      {list.cardEdit === "deny" ? (
+        <p className="hint">このリストは編集できません</p>
+      ) : list.wipLimit != null && cards.length >= list.wipLimit ? (
+        <p className="hint">WIP の上限です</p>
+      ) : (
       <form onSubmit={submit}>
         <input
           aria-label={`${list.title} の新しいカード`}
@@ -239,6 +313,8 @@ function ListColumn({
         />
         <button type="submit">+</button>
       </form>
+      )}
+      {list.cardEdit === "deny" ? null : (
       <label className="hint">
         Markdown を取り込む
         <input
@@ -255,6 +331,7 @@ function ListColumn({
           }}
         />
       </label>
+      )}
       </>
       )}
     </section>
@@ -330,9 +407,30 @@ export function BoardPage({ user, onLogout }: Props) {
   }, [boardId, user.id]);
 
   const lists = useMemo(
-    () => (snapshot ? snapshot.lists.slice().sort((a, b) => a.rank - b.rank) : []),
+    () =>
+      snapshot
+        ? snapshot.lists
+            .filter((list) => !list.archived)
+            .slice()
+            .sort((a, b) => a.rank - b.rank)
+        : [],
     [snapshot],
   );
+  const archivedLists = useMemo(
+    () =>
+      snapshot
+        ? snapshot.lists.filter((list) => list.archived).slice().sort((a, b) => a.rank - b.rank)
+        : [],
+    [snapshot],
+  );
+
+  function applyList(updated: List) {
+    setSnapshot((current) =>
+      current
+        ? { ...current, lists: current.lists.map((row) => (row.id === updated.id ? updated : row)) }
+        : current,
+    );
+  }
 
   async function addList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,6 +464,10 @@ export function BoardPage({ user, onLogout }: Props) {
         beforeId = snapshot.cards.find((card) => card.id === overId)?.listId ?? null;
       }
       if (!beforeId || beforeId === movingListId) {
+        return;
+      }
+      const targetList = snapshot.lists.find((list) => list.id === beforeId);
+      if (targetList?.archived) {
         return;
       }
       const { prevRank, nextRank } = neighborRanks(snapshot.lists, movingListId, beforeId);
@@ -409,6 +511,18 @@ export function BoardPage({ user, onLogout }: Props) {
       }
       listId = overCard.listId;
       beforeId = overCard.id === cardId ? null : overCard.id;
+    }
+    const destination = snapshot.lists.find((list) => list.id === listId);
+    const origin = snapshot.lists.find((list) => list.id === moving.listId);
+    if (destination?.cardEdit === "deny" || origin?.cardEdit === "deny") {
+      return;
+    }
+    if (
+      destination?.wipLimit != null &&
+      listId !== moving.listId &&
+      snapshot.cards.filter((card) => card.listId === listId).length >= destination.wipLimit
+    ) {
+      return;
     }
     const targetCards = snapshot.cards.filter((card) => card.listId === listId);
     const { prevRank, nextRank } = neighborRanks(targetCards, cardId, beforeId);
@@ -492,33 +606,10 @@ export function BoardPage({ user, onLogout }: Props) {
               onAdd={(title) => addCard(list.id, title)}
               onOpen={setEditing}
               onToggle={(collapsed) =>
-                api.setListCollapsed(boardId, list.id, collapsed).then((updated) => {
-                  setSnapshot((current) =>
-                    current
-                      ? {
-                          ...current,
-                          lists: current.lists.map((row) =>
-                            row.id === updated.id ? updated : row,
-                          ),
-                        }
-                      : current,
-                  );
-                })
+                api.setListCollapsed(boardId, list.id, collapsed).then(applyList)
               }
-              onRename={(title) =>
-                api.renameList(boardId, list.id, title).then((updated) => {
-                  setSnapshot((current) =>
-                    current
-                      ? {
-                          ...current,
-                          lists: current.lists.map((row) =>
-                            row.id === updated.id ? updated : row,
-                          ),
-                        }
-                      : current,
-                  );
-                })
-              }
+              onRename={(title) => api.renameList(boardId, list.id, title).then(applyList)}
+              onPatch={(patch) => api.patchList(boardId, list.id, patch).then(applyList)}
               onDelete={() =>
                 api.deleteList(boardId, list.id).then(() => {
                   setSnapshot((current) =>
@@ -545,6 +636,22 @@ export function BoardPage({ user, onLogout }: Props) {
         </div>
         </SortableContext>
       </DndContext>
+      {archivedLists.length > 0 ? (
+        <aside className="archive">
+          <h2>保管庫</h2>
+          {archivedLists.map((list) => (
+            <button
+              key={list.id}
+              type="button"
+              className="ghost"
+              aria-label={`${list.title} を戻す`}
+              onClick={() => void api.patchList(boardId, list.id, { archived: false }).then(applyList)}
+            >
+              {list.title} を戻す
+            </button>
+          ))}
+        </aside>
+      ) : null}
       {editing ? (
         <aside className="editor">
           <h2>Markdown</h2>

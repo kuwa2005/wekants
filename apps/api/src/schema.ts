@@ -1,4 +1,4 @@
-import { bigint, boolean, pgTable, text } from "drizzle-orm/pg-core";
+import { bigint, boolean, integer, pgTable, text } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -37,6 +37,11 @@ export const lists = pgTable("lists", {
   title: text("title").notNull(),
   rank: bigint("rank", { mode: "number" }).notNull(),
   collapsed: boolean("collapsed").notNull().default(false),
+  width: text("width").notNull().default("normal"),
+  wipLimit: integer("wip_limit"),
+  archived: boolean("archived").notNull().default(false),
+  color: text("color").notNull().default(""),
+  cardEdit: text("card_edit").notNull().default("allow"),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

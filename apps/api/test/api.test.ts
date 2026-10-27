@@ -943,4 +943,83 @@ Use **3mm** steel.
     leaveBoard(boardId, owner.socket);
     leaveBoard(boardId, otherTab.socket);
   });
+
+  it("lets an anonymous visitor read a public board and hides a private one", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada3", password: "password1" }),
+    });
+    const jar = cookie(ada);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Open" }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Shown" }),
+    });
+    expect(cardRes.status).toBe(201);
+    const published = await app.request(`/api/boards/${snapshot.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(published.status).toBe(200);
+
+    const list = await app.request("/api/boards/public");
+    expect(list.status).toBe(200);
+    expect((await list.json()).boards.map((board: { title: string }) => board.title)).toContain(
+      "Open",
+    );
+    const seen = await app.request(`/api/boards/${snapshot.board.id}`);
+    expect(seen.status).toBe(200);
+    const body = await seen.json();
+    expect(body.lists.map((item: { title: string }) => item.title)).toEqual(
+      snapshot.lists.map((item: { title: string }) => item.title),
+    );
+    expect(body.cards.map((card: { title: string }) => card.title)).toEqual(["Shown"]);
+    const again = await app.request(`/api/boards/${snapshot.board.id}`);
+    expect(again.status).toBe(200);
+
+    const write = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Nope" }),
+    });
+    expect(write.status).toBe(401);
+
+    const hidden = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Closed" }),
+    });
+    const hiddenBody = await hidden.json();
+    const privateId = hiddenBody.board.id as string;
+    const secret = await app.request(`/api/boards/${privateId}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: hiddenBody.lists[0].id, title: "Secret" }),
+    });
+    expect(secret.status).toBe(201);
+    const denied = await app.request(`/api/boards/${privateId}`);
+    expect(denied.status).toBe(404);
+    expect(await denied.text()).not.toContain("Secret");
+
+    const withdrawn = await app.request(`/api/boards/${snapshot.board.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ isPublic: false }),
+    });
+    expect(withdrawn.status).toBe(200);
+    const gone = await app.request(`/api/boards/${snapshot.board.id}`);
+    expect(gone.status).toBe(404);
+    const catalog = await app.request("/api/boards/public");
+    expect((await catalog.json()).boards.map((board: { id: string }) => board.id)).not.toContain(
+      snapshot.board.id,
+    );
+  });
 });

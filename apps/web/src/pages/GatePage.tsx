@@ -64,6 +64,9 @@ export function GatePage({ mode, onAuth }: Props) {
             登録済みの人はログイン
           </Link>
         )}
+        <Link className="alt" to="/public">
+          公開ボード
+        </Link>
       </form>
     </div>
   );

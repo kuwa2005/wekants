@@ -22,7 +22,7 @@ import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
 
 type Props = {
-  user: UserPublic;
+  user: UserPublic | null;
   onLogout: () => void;
 };
 
@@ -69,9 +69,21 @@ function neighborRanks(
   return { prevRank: prev?.rank ?? null, nextRank: next?.rank ?? null };
 }
 
-function Ticket({ card, onOpen }: { card: Card; onOpen: (card: Card) => void }) {
+function Ticket({
+  card,
+  onOpen,
+  draggable,
+}: {
+  card: Card;
+  onOpen: (card: Card) => void;
+  draggable: boolean;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: card.id, data: { type: "card", listId: card.listId } });
+    useSortable({
+      id: card.id,
+      data: { type: "card", listId: card.listId },
+      disabled: !draggable,
+    });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -83,8 +95,8 @@ function Ticket({ card, onOpen }: { card: Card; onOpen: (card: Card) => void }) 
       className={isDragging ? "ticket dragging" : "ticket"}
       data-card-id={card.id}
       onDoubleClick={() => onOpen(card)}
-      {...attributes}
-      {...listeners}
+      {...(draggable ? attributes : {})}
+      {...(draggable ? listeners : {})}
     >
       <h3>{card.title}</h3>
       {card.description ? <Markdown source={card.description} /> : null}
@@ -372,7 +384,7 @@ function ListColumn({
           strategy={verticalListSortingStrategy}
         >
           {cards.map((card) => (
-            <Ticket key={card.id} card={card} onOpen={onOpen} />
+            <Ticket key={card.id} card={card} onOpen={onOpen} draggable={canEdit} />
           ))}
         </SortableContext>
       </div>
@@ -488,7 +500,7 @@ export function BoardPage({ user, onLogout }: Props) {
     socket.onmessage = (message) => {
       const event = JSON.parse(message.data) as WsEvent;
       if (event.type === "board.updated") {
-        if (!event.payload.isPublic && event.payload.ownerId !== user.id) {
+        if (!event.payload.isPublic && event.payload.ownerId !== user?.id) {
           setMissing(true);
           setSnapshot(null);
           return;
@@ -506,7 +518,7 @@ export function BoardPage({ user, onLogout }: Props) {
         if (!current) {
           return current;
         }
-        if (event.actorId === user.id && event.type !== "card.moved") {
+        if (event.actorId === user?.id && event.type !== "card.moved") {
           if (event.type === "card.upserted") {
             return { ...current, cards: upsertById(current.cards, [event.payload]) };
           }
@@ -551,7 +563,7 @@ export function BoardPage({ user, onLogout }: Props) {
       });
     };
     return () => socket.close();
-  }, [boardId, user.id]);
+  }, [boardId, user?.id]);
 
   const lists = useMemo(
     () =>
@@ -615,7 +627,7 @@ export function BoardPage({ user, onLogout }: Props) {
   }
 
   async function onDragEnd(event: DragEndEvent) {
-    if (!snapshot || !event.over || snapshot.board.ownerId !== user.id) {
+    if (!snapshot || !event.over || snapshot.board.ownerId !== user?.id) {
       return;
     }
     const activeType = event.active.data.current?.type;
@@ -733,7 +745,7 @@ export function BoardPage({ user, onLogout }: Props) {
         <Link className="ghost" to="/">
           すべてのボード
         </Link>
-        {snapshot.board.ownerId === user.id ? (
+        {snapshot.board.ownerId === user?.id ? (
           renaming ? (
             <input
               className="board-name"
@@ -784,7 +796,7 @@ export function BoardPage({ user, onLogout }: Props) {
         ) : (
           <h1>{snapshot.board.title}</h1>
         )}
-        {snapshot.board.ownerId === user.id ? (
+        {snapshot.board.ownerId === user?.id ? (
           <>
             <button
               type="button"
@@ -829,15 +841,23 @@ export function BoardPage({ user, onLogout }: Props) {
         >
           Markdown を書き出す
         </button>
-        <span>{user.username}</span>
-        <Link className="ghost" to="/password">
-          パスワード
-        </Link>
-        <button type="button" onClick={logout}>
-          出る
-        </button>
+        {user ? (
+          <>
+            <span>{user.username}</span>
+            <Link className="ghost" to="/password">
+              パスワード
+            </Link>
+            <button type="button" onClick={logout}>
+              出る
+            </button>
+          </>
+        ) : (
+          <Link className="ghost" to="/login">
+            ログイン
+          </Link>
+        )}
       </header>
-      {snapshot.board.ownerId === user.id ? (
+      {snapshot.board.ownerId === user?.id ? (
       <form className="composer batch" onSubmit={addList}>
         <textarea
           aria-label="新しいリスト"
@@ -865,7 +885,7 @@ export function BoardPage({ user, onLogout }: Props) {
           {lists.map((list) => (
             <ListColumn
               key={list.id}
-              canEdit={snapshot.board.ownerId === user.id}
+              canEdit={snapshot.board.ownerId === user?.id}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)
@@ -930,7 +950,7 @@ export function BoardPage({ user, onLogout }: Props) {
         </div>
         </SortableContext>
       </DndContext>
-      {snapshot.board.ownerId === user.id && archivedLists.length > 0 ? (
+      {snapshot.board.ownerId === user?.id && archivedLists.length > 0 ? (
         <aside className="archive">
           <h2>保管庫</h2>
           {archivedLists.map((list) => (
@@ -946,7 +966,7 @@ export function BoardPage({ user, onLogout }: Props) {
           ))}
         </aside>
       ) : null}
-      {snapshot.board.ownerId === user.id && archivedCards.length > 0 ? (
+      {snapshot.board.ownerId === user?.id && archivedCards.length > 0 ? (
         <aside className="archive">
           <h2>カード保管庫</h2>
           {archivedCards.map((card) => (
@@ -978,18 +998,18 @@ export function BoardPage({ user, onLogout }: Props) {
           <h2>Markdown</h2>
           <input
             value={editing.title}
-            readOnly={snapshot.board.ownerId !== user.id}
+            readOnly={snapshot.board.ownerId !== user?.id}
             onChange={(e) => setEditing({ ...editing, title: e.target.value })}
           />
           <textarea
             value={editing.description}
-            readOnly={snapshot.board.ownerId !== user.id}
+            readOnly={snapshot.board.ownerId !== user?.id}
             onChange={(e) => setEditing({ ...editing, description: e.target.value })}
             rows={12}
           />
           <Markdown source={editing.description} />
           <div className="composer">
-            {snapshot.board.ownerId === user.id ? (
+            {snapshot.board.ownerId === user?.id ? (
             <>
             <label className="hint">
               複製先のボード
@@ -1082,7 +1102,7 @@ export function BoardPage({ user, onLogout }: Props) {
             <button type="button" className="ghost" onClick={() => setEditing(null)}>
               閉じる
             </button>
-            {snapshot.board.ownerId === user.id ? (
+            {snapshot.board.ownerId === user?.id ? (
             <>
             <button
               type="button"
@@ -1156,7 +1176,7 @@ export function BoardPage({ user, onLogout }: Props) {
             </button>
             </>
             ) : null}
-            {snapshot.board.ownerId === user.id ? (
+            {snapshot.board.ownerId === user?.id ? (
             <button
               type="button"
               className="danger"

@@ -253,7 +253,22 @@ export function createApp(db: AppDb): Hono<Env> {
     await next();
   });
   app.use("/api/boards/*", async (c, next) => {
-    await attachUser(c);
+    const userId = await readSession(c);
+    if (userId) {
+      c.set("userId", userId);
+      await next();
+      return;
+    }
+    const path = c.req.path;
+    const publicRead =
+      c.req.method === "GET" &&
+      (path === "/api/boards/public" ||
+        /^\/api\/boards\/[^/]+$/.test(path) ||
+        /^\/api\/boards\/[^/]+\/markdown$/.test(path));
+    if (!publicRead) {
+      throw new HTTPException(401, { message: "ログインが必要です" });
+    }
+    c.set("userId", "");
     await next();
   });
 

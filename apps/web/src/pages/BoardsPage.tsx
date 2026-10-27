@@ -314,6 +314,43 @@ function WorkspaceColumn({
   );
 }
 
+export function PublicBoardsPage() {
+  const [boards, setBoards] = useState<Board[] | null>(null);
+
+  useEffect(() => {
+    api
+      .publicBoards()
+      .then((next) => setBoards(next.boards))
+      .catch(() => setBoards([]));
+  }, []);
+
+  return (
+    <div className="shell">
+      <header className="rail">
+        <h1>公開ボード</h1>
+        <Link className="ghost" to="/login">
+          ログイン
+        </Link>
+      </header>
+      {boards == null ? (
+        <div className="gate">読み込んでいます…</div>
+      ) : boards.length === 0 ? (
+        <p className="hint">公開ボードはありません</p>
+      ) : (
+        <section className="public-boards">
+          <div className="workspace-boards">
+            {boards.map((board) => (
+              <Link key={board.id} className="board-ticket" to={`/b/${board.id}`}>
+                {board.title}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function BoardsPage({ user, onLogout }: Props) {
   const [tree, setTree] = useState<WorkspaceTree | null>(null);
   const [publicBoards, setPublicBoards] = useState<Board[]>([]);

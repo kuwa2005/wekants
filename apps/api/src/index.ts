@@ -32,26 +32,28 @@ wss.on("connection", (socket: WebSocket, request) => {
   void (async () => {
     const url = new URL(request.url ?? "/", "http://localhost");
     const boardId = url.searchParams.get("boardId");
-    const token = cookieSession(request);
-    if (!boardId || !token) {
-      socket.close(4401, "ログインが必要です");
+    if (!boardId) {
+      socket.close(4404, "見つかりません");
       return;
     }
-    const [session] = await db.select().from(sessions).where(eq(sessions.id, token)).limit(1);
-    if (!session || session.expiresAt < Date.now()) {
-      socket.close(4401, "ログインが必要です");
-      return;
+    const token = cookieSession(request);
+    let userId = "";
+    if (token) {
+      const [session] = await db.select().from(sessions).where(eq(sessions.id, token)).limit(1);
+      if (session && session.expiresAt >= Date.now()) {
+        userId = session.userId;
+      }
     }
     const [board] = await db.select().from(boards).where(eq(boards.id, boardId)).limit(1);
     if (!board) {
       socket.close(4404, "見つかりません");
       return;
     }
-    if (board.ownerId !== session.userId && !board.isPublic) {
+    if (board.ownerId !== userId && !board.isPublic) {
       socket.close(4404, "見つかりません");
       return;
     }
-    joinBoard(boardId, socket, session.userId);
+    joinBoard(boardId, socket, userId);
     socket.on("close", () => leaveBoard(boardId, socket));
   })();
 });

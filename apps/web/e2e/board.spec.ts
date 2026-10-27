@@ -376,6 +376,33 @@ test("a board rename reaches another open view and unpublishing hides it", async
   await guestContext.close();
 });
 
+test("an unsigned visitor can read a public board but not a private one", async ({ page, browser }) => {
+  await register(page, `pub_${stamp}`);
+  await hangBoard(page, "Open");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Shown");
+  await ready.getByRole("button", { name: "+" }).click();
+  await page.getByRole("button", { name: "公開する" }).click();
+  const boardUrl = page.url();
+
+  const guestContext = await browser.newContext();
+  const guest = await guestContext.newPage();
+  await guest.goto("/login");
+  await guest.getByRole("link", { name: "公開ボード" }).click();
+  await guest.getByRole("link", { name: "Open", exact: true }).click();
+  await expect(guest.locator("[data-card-id]")).toContainText("Shown");
+  await expect(guest.getByPlaceholder("新しいカード")).toHaveCount(0);
+  await guest.reload();
+  await expect(guest.locator("[data-card-id]")).toContainText("Shown");
+
+  await page.getByRole("button", { name: "公開をやめる" }).click();
+  await guest.reload();
+  await expect(guest.getByText("このボードは見られません")).toBeVisible();
+  await guest.goto(boardUrl);
+  await expect(guest.getByText("このボードは見られません")).toBeVisible();
+  await guestContext.close();
+});
+
 test("deleting a workspace keeps its board open", async ({ page }) => {
   await register(page, `keep_${stamp}`);
   await hangBoard(page, "Kept");

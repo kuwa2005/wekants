@@ -394,6 +394,7 @@ export function createApp(db: AppDb): Hono<Env> {
           .filter((board) => board.workspaceId === workspace.id)
           .map(mapBoard),
       })),
+      looseBoards: boardRows.filter((board) => board.workspaceId == null).map(mapBoard),
     });
   });
 
@@ -491,12 +492,10 @@ export function createApp(db: AppDb): Hono<Env> {
   app.delete("/api/workspaces/:workspaceId", async (c) => {
     const userId = c.get("userId");
     const workspace = await ownedWorkspace(userId, c.req.param("workspaceId"));
-    const owned = await db.select().from(boards).where(eq(boards.workspaceId, workspace.id));
-    for (const board of owned) {
-      await db.delete(cards).where(eq(cards.boardId, board.id));
-      await db.delete(lists).where(eq(lists.boardId, board.id));
-      await db.delete(boards).where(eq(boards.id, board.id));
-    }
+    await db
+      .update(boards)
+      .set({ workspaceId: null })
+      .where(eq(boards.workspaceId, workspace.id));
     await db.delete(workspaces).where(eq(workspaces.id, workspace.id));
     return c.json({ ok: true });
   });
@@ -742,6 +741,9 @@ export function createApp(db: AppDb): Hono<Env> {
       nextRank?: number | null;
     }>();
     const workspaceId = body.workspaceId ?? board.workspaceId;
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "ワークスペースを指定してください" });
+    }
     await ownedWorkspace(userId, workspaceId);
     const prevRank = body.prevRank ?? null;
     const nextRank = body.nextRank ?? null;

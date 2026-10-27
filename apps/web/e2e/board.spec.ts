@@ -335,6 +335,35 @@ test("move a card to the top and then the bottom of its list", async ({ page }) 
   await expect(ready.locator("[data-card-id]").last()).toContainText("Gamma");
 });
 
+test("deleting a workspace keeps its board open", async ({ page }) => {
+  await register(page, `keep_${stamp}`);
+  await hangBoard(page, "Kept");
+  const ready = page.locator(".list").nth(0);
+  await ready.getByPlaceholder("新しいカード").fill("Still here");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toContainText("Still here");
+  const boardUrl = page.url();
+  const other = await page.context().newPage();
+  await other.goto(boardUrl);
+  await expect(other.locator("[data-card-id]")).toContainText("Still here");
+
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "作業場 を削除" }).click();
+  await expect(page.getByRole("heading", { name: "作業場" })).toHaveCount(0);
+  const loose = page.locator(".loose-boards");
+  await expect(loose.getByRole("link", { name: "Kept", exact: true })).toBeVisible();
+  await expect(other.locator("[data-card-id]")).toContainText("Still here");
+  await other.reload();
+  await expect(other.getByRole("heading", { name: "Kept" })).toBeVisible();
+  await expect(other.locator("[data-card-id]")).toContainText("Still here");
+  await page.reload();
+  await expect(page.locator(".loose-boards").getByRole("link", { name: "Kept", exact: true })).toBeVisible();
+  await page.locator(".loose-boards").getByRole("link", { name: "Kept", exact: true }).click();
+  await expect(page.locator("[data-card-id]")).toContainText("Still here");
+  await other.close();
+});
+
 test("change the password while staying signed in", async ({ page }) => {
   const name = `lock_${stamp}`;
   await register(page, name);

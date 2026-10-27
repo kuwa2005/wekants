@@ -244,7 +244,7 @@ function WorkspaceColumn({
           className="danger"
           aria-label={`${workspace.title} を削除`}
           onClick={() => {
-            if (window.confirm(`「${workspace.title}」と中のボードを削除しますか？`)) {
+            if (window.confirm(`「${workspace.title}」を削除しますか？中のボードは残ります。`)) {
               void onDelete();
             }
           }}
@@ -331,7 +331,7 @@ export function BoardsPage({ user, onLogout }: Props) {
   }
 
   useEffect(() => {
-    reload().catch(() => setTree({ workspaces: [] }));
+    reload().catch(() => setTree({ workspaces: [], looseBoards: [] }));
   }, []);
 
   async function addWorkspace(event: FormEvent) {
@@ -383,6 +383,9 @@ export function BoardsPage({ user, onLogout }: Props) {
       }
       workspaceId = overBoard.workspaceId;
       beforeId = overBoard.id === boardId ? null : overBoard.id;
+    }
+    if (!workspaceId) {
+      return;
     }
     const target = tree.workspaces.find((space) => space.id === workspaceId)?.boards ?? [];
     const { prevRank, nextRank } = neighborRanks(target, boardId, beforeId);
@@ -480,6 +483,23 @@ export function BoardsPage({ user, onLogout }: Props) {
         </div>
         </SortableContext>
       </DndContext>
+      {tree.looseBoards.length > 0 ? (
+        <section className="loose-boards">
+          <h2>置き場のないボード</h2>
+          <div className="workspace-boards">
+            {tree.looseBoards
+              .filter((board) => {
+                const needle = query.trim().toLowerCase();
+                return !needle || board.title.toLowerCase().includes(needle);
+              })
+              .map((board) => (
+                <Link key={board.id} className="board-ticket" to={`/b/${board.id}`}>
+                  {board.title}
+                </Link>
+              ))}
+          </div>
+        </section>
+      ) : null}
       {publicBoards.length > 0 ? (
         <section className="public-boards">
           <h2>公開ボード</h2>

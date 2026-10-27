@@ -417,7 +417,103 @@ Use **3mm** steel.
     });
     expect(removed.status).toBe(200);
     const after = await app.request("/api/workspaces", { headers: { cookie: adaJar } });
-    expect((await after.json()).workspaces).toEqual([]);
+    const afterTree = await after.json();
+    expect(afterTree.workspaces).toEqual([]);
+    expect(afterTree.looseBoards.map((board: { title: string }) => board.title)).toEqual(
+      expect.arrayContaining(["Lathe", "Lathe の複製", "Private"]),
+    );
+    const still = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: adaJar },
+    });
+    expect(still.status).toBe(200);
+  });
+
+  it("keeps lists and cards when a workspace is deleted", async () => {
+    const nia = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nia", password: "password1" }),
+    });
+    const jar = cookie(nia);
+    const tree = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const homeId = (await tree.json()).workspaces[0].id as string;
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Kept", workspaceId: homeId }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Bolt" }),
+    });
+    const card = await cardRes.json();
+    const described = await app.request(`/api/boards/${snapshot.board.id}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ description: "そのまま" }),
+    });
+    expect(described.status).toBe(200);
+
+    const empty = await app.request("/api/workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "空" }),
+    });
+    const emptyId = (await empty.json()).id as string;
+    const other = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "noa", password: "password1" }),
+    });
+    const otherJar = cookie(other);
+    const denied = await app.request(`/api/workspaces/${homeId}`, {
+      method: "DELETE",
+      headers: { cookie: otherJar },
+    });
+    expect(denied.status).toBe(404);
+
+    const dropped = await app.request(`/api/workspaces/${emptyId}`, {
+      method: "DELETE",
+      headers: { cookie: jar },
+    });
+    expect(dropped.status).toBe(200);
+    const mid = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const midTree = await mid.json();
+    expect(midTree.workspaces.map((space: { id: string }) => space.id)).toEqual([homeId]);
+    expect(midTree.workspaces[0].boards.map((board: { id: string }) => board.id)).toEqual([
+      snapshot.board.id,
+    ]);
+
+    const removed = await app.request(`/api/workspaces/${homeId}`, {
+      method: "DELETE",
+      headers: { cookie: jar },
+    });
+    expect(removed.status).toBe(200);
+    const after = await app.request("/api/workspaces", { headers: { cookie: jar } });
+    const afterTree = await after.json();
+    expect(afterTree.workspaces).toEqual([]);
+    expect(afterTree.looseBoards.map((board: { id: string }) => board.id)).toEqual([
+      snapshot.board.id,
+    ]);
+
+    const opened = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    expect(opened.status).toBe(200);
+    const body = await opened.json();
+    expect(body.lists.map((list: { title: string; rank: number }) => [list.title, list.rank])).toEqual(
+      snapshot.lists.map((list: { title: string; rank: number }) => [list.title, list.rank]),
+    );
+    expect(body.cards).toEqual([
+      expect.objectContaining({ title: "Bolt", description: "そのまま", rank: card.rank }),
+    ]);
+
+    const again = await app.request(`/api/boards/${snapshot.board.id}`, {
+      headers: { cookie: jar },
+    });
+    expect((await again.json()).board.title).toBe("Kept");
   });
 
   it("copies an owned board with or without cards and refuses other people", async () => {

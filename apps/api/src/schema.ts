@@ -27,7 +27,7 @@ export const boards = pgTable("boards", {
   title: text("title").notNull(),
   archived: boolean("archived").notNull().default(false),
   ownerId: text("owner_id").notNull(),
-  workspaceId: text("workspace_id").notNull(),
+  workspaceId: text("workspace_id"),
   rank: bigint("rank", { mode: "number" }).notNull(),
   isTemplate: boolean("is_template").notNull().default(false),
   isPublic: boolean("is_public").notNull().default(false),

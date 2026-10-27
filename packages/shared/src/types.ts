@@ -16,7 +16,7 @@ export type Board = {
   title: string;
   archived: boolean;
   ownerId: string;
-  workspaceId: string;
+  workspaceId: string | null;
   rank: number;
   isTemplate: boolean;
   isPublic: boolean;
@@ -53,6 +53,7 @@ export type BoardSnapshot = {
 
 export type WorkspaceTree = {
   workspaces: Array<Workspace & { boards: Board[] }>;
+  looseBoards: Board[];
 };
 
 export type WsEvent =

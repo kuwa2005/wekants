@@ -15,8 +15,10 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Board, UserPublic, WorkspaceTree } from "@wekants/shared";
+import type { Board, TitleBatch, UserPublic, WorkspaceTree } from "@wekants/shared";
+import { titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
+import { LineBatch } from "../LineBatch";
 
 type Props = {
   user: UserPublic;
@@ -84,7 +86,7 @@ function WorkspaceColumn({
   workspace: WorkspaceTree["workspaces"][number];
   boards: Board[];
   onImport: (markdown: string, name: string) => Promise<void>;
-  onCreateBoard: (title: string) => Promise<void>;
+  onCreateBoard: (titles: string[]) => Promise<void>;
   onRename: (title: string) => Promise<void>;
   onStar: (starred: boolean) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -106,6 +108,7 @@ function WorkspaceColumn({
     data: { type: "workspace", workspaceId: workspace.id },
   });
   const [title, setTitle] = useState("");
+  const [boardBatch, setBoardBatch] = useState<TitleBatch>("one");
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workspace.title);
   const [page, setPage] = useState(0);
@@ -251,20 +254,30 @@ function WorkspaceColumn({
         </div>
       ) : null}
       <form
+        className="batch"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (!title.trim()) {
+          const titles = titlesFromInput(title, boardBatch);
+          if (titles.length === 0) {
             return;
           }
-          await onCreateBoard(title.trim());
+          await onCreateBoard(titles);
           setTitle("");
         }}
       >
-        <input
+        <textarea
           aria-label={`${workspace.title} の新しいボード`}
           value={title}
+          rows={2}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="新しいボード"
+        />
+        <LineBatch
+          name={`boards-${workspace.id}`}
+          value={boardBatch}
+          onChange={setBoardBatch}
+          oneLabel="1つのボード"
+          manyLabel="複数のボード"
         />
         <button type="submit">+</button>
       </form>
@@ -401,9 +414,15 @@ export function BoardsPage({ user, onLogout }: Props) {
                 })
                 .slice()
                 .sort((a, b) => a.rank - b.rank)}
-              onCreateBoard={async (title) => {
-                const snapshot = await api.createBoard(title, workspace.id);
-                navigate(`/b/${snapshot.board.id}`);
+              onCreateBoard={async (titles) => {
+                let lastId = "";
+                for (const title of titles) {
+                  const snapshot = await api.createBoard(title, workspace.id);
+                  lastId = snapshot.board.id;
+                }
+                if (lastId) {
+                  navigate(`/b/${lastId}`);
+                }
               }}
               onImport={async (markdown) => {
                 const snapshot = await api.importMarkdownBoard(markdown, workspace.id);

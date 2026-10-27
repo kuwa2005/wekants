@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.ts";
 import { openDatabase, type AppDb } from "../src/db.ts";
 import type postgres from "postgres";
-import { boardToMarkdown, markdownToBoardDraft } from "@wekants/shared";
+import { boardToMarkdown, markdownToBoardDraft, titlesFromInput } from "@wekants/shared";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -546,5 +546,31 @@ Use **3mm** steel.
       body: JSON.stringify({ targetListId: destination.lists[0].id }),
     });
     expect(denied.status).toBe(404);
+  });
+
+  it("keeps a multiline title as one card and splits lines only when asked", async () => {
+    expect(titlesFromInput("Plan\n\nBuild\n", "one")).toEqual(["Plan\n\nBuild"]);
+    expect(titlesFromInput("Plan\r\n\r\nBuild\n", "many")).toEqual(["Plan", "Build"]);
+    expect(titlesFromInput("   \n  ", "many")).toEqual([]);
+
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "lines", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Lines" }),
+    });
+    const snapshot = await created.json();
+    const cardRes = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId: snapshot.lists[0].id, title: "Plan\nBuild" }),
+    });
+    expect(cardRes.status).toBe(201);
+    expect((await cardRes.json()).title).toBe("Plan\nBuild");
   });
 });

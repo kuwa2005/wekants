@@ -308,12 +308,48 @@ a {
   padding: 1rem 1.5rem 0;
 }
 
-.composer input {
+.composer input,
+.composer textarea {
   flex: 1;
   background: #0f1215;
   border: 1px solid var(--rail);
   color: var(--paper);
   padding: 0.5rem 0.7rem;
+}
+
+.composer.batch,
+.list form.batch,
+.workspace form.batch {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.list form textarea,
+.workspace form textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 2.6rem;
+  resize: vertical;
+}
+
+.many-lines {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+}
+
+.many-lines legend {
+  padding: 0;
+  margin-right: 0.4rem;
+}
+
+.list-title,
+.ticket h3 {
+  white-space: pre-line;
 }
 
 .composer button {

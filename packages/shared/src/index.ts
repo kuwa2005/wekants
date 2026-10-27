@@ -16,3 +16,4 @@ export {
   markdownToBoardDraft,
   markdownToCardDraft,
 } from "./markdown.ts";
+export { titlesFromInput, type TitleBatch } from "./titles.ts";

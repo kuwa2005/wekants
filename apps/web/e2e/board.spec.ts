@@ -250,3 +250,44 @@ test("rename a workspace, search boards, and copy a template", async ({ page }) 
   await page.getByRole("button", { name: "複製" }).click();
   await expect(page.getByRole("heading", { name: "Lathe の複製" })).toBeVisible();
 });
+
+test("create one card with line breaks or many cards from lines", async ({ page }) => {
+  await register(page, `lines_${stamp}`);
+  await hangBoard(page, "Batch");
+  const ready = page.locator(".list").nth(0);
+  const field = ready.getByLabel("未着手 の新しいカード");
+  await field.fill("Plan\nBuild");
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toHaveCount(1);
+  await expect(ready.locator("[data-card-id]")).toContainText("Plan");
+  await expect(ready.locator("[data-card-id]")).toContainText("Build");
+
+  await field.fill("Cut\n\nWeld");
+  await ready.getByRole("radio", { name: "複数のカード" }).check();
+  await ready.getByRole("button", { name: "+" }).click();
+  await expect(ready.locator("[data-card-id]")).toHaveCount(3);
+  await expect(ready.locator("[data-card-id]").nth(1)).toContainText("Cut");
+  await expect(ready.locator("[data-card-id]").nth(2)).toContainText("Weld");
+});
+
+test("create many lists from separate lines", async ({ page }) => {
+  await register(page, `lists_${stamp}`);
+  await hangBoard(page, "Columns");
+  await page.getByLabel("新しいリスト").fill("Alpha\nBeta");
+  await page.getByRole("radio", { name: "複数のリスト" }).check();
+  await page.getByRole("button", { name: "リストを追加" }).click();
+  await expect(page.getByRole("button", { name: "Alpha の名前を変更" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Beta の名前を変更" })).toBeVisible();
+});
+
+test("create many boards and open the last one", async ({ page }) => {
+  await register(page, `boards_${stamp}`);
+  const bay = page.locator(".workspace").first();
+  await bay.getByLabel("作業場 の新しいボード").fill("One\nTwo");
+  await bay.getByRole("radio", { name: "複数のボード" }).check();
+  await bay.getByRole("button", { name: "+" }).click();
+  await expect(page.getByRole("heading", { name: "Two", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "すべてのボード" }).click();
+  await expect(page.getByRole("link", { name: "One" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Two" })).toBeVisible();
+});

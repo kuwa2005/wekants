@@ -15,8 +15,10 @@ import {
   horizontalListSortingStrategy,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { BoardSnapshot, Card, List, UserPublic, WsEvent } from "@wekants/shared";
+import type { BoardSnapshot, Card, List, TitleBatch, UserPublic, WsEvent } from "@wekants/shared";
+import { titlesFromInput } from "@wekants/shared";
 import { api } from "../api";
+import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
 
 type Props = {
@@ -120,6 +122,7 @@ function ListColumn({
   boardId: string;
 }) {
   const [title, setTitle] = useState("");
+  const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(list.title);
   const [wipDraft, setWipDraft] = useState(list.wipLimit == null ? "" : String(list.wipLimit));
@@ -146,11 +149,20 @@ function ListColumn({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim()) {
+    const titles = titlesFromInput(title, cardBatch);
+    if (titles.length === 0) {
       return;
     }
-    await onAdd(title.trim());
-    setTitle("");
+    let done = 0;
+    try {
+      for (const next of titles) {
+        await onAdd(next);
+        done += 1;
+      }
+      setTitle("");
+    } catch {
+      setTitle(cardBatch === "many" ? titles.slice(done).join("\n") : title);
+    }
   }
 
   return (
@@ -368,12 +380,20 @@ function ListColumn({
       ) : list.wipLimit != null && cards.length >= list.wipLimit ? (
         <p className="hint">WIP の上限です</p>
       ) : (
-      <form onSubmit={submit}>
-        <input
+      <form className="batch" onSubmit={submit}>
+        <textarea
           aria-label={`${list.title} の新しいカード`}
           value={title}
+          rows={2}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="新しいカード"
+        />
+        <LineBatch
+          name={`cards-${list.id}`}
+          value={cardBatch}
+          onChange={setCardBatch}
+          oneLabel="1枚のカード"
+          manyLabel="複数のカード"
         />
         <button type="submit">+</button>
       </form>
@@ -406,6 +426,8 @@ export function BoardPage({ user, onLogout }: Props) {
   const { boardId = "" } = useParams();
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
+  const [listTitle, setListTitle] = useState("");
+  const [listBatch, setListBatch] = useState<TitleBatch>("one");
   const [copyBoardId, setCopyBoardId] = useState(boardId);
   const [copyListId, setCopyListId] = useState("");
   const [ownedBoards, setOwnedBoards] = useState<Array<{ id: string; title: string }>>([]);
@@ -539,12 +561,23 @@ export function BoardPage({ user, onLogout }: Props) {
 
   async function addList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const input = event.currentTarget.elements.namedItem("listTitle") as HTMLInputElement;
-    const list = await api.createList(boardId, input.value);
-    setSnapshot((current) =>
-      current ? { ...current, lists: upsertById(current.lists, [list]) } : current,
-    );
-    input.value = "";
+    const titles = titlesFromInput(listTitle, listBatch);
+    if (titles.length === 0) {
+      return;
+    }
+    let done = 0;
+    try {
+      for (const next of titles) {
+        const list = await api.createList(boardId, next);
+        setSnapshot((current) =>
+          current ? { ...current, lists: upsertById(current.lists, [list]) } : current,
+        );
+        done += 1;
+      }
+      setListTitle("");
+    } catch {
+      setListTitle(listBatch === "many" ? titles.slice(done).join("\n") : listTitle);
+    }
   }
 
   async function addCard(listId: string, title: string) {
@@ -721,8 +754,21 @@ export function BoardPage({ user, onLogout }: Props) {
         </button>
       </header>
       {snapshot.board.ownerId === user.id ? (
-      <form className="composer" onSubmit={addList}>
-        <input name="listTitle" placeholder="新しいリスト" />
+      <form className="composer batch" onSubmit={addList}>
+        <textarea
+          aria-label="新しいリスト"
+          placeholder="新しいリスト"
+          rows={2}
+          value={listTitle}
+          onChange={(event) => setListTitle(event.target.value)}
+        />
+        <LineBatch
+          name="lists"
+          value={listBatch}
+          onChange={setListBatch}
+          oneLabel="1つのリスト"
+          manyLabel="複数のリスト"
+        />
         <button type="submit">リストを追加</button>
       </form>
       ) : null}

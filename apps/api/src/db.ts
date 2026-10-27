@@ -92,6 +92,19 @@ CREATE TABLE IF NOT EXISTS card_ballots (
   choice TEXT NOT NULL,
   PRIMARY KEY (card_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS wip_groups (
+  id TEXT PRIMARY KEY,
+  board_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  limit_count INTEGER NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS wip_group_lists (
+  group_id TEXT NOT NULL,
+  list_id TEXT NOT NULL,
+  PRIMARY KEY (group_id, list_id)
+);
 CREATE TABLE IF NOT EXISTS card_unsaved (
   user_id TEXT NOT NULL,
   card_id TEXT NOT NULL,

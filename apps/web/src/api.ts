@@ -6,6 +6,7 @@ import type {
   UnsavedEdit,
   List,
   UserPublic,
+  WipGroup,
   Workspace,
   WorkspaceTree,
 } from "@wekants/shared";
@@ -199,6 +200,27 @@ export const api = {
         body: JSON.stringify({ choice }),
       },
     ),
+  createWipGroup: (
+    boardId: string,
+    body: { title: string; listIds: string[]; limit: number },
+  ) =>
+    request<{ groups: WipGroup[] }>(`/api/boards/${boardId}/wip-groups`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchWipGroup: (
+    boardId: string,
+    groupId: string,
+    body: { title?: string; listIds?: string[]; limit?: number; enabled?: boolean },
+  ) =>
+    request<{ groups: WipGroup[] }>(`/api/boards/${boardId}/wip-groups/${groupId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteWipGroup: (boardId: string, groupId: string) =>
+    request<{ groups: WipGroup[] }>(`/api/boards/${boardId}/wip-groups/${groupId}`, {
+      method: "DELETE",
+    }),
   patchCard: (
     boardId: string,
     cardId: string,

@@ -54,7 +54,7 @@ describe("auth, boards, markdown, workspaces", () => {
 
   beforeEach(async () => {
     await sql.unsafe(
-      "TRUNCATE card_ballots, card_unsaved, card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
+      "TRUNCATE card_ballots, wip_group_lists, wip_groups, card_unsaved, card_templates, cards, lists, boards, workspaces, sessions, users CASCADE",
     );
     app = createApp(db);
   });
@@ -1631,5 +1631,96 @@ Use **3mm** steel.
       leaveBoard(boardId, adaSocket.socket);
       leaveBoard(boardId, bobSocket.socket);
     }
+  });
+
+  it("caps open cards across a WIP group without replacing each list limit", async () => {
+    const ada = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ada", password: "password1" }),
+    });
+    const adaJar = cookie(ada);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adaJar },
+      body: JSON.stringify({ title: "Flow" }),
+    });
+    const snapshot = await created.json();
+    const boardId = snapshot.board.id as string;
+    const doing = snapshot.lists[1].id as string;
+    const review = snapshot.lists[2].id as string;
+    const headers = { "content-type": "application/json", cookie: adaJar };
+
+    const tooSmall = await app.request(`/api/boards/${boardId}/wip-groups`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title: "thin", listIds: [doing], limit: 1 }),
+    });
+    expect(tooSmall.status).toBe(400);
+
+    const added = await app.request(`/api/boards/${boardId}/wip-groups`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title: "進行", listIds: [doing, review], limit: 1 }),
+    });
+    expect(added.status).toBe(201);
+    const groupId = (await added.json()).groups[0].id as string;
+
+    const first = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ listId: doing, title: "One" }),
+    });
+    expect(first.status).toBe(201);
+    const cardId = (await first.json()).id as string;
+
+    const blocked = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ listId: review, title: "Two" }),
+    });
+    expect(blocked.status).toBe(400);
+    expect(await blocked.json()).toEqual({ error: "仕掛かりの共通上限に達しています" });
+
+    const shifted = await app.request(`/api/boards/${boardId}/cards/${cardId}/move`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ listId: review, prevRank: null, nextRank: null }),
+    });
+    expect(shifted.status).toBe(200);
+
+    const paused = await app.request(`/api/boards/${boardId}/wip-groups/${groupId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(paused.status).toBe(200);
+    const second = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ listId: doing, title: "Two" }),
+    });
+    expect(second.status).toBe(201);
+
+    const own = await app.request(`/api/boards/${boardId}/lists/${doing}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ wipLimit: 1 }),
+    });
+    expect(own.status).toBe(200);
+    const ownBlock = await app.request(`/api/boards/${boardId}/cards`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ listId: doing, title: "Three" }),
+    });
+    expect(ownBlock.status).toBe(400);
+    expect(await ownBlock.json()).toEqual({ error: "WIP の上限に達しています" });
+
+    const removed = await app.request(`/api/boards/${boardId}/wip-groups/${groupId}`, {
+      method: "DELETE",
+      headers: { cookie: adaJar },
+    });
+    expect(removed.status).toBe(200);
+    expect((await removed.json()).groups).toEqual([]);
   });
 });

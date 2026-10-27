@@ -12,6 +12,7 @@ export type {
   UserPublic,
   Workspace,
   WorkspaceTree,
+  WipGroup,
   WsEvent,
 } from "./types.ts";
 

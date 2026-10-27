@@ -20,6 +20,7 @@ import {
   type BoardSnapshot,
   type Card,
   type List,
+  type WipGroup,
 } from "@wekants/shared";
 import type { AppDb } from "./db.ts";
 import {
@@ -31,6 +32,8 @@ import {
   lists,
   sessions,
   users,
+  wipGroupLists,
+  wipGroups,
   workspaces,
 } from "./schema.ts";
 import { broadcast, broadcastToUser, closeGuests } from "./hub.ts";
@@ -346,7 +349,7 @@ export function createApp(db: AppDb): Hono<Env> {
     return board;
   }
 
-  async function assertListAcceptsCard(listId: string, adding: boolean) {
+  async function assertListAcceptsCard(listId: string, adding: boolean, movingCardId: string | null = null) {
     const list = await one(db.select().from(lists).where(eq(lists.id, listId)).limit(1));
     if (!list) {
       throw new HTTPException(400, { message: "このボードのリストではありません" });
@@ -360,6 +363,121 @@ export function createApp(db: AppDb): Hono<Env> {
         throw new HTTPException(400, { message: "WIP の上限に達しています" });
       }
     }
+    if (adding) {
+      await assertSharedWip(listId, movingCardId, 1);
+    }
+  }
+
+  async function loadWipGroups(boardId: string): Promise<WipGroup[]> {
+    const groups = await db.select().from(wipGroups).where(eq(wipGroups.boardId, boardId));
+    if (groups.length === 0) {
+      return [];
+    }
+    const links = await db
+      .select()
+      .from(wipGroupLists)
+      .where(
+        inArray(
+          wipGroupLists.groupId,
+          groups.map((group) => group.id),
+        ),
+      );
+    return groups
+      .slice()
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((group) => ({
+        id: group.id,
+        boardId: group.boardId,
+        title: group.title,
+        limit: group.limit,
+        enabled: group.enabled,
+        listIds: links.filter((link) => link.groupId === group.id).map((link) => link.listId),
+      }));
+  }
+
+  async function publishGroups(boardId: string, actorId: string): Promise<WipGroup[]> {
+    const groups = await loadWipGroups(boardId);
+    broadcast(boardId, { type: "wipGroups.updated", payload: groups, actorId });
+    return groups;
+  }
+
+  async function assertSharedWip(listId: string, movingCardId: string | null, incoming: number): Promise<void> {
+    if (incoming <= 0) {
+      return;
+    }
+    const links = await db.select().from(wipGroupLists).where(eq(wipGroupLists.listId, listId));
+    if (links.length === 0) {
+      return;
+    }
+    const groups = await db
+      .select()
+      .from(wipGroups)
+      .where(
+        inArray(
+          wipGroups.id,
+          [...new Set(links.map((link) => link.groupId))],
+        ),
+      );
+    for (const group of groups) {
+      if (!group.enabled) {
+        continue;
+      }
+      const members = await db.select().from(wipGroupLists).where(eq(wipGroupLists.groupId, group.id));
+      const listIds = members.map((member) => member.listId);
+      const sitting = await db
+        .select({ id: cards.id, archived: cards.archived })
+        .from(cards)
+        .where(inArray(cards.listId, listIds));
+      const already = Boolean(
+        movingCardId && sitting.some((card) => card.id === movingCardId && !card.archived),
+      );
+      const open = sitting.filter((card) => !card.archived && card.id !== movingCardId).length;
+      if (open + (already ? 0 : incoming) > group.limit) {
+        throw new HTTPException(400, { message: "仕掛かりの共通上限に達しています" });
+      }
+    }
+  }
+
+  async function checkedGroupLists(boardId: string, listIds: unknown): Promise<string[]> {
+    if (!Array.isArray(listIds) || listIds.some((item) => typeof item !== "string")) {
+      throw new HTTPException(400, { message: "リストを2つ以上選んでください" });
+    }
+    const unique = [...new Set(listIds)];
+    if (unique.length < 2) {
+      throw new HTTPException(400, { message: "リストを2つ以上選んでください" });
+    }
+    const rows = await db.select({ id: lists.id }).from(lists).where(eq(lists.boardId, boardId));
+    const known = new Set(rows.map((row) => row.id));
+    if (unique.some((item) => !known.has(item))) {
+      throw new HTTPException(400, { message: "このボードのリストではありません" });
+    }
+    return unique;
+  }
+
+  function checkedGroupLimit(value: unknown): number {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 999) {
+      throw new HTTPException(400, { message: "上限は1から999です" });
+    }
+    return value;
+  }
+
+  function checkedGroupTitle(value: unknown): string {
+    if (value === undefined) {
+      return "";
+    }
+    if (typeof value !== "string") {
+      throw new HTTPException(400, { message: "グループ名は80文字までです" });
+    }
+    const title = value.trim();
+    if ([...title].length > 80) {
+      throw new HTTPException(400, { message: "グループ名は80文字までです" });
+    }
+    return title;
+  }
+
+  async function replaceGroupLists(groupId: string, listIds: string[]): Promise<void> {
+    await db.delete(wipGroupLists).where(eq(wipGroupLists.groupId, groupId));
+    await db.insert(wipGroupLists).values(listIds.map((listId) => ({ groupId, listId })));
   }
 
   async function withCounts(items: Card[]): Promise<Card[]> {
@@ -428,6 +546,7 @@ export function createApp(db: AppDb): Hono<Env> {
       board: mapBoard(board),
       lists: boardLists.map(mapList),
       cards: await withCounts(boardCards.map(mapCard)),
+      wipGroups: await loadWipGroups(boardId),
     };
   }
 
@@ -1155,6 +1274,15 @@ export function createApp(db: AppDb): Hono<Env> {
     if (Object.keys(patch).length === 0) {
       throw new HTTPException(400, { message: "変更がありません" });
     }
+    if (patch.archived === false) {
+      const tied = await db
+        .select({ id: cards.id })
+        .from(cards)
+        .where(and(eq(cards.listId, listId), eq(cards.archivedWithList, true)));
+      if (tied.length > 0) {
+        await assertSharedWip(listId, null, tied.length);
+      }
+    }
     await db.update(lists).set(patch).where(eq(lists.id, listId));
     if (patch.archived === true) {
       const open = await db
@@ -1257,6 +1385,15 @@ export function createApp(db: AppDb): Hono<Env> {
     }
     await db.delete(cards).where(eq(cards.listId, listId));
     await db.delete(lists).where(eq(lists.id, listId));
+    await db.delete(wipGroupLists).where(eq(wipGroupLists.listId, listId));
+    const remaining = await loadWipGroups(boardId);
+    for (const group of remaining) {
+      if (group.listIds.length < 2) {
+        await db.delete(wipGroupLists).where(eq(wipGroupLists.groupId, group.id));
+        await db.delete(wipGroups).where(eq(wipGroups.id, group.id));
+      }
+    }
+    await publishGroups(boardId, userId);
     broadcast(boardId, { type: "list.deleted", payload: { id: listId }, actorId: userId });
     return c.json({ ok: true });
   });
@@ -1542,6 +1679,9 @@ export function createApp(db: AppDb): Hono<Env> {
     } catch (err) {
       throw new HTTPException(400, { message: String(err) });
     }
+    if (body.archived === false && card.archived) {
+      await assertListAcceptsCard(card.listId, true);
+    }
     await db
       .update(cards)
       .set({
@@ -1610,7 +1750,7 @@ export function createApp(db: AppDb): Hono<Env> {
       if (source?.cardEdit === "deny") {
         throw new HTTPException(400, { message: "このリストは編集できません" });
       }
-      await assertListAcceptsCard(list.id, true);
+      await assertListAcceptsCard(list.id, true, card.id);
     } else if (list.cardEdit === "deny") {
       throw new HTTPException(400, { message: "このリストは編集できません" });
     }
@@ -1723,6 +1863,82 @@ export function createApp(db: AppDb): Hono<Env> {
       actorId: userId,
     });
     return c.json({ card: updated, choice });
+  });
+
+  app.post("/api/boards/:boardId/wip-groups", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    await ownedBoard(userId, boardId);
+    const body = await c.req.json<{ title?: string; listIds?: unknown; limit?: unknown }>();
+    const listIds = await checkedGroupLists(boardId, body.listIds);
+    const limit = checkedGroupLimit(body.limit);
+    const title = checkedGroupTitle(body.title);
+    const groupId = id();
+    await db.insert(wipGroups).values({
+      id: groupId,
+      boardId,
+      title,
+      limit,
+      enabled: true,
+      createdAt: now(),
+    });
+    await replaceGroupLists(groupId, listIds);
+    return c.json({ groups: await publishGroups(boardId, userId) }, 201);
+  });
+
+  app.patch("/api/boards/:boardId/wip-groups/:groupId", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const groupId = c.req.param("groupId");
+    await ownedBoard(userId, boardId);
+    const group = await one(db.select().from(wipGroups).where(eq(wipGroups.id, groupId)).limit(1));
+    if (!group || group.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    const body = await c.req.json<{
+      title?: unknown;
+      listIds?: unknown;
+      limit?: unknown;
+      enabled?: unknown;
+    }>();
+    const patch: { title?: string; limit?: number; enabled?: boolean } = {};
+    if (body.title !== undefined) {
+      patch.title = checkedGroupTitle(body.title);
+    }
+    if (body.limit !== undefined) {
+      patch.limit = checkedGroupLimit(body.limit);
+    }
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== "boolean") {
+        throw new HTTPException(400, { message: "有効の指定が不正です" });
+      }
+      patch.enabled = body.enabled;
+    }
+    const listIds = body.listIds === undefined ? null : await checkedGroupLists(boardId, body.listIds);
+    if (Object.keys(patch).length === 0 && !listIds) {
+      throw new HTTPException(400, { message: "変更がありません" });
+    }
+    if (Object.keys(patch).length > 0) {
+      await db.update(wipGroups).set(patch).where(eq(wipGroups.id, groupId));
+    }
+    if (listIds) {
+      await replaceGroupLists(groupId, listIds);
+    }
+    return c.json({ groups: await publishGroups(boardId, userId) });
+  });
+
+  app.delete("/api/boards/:boardId/wip-groups/:groupId", async (c) => {
+    const userId = c.get("userId");
+    const boardId = c.req.param("boardId");
+    const groupId = c.req.param("groupId");
+    await ownedBoard(userId, boardId);
+    const group = await one(db.select().from(wipGroups).where(eq(wipGroups.id, groupId)).limit(1));
+    if (!group || group.boardId !== boardId) {
+      throw new HTTPException(404, { message: "見つかりません" });
+    }
+    await db.delete(wipGroupLists).where(eq(wipGroupLists.groupId, groupId));
+    await db.delete(wipGroups).where(eq(wipGroups.id, groupId));
+    return c.json({ groups: await publishGroups(boardId, userId) });
   });
 
   app.onError((err, c) => {

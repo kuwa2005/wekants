@@ -666,6 +666,41 @@ a {
   color: var(--paper);
 }
 
+.wip-panel {
+  margin: 0 1rem 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--paper-edge);
+  background: var(--paper);
+}
+
+.wip-panel h2,
+.wip-group {
+  margin: 0;
+}
+
+.wip-panel h2 {
+  font-family: var(--display);
+  font-size: 0.95rem;
+}
+
+.wip-lists,
+.wip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  align-items: center;
+}
+
+.wip-row {
+  margin-top: 0.45rem;
+}
+
+.wip-group {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--paper-edge);
+}
+
 .ticket p {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;

@@ -677,3 +677,19 @@ test("a card question collects one vote per person", async ({ page }) => {
   await expect(page.getByLabel("賛成の票")).toHaveText("0");
   await expect(page.getByRole("button", { name: "賛成" })).not.toHaveClass(/voted/);
 });
+
+test("a shared WIP limit blocks the next list", async ({ page }) => {
+  await register(page, `group_${stamp}`);
+  await hangBoard(page, `Flow ${stamp}`);
+  await page.getByRole("button", { name: "仕掛かり上限" }).click();
+  const panel = page.getByRole("region", { name: "仕掛かり上限" });
+  await panel.getByRole("checkbox", { name: "着手中 をグループに入れる" }).check();
+  await panel.getByRole("checkbox", { name: "完了 をグループに入れる" }).check();
+  await panel.getByLabel("共通上限").fill("1");
+  await panel.getByRole("button", { name: "グループを追加" }).click();
+  const doing = page.locator(".list").nth(1);
+  await doing.getByPlaceholder("新しいカード").fill("One");
+  await doing.getByRole("button", { name: "+" }).click();
+  await expect(doing.locator("[data-card-id]")).toContainText("One");
+  await expect(page.locator(".list").nth(2).getByText("仕掛かりの共通上限です")).toBeVisible();
+});

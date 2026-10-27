@@ -76,6 +76,15 @@ export type UnsavedEdit = {
   description: string;
 };
 
+export type WipGroup = {
+  id: string;
+  boardId: string;
+  title: string;
+  limit: number;
+  enabled: boolean;
+  listIds: string[];
+};
+
 export type BoardSnapshot = {
   board: Board;
   lists: List[];
@@ -83,6 +92,7 @@ export type BoardSnapshot = {
   home?: boolean;
   unsaved?: UnsavedEdit[];
   myVotes?: MyVote[];
+  wipGroups?: WipGroup[];
 };
 
 export type WorkspaceTree = {
@@ -106,7 +116,8 @@ export type WsEvent =
       type: "card.voted";
       payload: { cardId: string; choice: "positive" | "negative" | null; userId: string };
       actorId: string;
-    };
+    }
+  | { type: "wipGroups.updated"; payload: WipGroup[]; actorId: string };
 
 export type MoveCardBody = {
   listId: string;

@@ -21,6 +21,7 @@ import { api } from "../api";
 import { LineBatch } from "../LineBatch";
 import { Markdown } from "../Markdown";
 import { VotePanel } from "../VotePanel";
+import { WipPanel } from "../WipPanel";
 
 type Props = {
   user: UserPublic | null;
@@ -70,6 +71,27 @@ function uniqueById<T extends { id: string }>(rows: T[]): T[] {
     seen.add(row.id);
     return true;
   });
+}
+
+function sharedWipBlocks(snapshot: BoardSnapshot, listId: string, ignoreId: string | null): boolean {
+  for (const group of snapshot.wipGroups ?? []) {
+    if (!group.enabled || !group.listIds.includes(listId)) {
+      continue;
+    }
+    const already = Boolean(
+      ignoreId &&
+        snapshot.cards.some(
+          (card) => card.id === ignoreId && !card.archived && group.listIds.includes(card.listId),
+        ),
+    );
+    const open = snapshot.cards.filter(
+      (card) => !card.archived && card.id !== ignoreId && group.listIds.includes(card.listId),
+    ).length;
+    if (open + (already ? 0 : 1) > group.limit) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function neighborRanks(
@@ -178,6 +200,7 @@ function ListColumn({
   unsaved,
   boardKey,
   slug,
+  groupFull,
 }: {
   list: List;
   cards: Card[];
@@ -198,6 +221,7 @@ function ListColumn({
   unsaved: UnsavedEdit[];
   boardKey: string;
   slug: string;
+  groupFull: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [cardBatch, setCardBatch] = useState<TitleBatch>("one");
@@ -475,6 +499,8 @@ function ListColumn({
         <p className="hint">このリストは編集できません</p>
       ) : list.wipLimit != null && cards.length >= list.wipLimit ? (
         <p className="hint">WIP の上限です</p>
+      ) : groupFull ? (
+        <p className="hint">仕掛かりの共通上限です</p>
       ) : (
       <>
       <form className="batch" onSubmit={submit}>
@@ -563,6 +589,7 @@ export function BoardPage({ user, onLogout }: Props) {
   const [keyDraft, setKeyDraft] = useState("");
   const [keyError, setKeyError] = useState("");
   const [cardQuery, setCardQuery] = useState("");
+  const [wipOpen, setWipOpen] = useState(false);
   const skipTitle = useRef(false);
   const [editing, setEditing] = useState<Card | null>(null);
   const [draftError, setDraftError] = useState("");
@@ -681,6 +708,10 @@ export function BoardPage({ user, onLogout }: Props) {
             unsaved: [...rest, { cardId: edit.cardId, title: edit.title, description: edit.description }],
           };
         });
+        return;
+      }
+      if (event.type === "wipGroups.updated") {
+        setSnapshot((current) => (current ? { ...current, wipGroups: event.payload } : current));
         return;
       }
       if (event.type === "card.voted") {
@@ -912,6 +943,9 @@ export function BoardPage({ user, onLogout }: Props) {
       listId !== moving.listId &&
       snapshot.cards.filter((card) => card.listId === listId && !card.archived).length >= destination.wipLimit
     ) {
+      return;
+    }
+    if (listId !== moving.listId && sharedWipBlocks(snapshot, listId, moving.id)) {
       return;
     }
     const targetCards = snapshot.cards.filter((card) => card.listId === listId && !card.archived);
@@ -1163,6 +1197,9 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               {isHome ? "ホームをやめる" : "ホームにする"}
             </button>
+            <button type="button" aria-pressed={wipOpen} onClick={() => setWipOpen((current) => !current)}>
+              仕掛かり上限
+            </button>
           </>
         ) : (
           <span>公開ボード</span>
@@ -1198,6 +1235,24 @@ export function BoardPage({ user, onLogout }: Props) {
           </Link>
         )}
       </header>
+      {wipOpen && snapshot.board.ownerId === user?.id ? (
+        <WipPanel
+          lists={lists}
+          groups={snapshot.wipGroups ?? []}
+          onCreate={async (body) => {
+            const saved = await api.createWipGroup(boardId, body);
+            setSnapshot((current) => (current ? { ...current, wipGroups: saved.groups } : current));
+          }}
+          onUpdate={async (groupId, body) => {
+            const saved = await api.patchWipGroup(boardId, groupId, body);
+            setSnapshot((current) => (current ? { ...current, wipGroups: saved.groups } : current));
+          }}
+          onDelete={async (groupId) => {
+            const saved = await api.deleteWipGroup(boardId, groupId);
+            setSnapshot((current) => (current ? { ...current, wipGroups: saved.groups } : current));
+          }}
+        />
+      ) : null}
       {snapshot.board.ownerId === user?.id ? (
       <form className="composer batch" onSubmit={addList}>
         <textarea
@@ -1247,6 +1302,7 @@ export function BoardPage({ user, onLogout }: Props) {
               unsaved={snapshot.unsaved ?? []}
               boardKey={snapshot.board.key}
               slug={boardSlug(snapshot.board.title)}
+              groupFull={sharedWipBlocks(snapshot, list.id, null)}
               boardId={boardId}
               boards={
                 ownedBoards.some((board) => board.id === snapshot.board.id)

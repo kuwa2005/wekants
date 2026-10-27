@@ -83,6 +83,24 @@ export const cards = pgTable("cards", {
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
+export const wipGroups = pgTable("wip_groups", {
+  id: text("id").primaryKey(),
+  boardId: text("board_id").notNull(),
+  title: text("title").notNull().default(""),
+  limit: integer("limit_count").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const wipGroupLists = pgTable(
+  "wip_group_lists",
+  {
+    groupId: text("group_id").notNull(),
+    listId: text("list_id").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.groupId, table.listId] })],
+);
+
 export const cardBallots = pgTable(
   "card_ballots",
   {

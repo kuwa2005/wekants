@@ -1,0 +1,337 @@
+import { Meteor } from 'meteor/meteor';
+import { check } from 'meteor/check';
+import PositionHistory from '/models/positionHistory';
+import Swimlanes from '/models/swimlanes';
+import Lists from '/models/lists';
+import Cards from '/models/cards';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { canReadBoard } from '/models/lib/boardVisibility';
+
+const { isAssignedOnlyMember, mayCopyFromBoard } = require('/models/lib/boardCardScope');
+
+async function assertCanReadBoard(userId, boardId) {
+  const board = await ReactiveCache.getBoard(boardId);
+  if (!canReadBoard(userId, board)) {
+    throw new Meteor.Error('not-authorized', 'You do not have access to this board.');
+  }
+  return board;
+}
+
+// An assigned-only member sees the history of the cards assigned to them, and
+// of the board's swimlanes and lists, never of another member's cards.
+async function assignedOnlyHistoryScope(userId, board) {
+  if (!isAssignedOnlyMember(board, userId)) return null;
+  const cards = await ReactiveCache.getCards({ boardId: board._id, assignees: userId }, { fields: { _id: 1 } });
+  return { $or: [{ entityType: { $ne: 'card' } }, { entityId: { $in: (cards || []).map(card => card._id) } }] };
+}
+
+/**
+ * Server-side methods for position history tracking
+ */
+Meteor.methods({
+  /**
+   * Track original position for a swimlane
+   */
+  async 'positionHistory.trackSwimlane'(swimlaneId) {
+    check(swimlaneId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const swimlane = await Swimlanes.findOneAsync(swimlaneId);
+    if (!swimlane) {
+      throw new Meteor.Error('swimlane-not-found', 'Swimlane not found');
+    }
+
+    await assertCanReadBoard(this.userId, swimlane.boardId);
+
+    return swimlane.trackOriginalPosition();
+  },
+
+  /**
+   * Track original position for a list
+   */
+  async 'positionHistory.trackList'(listId) {
+    check(listId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const list = await Lists.findOneAsync(listId);
+    if (!list) {
+      throw new Meteor.Error('list-not-found', 'List not found');
+    }
+
+    await assertCanReadBoard(this.userId, list.boardId);
+
+    return list.trackOriginalPosition();
+  },
+
+  /**
+   * Track original position for a card
+   */
+  async 'positionHistory.trackCard'(cardId) {
+    check(cardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const card = await Cards.findOneAsync(cardId);
+    if (!card) {
+      throw new Meteor.Error('card-not-found', 'Card not found');
+    }
+
+    // ...and the card by the board role, as getCardDescription does
+    // (GHSA-r4gm-mjj9-g3x8): an assigned-only member's own cards only.
+    const cardBoard = await assertCanReadBoard(this.userId, card.boardId);
+    if (!mayCopyFromBoard(cardBoard, this.userId, card)) {
+      throw new Meteor.Error('not-authorized', 'You do not have access to this card.');
+    }
+
+    return card.trackOriginalPosition();
+  },
+
+  /**
+   * Get original position for a swimlane
+   */
+  async 'positionHistory.getSwimlaneOriginalPosition'(swimlaneId) {
+    check(swimlaneId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const swimlane = await Swimlanes.findOneAsync(swimlaneId);
+    if (!swimlane) {
+      throw new Meteor.Error('swimlane-not-found', 'Swimlane not found');
+    }
+
+    await assertCanReadBoard(this.userId, swimlane.boardId);
+
+    return swimlane.getOriginalPosition();
+  },
+
+  /**
+   * Get original position for a list
+   */
+  async 'positionHistory.getListOriginalPosition'(listId) {
+    check(listId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const list = await Lists.findOneAsync(listId);
+    if (!list) {
+      throw new Meteor.Error('list-not-found', 'List not found');
+    }
+
+    await assertCanReadBoard(this.userId, list.boardId);
+
+    return list.getOriginalPosition();
+  },
+
+  /**
+   * Get original position for a card
+   */
+  async 'positionHistory.getCardOriginalPosition'(cardId) {
+    check(cardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const card = await Cards.findOneAsync(cardId);
+    if (!card) {
+      throw new Meteor.Error('card-not-found', 'Card not found');
+    }
+
+    // ...and the card by the board role, as getCardDescription does
+    // (GHSA-r4gm-mjj9-g3x8): an assigned-only member's own cards only.
+    const cardBoard = await assertCanReadBoard(this.userId, card.boardId);
+    if (!mayCopyFromBoard(cardBoard, this.userId, card)) {
+      throw new Meteor.Error('not-authorized', 'You do not have access to this card.');
+    }
+
+    return card.getOriginalPosition();
+  },
+
+  /**
+   * Check if a swimlane has moved from its original position
+   */
+  async 'positionHistory.hasSwimlaneMoved'(swimlaneId) {
+    check(swimlaneId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const swimlane = await Swimlanes.findOneAsync(swimlaneId);
+    if (!swimlane) {
+      throw new Meteor.Error('swimlane-not-found', 'Swimlane not found');
+    }
+
+    await assertCanReadBoard(this.userId, swimlane.boardId);
+
+    return swimlane.hasMovedFromOriginalPosition();
+  },
+
+  /**
+   * Check if a list has moved from its original position
+   */
+  async 'positionHistory.hasListMoved'(listId) {
+    check(listId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const list = await Lists.findOneAsync(listId);
+    if (!list) {
+      throw new Meteor.Error('list-not-found', 'List not found');
+    }
+
+    await assertCanReadBoard(this.userId, list.boardId);
+
+    return list.hasMovedFromOriginalPosition();
+  },
+
+  /**
+   * Check if a card has moved from its original position
+   */
+  async 'positionHistory.hasCardMoved'(cardId) {
+    check(cardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const card = await Cards.findOneAsync(cardId);
+    if (!card) {
+      throw new Meteor.Error('card-not-found', 'Card not found');
+    }
+
+    // ...and the card by the board role, as getCardDescription does
+    // (GHSA-r4gm-mjj9-g3x8): an assigned-only member's own cards only.
+    const cardBoard = await assertCanReadBoard(this.userId, card.boardId);
+    if (!mayCopyFromBoard(cardBoard, this.userId, card)) {
+      throw new Meteor.Error('not-authorized', 'You do not have access to this card.');
+    }
+
+    return card.hasMovedFromOriginalPosition();
+  },
+
+  /**
+   * Get original position description for a swimlane
+   */
+  async 'positionHistory.getSwimlaneDescription'(swimlaneId) {
+    check(swimlaneId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const swimlane = await Swimlanes.findOneAsync(swimlaneId);
+    if (!swimlane) {
+      throw new Meteor.Error('swimlane-not-found', 'Swimlane not found');
+    }
+
+    await assertCanReadBoard(this.userId, swimlane.boardId);
+
+    return swimlane.getOriginalPositionDescription();
+  },
+
+  /**
+   * Get original position description for a list
+   */
+  async 'positionHistory.getListDescription'(listId) {
+    check(listId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const list = await Lists.findOneAsync(listId);
+    if (!list) {
+      throw new Meteor.Error('list-not-found', 'List not found');
+    }
+
+    await assertCanReadBoard(this.userId, list.boardId);
+
+    return list.getOriginalPositionDescription();
+  },
+
+  /**
+   * Get original position description for a card
+   */
+  async 'positionHistory.getCardDescription'(cardId) {
+    check(cardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const card = await Cards.findOneAsync(cardId);
+    if (!card) {
+      throw new Meteor.Error('card-not-found', 'Card not found');
+    }
+
+    const cardBoard = await assertCanReadBoard(this.userId, card.boardId);
+    if (!mayCopyFromBoard(cardBoard, this.userId, card)) {
+      throw new Meteor.Error('not-authorized', 'You do not have access to this card.');
+    }
+
+    return card.getOriginalPositionDescription();
+  },
+
+  /**
+   * Get all position history for a board
+   */
+  async 'positionHistory.getBoardHistory'(boardId) {
+    check(boardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const board = await assertCanReadBoard(this.userId, boardId);
+    const scope = await assignedOnlyHistoryScope(this.userId, board);
+
+    return PositionHistory.find({
+      boardId: boardId,
+      ...(scope || {}),
+    }, {
+      sort: { createdAt: -1 }
+    }).fetchAsync();
+  },
+
+  /**
+   * Get position history by entity type for a board
+   */
+  async 'positionHistory.getBoardHistoryByType'(boardId, entityType) {
+    check(boardId, String);
+    check(entityType, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized', 'You must be logged in.');
+    }
+
+    const board = await assertCanReadBoard(this.userId, boardId);
+    const scope = await assignedOnlyHistoryScope(this.userId, board);
+
+    if (!['swimlane', 'list', 'card'].includes(entityType)) {
+      throw new Meteor.Error('invalid-entity-type', 'Entity type must be swimlane, list, or card');
+    }
+
+    return PositionHistory.find({
+      boardId: boardId,
+      entityType: entityType,
+      ...(scope || {}),
+    }, {
+      sort: { createdAt: -1 }
+    }).fetchAsync();
+  },
+});

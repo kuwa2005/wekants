@@ -1,0 +1,21 @@
+template(name="adminPanelTabs")
+  if currentUser
+    .board-header-btns.admin-panel-tabs
+      //- Multitenancy option D (docs/Design/Multitenancy/Multitenancy.md, D.7):
+        Settings and Problems are about the INSTANCE, so a per-tenant Global
+        Admin does not get those tabs - they get People (their own Organizations
+        and their members) and Attachments (Backup, scoped to their tenant).
+      if currentUser.isAdmin
+        a.board-header-btn.settings(class=isSettingsActive href="{{pathFor 'setting'}}" title="{{_ 'settings'}}")
+          i.fa.fa-cog
+          span.board-header-btn-label {{_ 'settings'}}
+      a.board-header-btn.people(class=isPeopleActive href="{{pathFor 'people'}}" title="{{_ 'people'}}")
+        i.fa.fa-users
+        span.board-header-btn-label {{_ 'people'}}
+      a.board-header-btn.informations(class=isAttachmentsActive href="{{pathFor 'attachments'}}" title="{{_ 'attachments'}}")
+        i.fa.fa-paperclip
+        span.board-header-btn-label {{_ 'attachments'}}
+      if currentUser.isAdmin
+        a.board-header-btn.problems(class="{{isProblemsActive}} {{problemsClass}}" href="{{pathFor 'problems'}}" title="{{_ 'problems'}}")
+          i.fa.fa-exclamation-triangle
+          span.board-header-btn-label {{_ 'problems'}}

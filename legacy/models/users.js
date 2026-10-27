@@ -1,0 +1,3155 @@
+const { CALENDAR_SYSTEM_IDS } = require('/imports/lib/calendarSystems');
+import { Meteor } from 'meteor/meteor';
+import { ReactiveCache, ReactiveMiniMongoIndex } from '/imports/reactiveCache';
+import Boards from '/models/boards';
+import InviteToBoardRolesSettings, {
+  INVITE_TO_BOARD_ROLES_ID,
+  INVITE_TO_BOARD_ROLES_DEFAULT,
+} from '/models/inviteToBoardRolesSettings';
+// #5659: the default/minimum list width must be the SAME on every resolution
+// path (it used to be 270 here but 272 in the client and the lists schema, so
+// lists could fall back to different "defaults" on public boards).
+import {
+  DEFAULT_LIST_WIDTH,
+  MIN_LIST_WIDTH,
+  normalizeListWidth,
+} from '/models/lib/listWidth';
+// import { Index, MongoDBEngine } from 'meteor/easy:search'; // Temporarily disabled due to compatibility issues
+const { SimpleSchema } = require('/imports/simpleSchema');
+// Multitenancy option D: the per-tenant Global Admin rules, pure and shared by the
+// client, the server and the tests (docs/Design/Multitenancy/Multitenancy.md).
+import * as tenantAdmin from '/models/lib/tenantAdmin';
+const { assertSafeMapKey } = require('/models/lib/safeMapKey');
+const { cardLastViewsModifier } = require('/models/lib/unreadComments');
+// The bookmark rules, pure so the client, the server and the tests agree.
+const { starredPagesOf, isPageStarred } = require('/models/lib/starredPages');
+const Users = Meteor.users;
+const getUtils = () => require('/client/lib/utils').Utils;
+const { GROUP_KEYS, cleanMutedGroups } = require('/models/lib/notificationActivityGroups');
+const { deliverySchemaFields, MEMBER_CHANNELS } = require('/models/lib/notificationDelivery');
+
+// Public-board collapse persistence helpers (cookie-based for non-logged-in users)
+if (Meteor.isClient) {
+  const readCookieMap = name => {
+    try {
+      const stored = typeof document !== 'undefined' ? document.cookie : '';
+      const cookies = stored.split(';').map(c => c.trim());
+      let json = '{}';
+      for (const c of cookies) {
+        if (c.startsWith(name + '=')) {
+          json = decodeURIComponent(c.substring(name.length + 1));
+          break;
+        }
+      }
+      return JSON.parse(json || '{}');
+    } catch (e) {
+      console.warn('Error parsing collapse cookie', name, e);
+      return {};
+    }
+  };
+
+  const writeCookieMap = (name, data) => {
+    try {
+      const serialized = encodeURIComponent(JSON.stringify(data || {}));
+      const maxAge = 60 * 60 * 24 * 365; // 1 year
+      document.cookie = `${name}=${serialized}; path=/; max-age=${maxAge}`;
+    } catch (e) {
+      console.warn('Error writing collapse cookie', name, e);
+    }
+  };
+
+  // The left menu's fold, for somebody who is NOT signed in - a public board
+  // has this menu too, and there is no user document to write to. The same
+  // cookie mechanism the public list and swimlane collapse states above use, so
+  // there is one way this app remembers a fold for a signed-out reader.
+  // One value, not a map: it is one menu, drawn on two pages.
+  // docs/Features/All-Boards/Left-Menu.md
+  Users.getPublicLeftMenuCollapsed = () => {
+    const data = readCookieMap('wekan-left-menu-collapsed');
+    return typeof data.collapsed === 'boolean' ? data.collapsed : null;
+  };
+
+  Users.setPublicLeftMenuCollapsed = collapsed => {
+    writeCookieMap('wekan-left-menu-collapsed', { collapsed: !!collapsed });
+    return true;
+  };
+
+  // Which WORKSPACES are folded, for somebody who is not signed in. One cookie
+  // holding a map of workspace id -> true, the same shape and the same helpers
+  // as the collapsed lists above. docs/Features/All-Boards/Workspaces.md
+  Users.getPublicCollapsedWorkspaces = () => {
+    const data = readCookieMap('wekan-collapsed-workspaces');
+    return data && typeof data === 'object' ? data : {};
+  };
+
+  Users.setPublicCollapsedWorkspace = (workspaceId, collapsed) => {
+    assertSafeMapKey(workspaceId);
+    if (!workspaceId) return false;
+    const data = Users.getPublicCollapsedWorkspaces();
+    if (collapsed) data[workspaceId] = true;
+    else delete data[workspaceId];
+    writeCookieMap('wekan-collapsed-workspaces', data);
+    return true;
+  };
+
+  // ...and the width it was dragged to, kept the same way and for the same
+  // reason. A COOKIE rather than the localStorage the right sidebar's width
+  // uses: this menu already keeps its fold in one, and one reader's menu should
+  // not be remembered in two different places.
+  // docs/Features/All-Boards/Left-Menu.md
+  Users.getPublicLeftMenuWidth = () => {
+    const data = readCookieMap('wekan-left-menu-width');
+    return typeof data.width === 'number' ? data.width : null;
+  };
+
+  Users.setPublicLeftMenuWidth = width => {
+    writeCookieMap('wekan-left-menu-width', { width: Number(width) });
+    return true;
+  };
+
+  Users.getPublicCollapsedList = (boardId, listId) => {
+    if (!boardId || !listId) return null;
+    const data = readCookieMap('wekan-collapsed-lists');
+    if (data[boardId] && typeof data[boardId][listId] === 'boolean') {
+      return data[boardId][listId];
+    }
+    return null;
+  };
+
+  Users.setPublicCollapsedList = (boardId, listId, collapsed) => {
+    assertSafeMapKey(boardId, listId);
+    if (!boardId || !listId) return false;
+    const data = readCookieMap('wekan-collapsed-lists');
+    if (!data[boardId]) data[boardId] = {};
+    data[boardId][listId] = !!collapsed;
+    writeCookieMap('wekan-collapsed-lists', data);
+    return true;
+  };
+
+  Users.getPublicCollapsedSwimlane = (boardId, swimlaneId) => {
+    if (!boardId || !swimlaneId) return null;
+    const data = readCookieMap('wekan-collapsed-swimlanes');
+    if (data[boardId] && typeof data[boardId][swimlaneId] === 'boolean') {
+      return data[boardId][swimlaneId];
+    }
+    return null;
+  };
+
+  Users.setPublicCollapsedSwimlane = (boardId, swimlaneId, collapsed) => {
+    assertSafeMapKey(boardId, swimlaneId);
+    if (!boardId || !swimlaneId) return false;
+    const data = readCookieMap('wekan-collapsed-swimlanes');
+    if (!data[boardId]) data[boardId] = {};
+    data[boardId][swimlaneId] = !!collapsed;
+    writeCookieMap('wekan-collapsed-swimlanes', data);
+    return true;
+  };
+
+  Users.getPublicCardCollapsed = () => {
+    const data = readCookieMap('wekan-card-collapsed');
+    return typeof data.state === 'boolean' ? data.state : null;
+  };
+
+  Users.setPublicCardCollapsed = collapsed => {
+    writeCookieMap('wekan-card-collapsed', { state: !!collapsed });
+    return true;
+  };
+}
+
+export const allowedSortValues = [
+  '-modifiedAt',
+  'modifiedAt',
+  '-title',
+  'title',
+  '-sort',
+  'sort',
+];
+const defaultSortBy = allowedSortValues[0];
+
+// #5799: sort modes for the All Boards page. 'custom' is the existing per-user
+// manual drag order; the other two sort alphabetically by board title.
+export const allowedAllBoardsSortValues = ['custom', 'title-asc', 'title-desc'];
+
+/**
+ * A User in wekan
+ */
+Users.attachSchema(
+  new SimpleSchema({
+    username: {
+      /**
+       * the username of the user
+       */
+      type: String,
+      optional: true,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert && !this.isSet) {
+          const name = this.field('profile.fullname');
+          if (name.isSet) {
+            return name.value.toLowerCase().replace(/\s/g, '');
+          }
+        }
+      },
+    },
+    orgs: {
+      /**
+       * the list of organizations that a user belongs to
+       */
+      type: Array,
+      optional: true,
+    },
+    'orgs.$': {
+      type: Object,
+    },
+    'orgs.$.orgId': {
+      /**
+       * The uniq ID of the organization
+       */
+      type: String,
+    },
+    'orgs.$.orgDisplayName': {
+      /**
+       * The display name of the organization
+       */
+      type: String,
+    },
+    'orgs.$.isAdmin': {
+      /**
+       * Multitenancy option D (docs/Design/Multitenancy/Multitenancy.md): this user
+       * is a per-tenant Global Admin OF THIS ORGANIZATION - they may administer its
+       * people and its backups, and nothing else. It is deliberately a flag on the
+       * membership the user already has rather than a second membership list.
+       * It NEVER implies the site-wide `isAdmin` flag, and a per-tenant admin can
+       * never grant that one (models/lib/tenantAdmin.js).
+       */
+      type: Boolean,
+      optional: true,
+    },
+    teams: {
+      /**
+       * the list of teams that a user belongs to
+       */
+      type: Array,
+      optional: true,
+    },
+    'teams.$': {
+      type: Object,
+    },
+    'teams.$.teamId': {
+      /**
+       * The uniq ID of the team
+       */
+      type: String,
+    },
+    'teams.$.teamDisplayName': {
+      /**
+       * The display name of the team
+       */
+      type: String,
+    },
+    'teams.$.isAdmin': {
+      /**
+       * #802: this member administers this team's members in All Boards, as
+       * orgs.$.isAdmin does for an organization (models/lib/groupMembers.js).
+       */
+      type: Boolean,
+      optional: true,
+    },
+    emails: {
+      /**
+       * the list of emails attached to a user
+       */
+      type: Array,
+      optional: true,
+    },
+    'emails.$': {
+      type: Object,
+    },
+    'emails.$.address': {
+      /**
+       * The email address
+       */
+      type: String,
+      regEx: SimpleSchema.RegEx.Email,
+    },
+    'emails.$.verified': {
+      /**
+       * Has the email been verified
+       */
+      type: Boolean,
+    },
+    createdAt: {
+      /**
+       * creation date of the user
+       */
+      type: Date,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert) {
+          return new Date();
+        } else if (this.isUpsert) {
+          return {
+            $setOnInsert: new Date(),
+          };
+        } else {
+          this.unset();
+        }
+      },
+    },
+    modifiedAt: {
+      type: Date,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert || this.isUpsert || this.isUpdate) {
+          return new Date();
+        } else {
+          this.unset();
+        }
+      },
+    },
+    profile: {
+      /**
+       * profile settings
+       */
+      type: Object,
+      optional: true,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert && !this.isSet) {
+          return {
+            boardView: 'board-view-swimlanes',
+          };
+        }
+      },
+    },
+    'profile.avatarUrl': {
+      /**
+       * URL of the avatar of the user
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.emailBuffer': {
+      /**
+       * list of email buffers of the user
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.emailBuffer.$': {
+      type: String,
+    },
+    'profile.notifyMutedActivities': {
+      /**
+       * #572: kinds of card activity this member is not notified about, as
+       * keys of models/lib/notificationActivityGroups.js. Unset or empty
+       * means every kind, as before.
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.notifyMutedActivities.$': {
+      type: String,
+      allowedValues: GROUP_KEYS,
+    },
+    passkeys: {
+      /**
+       * #5847: this account's passkeys (server/passkeys.js): [{ id, publicKey,
+       * counter, transports, name, createdAt, lastUsedAt }]. Never published,
+       * and not writable from the client.
+       */
+      type: Array,
+      optional: true,
+    },
+    'passkeys.$': {
+      type: Object,
+      blackbox: true,
+    },
+    sqrl: {
+      /**
+       * #2460: this account's SQRL identity (server/sqrl.js): { idk, suk, vuk,
+       * disabled, addedAt } - public keys only. Never published, and not
+       * writable from the client.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    webPushSubscriptions: {
+      /**
+       * #2026 / #1377: this member's browsers' push subscriptions
+       * (models/lib/webPush.js). Never published, not client-writable.
+       */
+      type: Array,
+      optional: true,
+    },
+    'webPushSubscriptions.$': {
+      type: Object,
+      blackbox: true,
+    },
+    ntfy: {
+      /**
+       * #5148: the member's own ntfy topic (models/lib/ntfy.js):
+       * { enabled, url, token }. Outside `profile` and never published - the
+       * token is a secret - read and saved only through the member's own
+       * methods (server/notifications/ntfy.js).
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.notifyOverrideTray': {
+      /**
+       * Member-level override of the in-app notification tray (3-tier
+       * Notification Settings system, see models/lib/notificationSettings.js).
+       * Unset means "use the board override, or the Admin Panel default".
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.notifyOverrideEmail': {
+      /**
+       * Member-level override of email notifications (see
+       * models/lib/notificationSettings.js).
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.chatViewLayout': {
+      /**
+       * Board View / Chat: { treeWidth, chatWidth, treeCollapsed,
+       * cardCollapsed, chatCollapsed } - the member's pane widths and which
+       * panes are folded (models/lib/chatView.js cleanChatLayout).
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.emailToCard': {
+      /**
+       * Email to card (#794): { enabled, parts } - whether this member's
+       * board addresses work, and which parts of an email they want on the
+       * card (models/lib/emailToCard.js). Unset = on, the board's parts.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    // #5171: the member's own e-mail and tray delivery - content, grouping,
+    // schedule. Wins over the board and Admin Panel settings for their own
+    // notifications. See models/lib/notificationDelivery.js.
+    ...deliverySchemaFields('profile.notificationDelivery', MEMBER_CHANNELS),
+    'profile.webhookHideIdentity': {
+      /**
+       * #3695: true leaves this member's name, username and id out of every
+       * outgoing webhook - as the actor and as the person a join or
+       * assignment is about (models/lib/webhookPayload.js). Unset = named.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.fullname': {
+      /**
+       * full name of the user
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.showDesktopDragHandles': {
+      /**
+       * does the user want to show desktop drag handles?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.leftMenuCollapsed': {
+      /**
+       * is the left menu of All Boards and the Admin Panel collapsed? One
+       * setting for both: they are one menu drawn on two pages.
+       * docs/Features/All-Boards/Left-Menu.md
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.collapsedWorkspaces': {
+      /**
+       * which workspaces of the All Boards left menu are folded, as a map of
+       * workspace id -> true. Only the folded ones are stored, so a tree of
+       * fifty workspaces with two folded is two keys.
+       * docs/Features/All-Boards/Workspaces.md
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.leftMenuWidth': {
+      /**
+       * user-chosen width (px) of that same left menu, set by dragging its inner
+       * edge - the right one while reading left to right, the left one under a
+       * right-to-left language. One width for both pages, like the fold above.
+       * Unset = the CSS default. docs/Features/All-Boards/Left-Menu.md
+       */
+      type: Number,
+      optional: true,
+    },
+    'profile.submitOnEnter': {
+      /**
+       * per-user preference: in multi-line editors (card title/description and
+       * other inlined forms) submit on plain Enter (Shift+Enter for a newline)
+       * instead of the default Ctrl/Cmd+Enter. Off by default. See #4236/#6480.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.unreadChangesSince': {
+      /**
+       * #2111 / #1604: when set, the time the member turned on "Mark cards
+       * changed since I last opened them"; unset is off
+       * (models/lib/unreadChanges.js).
+       */
+      type: Date,
+      optional: true,
+    },
+    'profile.keepTitleTags': {
+      /**
+       * #1273: when a #label or @member is picked while typing a new card's
+       * title, keep the "#label" / "@member" text in the title too. Off by
+       * default: the text is replaced by the label or member, as before.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.checklistDingSound': {
+      /**
+       * #5427: per-user preference - play a short synthesized "ding" when a
+       * checklist item is checked off. Off by default.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.openManyCardsAtOnce': {
+      /**
+       * #6531: per-user preference. OFF by default, which is what clicking a card
+       * has always been expected to do - open THAT card, closing the one that was
+       * open. Turned on, every clicked card stays open as its own draggable window,
+       * which is what WeKan did unconditionally and what the issue reported as a
+       * bug: the previous card simply never closed.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.allBoardsThemeTiles': {
+      /**
+       * Member Settings / Change color, beside "Default (no override)": paint the
+       * board tiles on the All Boards page in the THEME's lighter colour instead
+       * of each board's own colour. Off by default, so All Boards looks as it
+       * always has - a wall of boards in the colours their owners chose.
+       *
+       * Turned on, the overview reads as one list rather than a palette, which is
+       * what #6593 asked for by making every tile white for everybody. It is a
+       * per-user preference here, because "the tile colours are noise" and "the
+       * tile colours are how I find my board" are both true, of different people.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.globalThemeColor': {
+      /**
+       * #5778: optional per-user GLOBAL theme color override. When set to one of
+       * the board color names, that color theme is applied to the WHOLE UI (All
+       * Boards, Search, Admin Panel, My Cards, etc.) via a `board-color-<name>`
+       * class on <body> and the header — letting a user pick e.g. a dark theme
+       * everywhere. Absent = no override (default appearance). A specific board
+       * still shows its own Board Settings color while you are on that board.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.globalThemeCustomColors': {
+      /**
+       * Custom colors for the global theme when it is a flat (1 color) or clear
+       * (2 colors) theme — see docs/Theme/Theme.md. Each is a validated #rrggbb hex.
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.globalThemeCustomColors.$': {
+      type: String,
+      custom() {
+        return /^#[0-9a-fA-F]{6}$/.test(this.value) ? undefined : 'notAHexColor';
+      },
+    },
+    'profile.uiFont': {
+      /**
+       * Member Settings / Font (#4759): the user's chosen UI font — one of the
+       * curated UI_FONTS (models/lib/uiFonts.js) detected as installed in their
+       * browser. Plain text, validated on the server; absent = default font.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.uiFontSize': {
+      /**
+       * Member Settings / Font / Size (#4759): a named preset size key (one of
+       * UI_FONT_SIZES, e.g. 'large'), never a free number. Absent / 'default' =
+       * the stock size. Validated on the server.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.uiTextColor': {
+      /**
+       * Member Settings / Font / Color (#4759): custom UI text color, chosen from a
+       * color wheel. A validated #rrggbb hex; absent = default text color.
+       */
+      type: String,
+      optional: true,
+      custom() {
+        // Skip when unset: an optional field's custom() still runs on insert, and
+        // /regex/.test(undefined) would wrongly reject every user with no color set.
+        if (this.value === undefined || this.value === null || this.value === '') return undefined;
+        return /^#[0-9a-fA-F]{6}$/.test(this.value) ? undefined : 'notAHexColor';
+      },
+    },
+    'profile.uiTextBgColor': {
+      /**
+       * REMOVED feature (#4759 "text background color"): nothing sets or reads
+       * this any more, and `setUiColors` unsets it on every call. The key stays
+       * in the schema ONLY so that $unset validates against it for the users who
+       * stored a colour before it was removed - a modifier touching a key the
+       * schema does not know is rejected, which would leave exactly those
+       * profiles unable to be cleaned.
+       */
+      type: String,
+      optional: true,
+      custom() {
+        if (this.value === undefined || this.value === null || this.value === '') return undefined;
+        return /^#[0-9a-fA-F]{6}$/.test(this.value) ? undefined : 'notAHexColor';
+      },
+    },
+    'profile.dismissedBoardAnnouncements': {
+      /**
+       * #1566: { [boardId]: version } of the board announcements this user
+       * dismissed; an edited announcement has a new version and shows again.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.dismissedAnnouncementVersion': {
+      /**
+       * version string of the global announcement the user has permanently
+       * dismissed (#6051). When the admin changes the announcement text its
+       * version changes, so the banner reappears for everyone.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.drawingColors': {
+      /**
+       * #6802: the custom colors the user added to the Drawing popup's palette,
+       * as HTML color codes (models/lib/cardDrawing.js addCustomColor).
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.drawingColors.$': {
+      type: String,
+      regEx: /^#[0-9a-f]{6}$/,
+    },
+    'profile.cardMaximized': {
+      /**
+       * has user clicked maximize card?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.cardCollapsed': {
+      /**
+       * has user collapsed the card details?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.showActivities': {
+      /**
+       * does the user want to show activities in card details?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.customFieldsGrid': {
+      /**
+       * has user at card Custom Fields have Grid (false) or one per row (true) layout?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.trelloApiSaved': {
+      /**
+       * Has the user saved Trello API credentials (key + token) for importing?
+       * The credentials themselves are stored server-side only (never published
+       * to the client); this is just the published "saved" indicator.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.hiddenMinicardLabelText': {
+      /**
+       * does the user want to hide minicard label texts?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.cardLabelTextOverride': {
+      /**
+       * The same per-user override as showLabelTextOverride below, for the
+       * labels of the OPENED card (Boards.allowsLabelTextOnCard).
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.showLabelTextOverride': {
+      /**
+       * #4256: optional per-user override of a board's "show label text on
+       * minicards" setting (Boards.showLabelText), mirroring the shape of
+       * profile.globalThemeColor - absent/null = no override, follow the
+       * board's own setting; true/false = always show/hide regardless of
+       * which board is being viewed.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.initials': {
+      /**
+       * initials of the user
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.boardWorkspacesTree': {
+      /**
+       * Per-user spaces tree for All Boards page
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.boardWorkspacesTree.$': {
+      /**
+       * Space node: { id: String, name: String, children: Array<node> }
+       */
+      type: Object,
+      blackbox: true,
+      optional: true,
+    },
+    'profile.boardWorkspaceAssignments': {
+      /**
+       * Per-user map of boardId -> spaceId
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.invitedBoards': {
+      /**
+       * board IDs the user has been invited to
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.invitedBoards.$': {
+      type: String,
+    },
+    'profile.boardLabels': {
+      /**
+       * #4791: the member's own board labels, { label: [boardId] }, for the
+       * All Boards facet bar (models/lib/allBoardsFacets.js).
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.hiddenBoards': {
+      /**
+       * #4265: boards this user left that they still reach through a team,
+       * organization or e-mail domain; All Boards leaves them out, and Member
+       * Settings / Hidden boards brings them back. The team is not touched.
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.hiddenBoards.$': {
+      type: String,
+    },
+    'profile.language': {
+      /**
+       * language of the user
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.mapProvider': {
+      /**
+       * which map service the card "Open in map" links use, grouped by region:
+       * USA: 'google', 'bing', 'apple', 'waze';
+       * Europe: 'openstreetmap' (default), 'here', 'yandex', 'mapy', '2gis';
+       * Asia: 'baidu', 'amap'.
+       */
+      type: String,
+      optional: true,
+      allowedValues: ['openstreetmap', 'google', 'bing', 'apple'],
+    },
+    'profile.moveAndCopyDialog': {
+      /**
+       * move and copy card dialog
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.moveChecklistDialog': {
+      /**
+       * move checklist dialog
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.copyChecklistDialog': {
+      /**
+       * copy checklist dialog
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.notifications': {
+      /**
+       * enabled notifications for the user
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.notifications.$': {
+      type: Object,
+    },
+    'profile.notifications.$.activity': {
+      /**
+       * The id of the activity this notification references
+       */
+      type: String,
+    },
+    'profile.notifications.$.read': {
+      /**
+       * the date on which this notification was read
+       */
+      type: Date,
+      optional: true,
+    },
+    'profile.notifications.$.showAt': {
+      /**
+       * #5171: when the drawer starts showing this entry (ms since epoch),
+       * from the member's tray schedule (models/lib/notificationDelivery.js).
+       * Unset = at once, as before.
+       */
+      type: Number,
+      optional: true,
+    },
+    'profile.rescueCardDescription': {
+      /**
+       * show dialog for saving card description on unintentional card closing
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.showCardsCountAt': {
+      /**
+       * showCardCountAt field of the user
+       */
+      type: Number,
+      optional: true,
+    },
+    'profile.startDayOfWeek': {
+      /**
+       * startDayOfWeek field of the user
+       */
+      type: Number,
+      optional: true,
+    },
+    'profile.starredBoards': {
+      /**
+       * list of starred board IDs
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.starredBoards.$': {
+      type: String,
+    },
+    'profile.starredSwimlanes': {
+      /**
+       * list of starred swimlane IDs (#1172)
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.starredSwimlanes.$': {
+      type: String,
+    },
+    'profile.starredLists': {
+      /**
+       * list of starred list IDs (#1172)
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.starredLists.$': {
+      type: String,
+    },
+    'profile.starredCards': {
+      /**
+       * list of starred card IDs (#1172)
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.starredCards.$': {
+      type: String,
+    },
+    'profile.starredPages': {
+      /**
+       * the starred PAGES - bookmarks. A board is starred by id; a page has no
+       * id, so each entry is the pair a bookmark is: a relative URL and the
+       * title to list it under. docs/Features/Pages/Starred.md
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.starredPages.$': {
+      type: Object,
+    },
+    'profile.starredPages.$.url': {
+      /**
+       * RELATIVE, so a bookmark survives the site moving to another host.
+       */
+      type: String,
+    },
+    'profile.starredPages.$.title': {
+      /**
+       * The words the browser tab shows, which are the words the dropdown lists.
+       */
+      type: String,
+    },
+    'profile.defaultBoardId': {
+      /**
+       * #2220: the board that opens automatically after logging in (the user's
+       * "home" board). Empty/unset means land on the All Boards page as before.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.defaultBoardTemplateId': {
+      /**
+       * #4205: the "Board Templates" swimlane card (cardType-linkedBoard) the
+       * user has marked as their default. When set, creating a board with the
+       * plain "type a name and click Create" flow applies this template
+       * instead of starting blank. Empty/unset means unchanged (blank board)
+       * behavior, exactly as before this feature.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.defaultBoardTemplateBoardId': {
+      /**
+       * #4205: the actual template board (type 'template-board', the card's
+       * `linkedId`) that `profile.defaultBoardTemplateId` points at, kept in
+       * sync with it. Denormalized so board creation can pass it straight to
+       * the same `copyBoard` method the manual "Template" picker already uses
+       * (client/components/lists/listBody.js), without a second subscription.
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.icode': {
+      /**
+       * icode
+       */
+      type: String,
+      optional: true,
+    },
+    'profile.boardViews': {
+      /**
+       * #4906 / #4256: the view chosen on each board, { [boardId]: view }.
+       * A board without its own entry uses profile.boardView (the choice
+       * every board shared before), then the board's default view.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.boardView': {
+      /**
+       * boardView field of the user
+       */
+      type: String,
+      optional: true,
+      allowedValues: [
+        'board-view-swimlanes',
+        'board-view-lists',
+        'board-view-cal',
+        'board-view-calendar-mode',
+        'board-view-multiboard-cal',
+        'board-view-gantt',
+        'board-view-gantt-frappe',
+        'board-view-gantt-dhtmlx',
+        'board-view-table',
+        'board-view-stats',
+        'board-view-time',
+        'board-view-timeline',
+        'board-view-group-by-assignee',
+        'board-view-product-backlog',
+        'board-view-sprints',
+        'board-view-sprint-report',
+        'board-view-velocity',
+        'board-view-roadmap',
+        'board-view-dashboard',
+        'board-view-bigboard',
+        'board-view-burndown',
+        'board-view-burnup',
+        'board-view-cumulative-flow',
+        'board-view-control-chart',
+        'board-view-cycle-time',
+        'board-view-flow-efficiency',
+        'board-view-lead-time',
+        'board-view-throughput-histogram',
+        'board-view-wip-run',
+        'board-view-pulse',
+        'board-view-aging-wip',
+        'board-view-blocker-analysis',
+        'board-view-monte-carlo',
+        'board-view-process-behavior',
+        'board-view-size-cycle-time',
+        'board-view-map',
+        'board-view-email',
+        'board-view-chat',
+        'board-view-version-control',
+        'board-view-column-sets',
+      ],
+    },
+    'profile.listSortBy': {
+      /**
+       * default sort list for user
+       */
+      type: String,
+      optional: true,
+      defaultValue: defaultSortBy,
+      allowedValues: allowedSortValues,
+    },
+    'profile.allBoardsSortBy': {
+      /**
+       * How the All Boards page is sorted for this user (#5799):
+       * 'custom' keeps the manual drag order (default), 'title-asc' / 'title-desc'
+       * sort boards alphabetically by title.
+       */
+      type: String,
+      optional: true,
+      defaultValue: 'custom',
+      allowedValues: allowedAllBoardsSortValues,
+    },
+    'profile.templatesBoardId': {
+      /**
+       * Reference to the templates board
+       */
+      type: String,
+      // Optional: when the Template Container board is deleted these pointers are
+      // cleared (boardRemover $unset). Without optional:true, SimpleSchema strips
+      // the empty string and then fails the required check ("Templates board ID
+      // is required"), which made deleting a Template Container board throw.
+      optional: true,
+      defaultValue: '',
+    },
+    'profile.cardTemplatesSwimlaneId': {
+      /**
+       * Reference to the card templates swimlane Id
+       */
+      type: String,
+      optional: true,
+      defaultValue: '',
+    },
+    'profile.listTemplatesSwimlaneId': {
+      /**
+       * Reference to the list templates swimlane Id
+       */
+      type: String,
+      optional: true,
+      defaultValue: '',
+    },
+    'profile.boardTemplatesSwimlaneId': {
+      /**
+       * Reference to the board templates swimlane Id
+       */
+      type: String,
+      optional: true,
+      defaultValue: '',
+    },
+    'profile.sidebarWidth': {
+      /**
+       * User-specified width (px) of the right board sidebar, set by dragging its
+       * left edge (desktop only; mobile is always full width). Unset = CSS default.
+       */
+      type: Number,
+      optional: true,
+    },
+    'profile.listWidths': {
+      /**
+       * User-specified width of each list (or nothing if default).
+       * profile[boardId][listId] = width;
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.showBoardDependencies': {
+      /**
+       * #6732: show the board's card dependencies (Red Strings) to THIS user.
+       * Each user's own choice, off by default; set from Member Settings.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.showMyDependencies': {
+      /**
+       * #6732: show this user's own My Dependencies. Off by default.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.myDependencies': {
+      /**
+       * #6732: this user's own dependency lines, seen only by them:
+       * [{ boardId, cardId, targetCardId, type, color, icon }]. Written only by
+       * the server methods in server/models/dependencies.js, which check the
+       * user can see both cards; never directly by the client.
+       */
+      type: Array,
+      optional: true,
+    },
+    'profile.myDependencies.$': {
+      type: Object,
+      blackbox: true,
+    },
+    'profile.listConstraints': {
+      /**
+       * User-specified constraint of each list (or nothing if default).
+       * profile[boardId][listId] = constraint;
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.autoWidthBoards': {
+      /**
+       * User-specified flag for enabling auto-width for boards (false is the default).
+       * profile[boardId][listId] = constraint;
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.boardSortIndex': {
+      /**
+       * #6439: per-user manual board order on the All Boards page, set by drag-
+       * reorder. profile.boardSortIndex[boardId] = sortIndex. Missing before, so
+       * a reorder write was rejected by the schema (INVALID [400]) since
+       * `profile` enumerates its subfields and is not blackbox.
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+      optional: true,
+    },
+    'profile.fixedListWidthBoards': {
+      /**
+       * #5729 Per-user flag enabling "same width for all lists" (fixed width)
+       * mode for a board (false is the default).
+       * profile.fixedListWidthBoards[boardId] = true|false
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.fixedListWidths': {
+      /**
+       * #5729 Per-user single width applied to every list of a board when fixed
+       * width mode is enabled.
+       * profile.fixedListWidths[boardId] = width
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.swimlaneHeights': {
+      /**
+       * User-specified heights of each swimlane (or nothing if default).
+       * profile[boardId][swimlaneId] = height;
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.collapsedLists': {
+      /**
+       * Per-user collapsed state for lists.
+       * profile[boardId][listId] = true|false
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.collapsedCards': {
+      /**
+       * Per-user collapsed state for whole minicards (#1591).
+       * profile[boardId][cardId] = true|false
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.collapsedSwimlanes': {
+      /**
+       * Per-user collapsed state for swimlanes.
+       * profile[boardId][swimlaneId] = true|false
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.collapsedCardSections': {
+      /**
+       * Per-user collapsed state for the sections of a card (#1591).
+       * profile[cardId][sectionKey] = true|false
+       *
+       * ONE map for every foldable thing on a card, because they are all the
+       * same question: a whole feature group ('labels', 'members', 'due', ...)
+       * uses the section's own name, and an individual checklist uses
+       * 'checklist-<checklistId>'. The same key works on the opened card and on
+       * the minicard, so folding a checklist folds it in both.
+       *
+       * Per USER, like collapsedLists and collapsedSwimlanes above, and unlike
+       * the checklist's own hideAllChecklistItems, which is a field on the
+       * checklist and therefore changes what EVERYONE on the board sees.
+       * Folding something to get it out of your way is a view preference, not
+       * an edit to the card.
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.cardLastViews': {
+      /**
+       * Per-user, per-card "last viewed" timestamp (#3078).
+       * profile.cardLastViews[cardId] = Date
+       *
+       * Set when the user opens a card's detail view (Template.cardDetails
+       * onCreated). Used to decide whether a card's minicard should show the
+       * "has unread comments" highlight: a comment created after this
+       * timestamp is unread, and a card that was never opened is treated as
+       * unread whenever it has any comment at all (see
+       * models/lib/unreadComments.js). Same shape as collapsedCardSections
+       * above - a blackbox map keyed by cardId - because it is the same kind
+       * of thing: per-user view state, not an edit to the card, so every
+       * board member can have their own.
+       */
+      type: Object,
+      defaultValue: {},
+      blackbox: true,
+    },
+    'profile.boardVisits': {
+      /**
+       * When this user last opened each board: { <boardId>: Date }, at most
+       * 500 boards. Board menu -> Since your last visit lists what changed
+       * after the visit before the current one
+       * (docs/Features/General/Since-Last-Visit/Since-Last-Visit.md); written
+       * only by boards.markVisited.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.dismissedRuleSuggestions': {
+      /**
+       * The rule suggestions this user dismissed, per board:
+       * { <boardId>: [<suggestion key>] }. Board menu -> Rules -> Suggested
+       * rules (docs/Features/Rules/Rule-Suggestions.md); written only by
+       * rules.dismissSuggestion.
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    'profile.keyboardShortcuts': {
+      /**
+       * User-specified state of keyboard shortcut activation. On by default,
+       * the same default isKeyboardShortcuts() reads (#6755).
+       */
+      type: Boolean,
+      defaultValue: true,
+    },
+    'profile.verticalScrollbars': {
+      /**
+       * User-specified state of vertical scrollbars visibility.
+       */
+      type: Boolean,
+      defaultValue: true,
+    },
+    'profile.showWeekOfYear': {
+      /**
+       * User-specified state of week-of-year in date displays.
+       */
+      type: Boolean,
+      defaultValue: true,
+    },
+    'profile.dateFormatOverride': { type: Boolean, optional: true },
+    'profile.dateFormat': {
+      /**
+       * User-specified date format for displaying dates (includes time HH:MM).
+       */
+      type: String,
+      optional: true,
+      allowedValues: ['YYYY-MM-DD', 'DD-MM-YYYY', 'MM-DD-YYYY',
+      'YYYY-MM-DD-date-only', 'DD-MM-YYYY-date-only', 'MM-DD-YYYY-date-only'],
+      defaultValue: 'YYYY-MM-DD',
+    },
+    'profile.calendarSystem': {
+      /**
+       * Member-selected calendar for rendered dates and calendar inputs.
+       * Native Date storage and ISO interchange values are unchanged.
+       */
+      type: String,
+      optional: true,
+      allowedValues: CALENDAR_SYSTEM_IDS,
+      defaultValue: 'gregorian',
+    },
+    'profile.mobileMode': {
+      /**
+       * User-specified mobile/desktop mode toggle.
+       * #6419: must be OPTIONAL with NO default. A defaultValue of false set
+       * mobileMode=false on every user, so Utils.getMobileMode() always returned
+       * the profile value and the viewport-based auto-detection below it never
+       * ran — every user was locked to desktop-mode even on a phone. Left unset,
+       * it stays undefined until the user explicitly toggles, so phones
+       * auto-detect mobile mode.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    'profile.cardZoom': {
+      /**
+       * User-specified zoom level for card details (1.0 = 100%, 1.5 = 150%, etc.)
+       */
+      type: Number,
+      defaultValue: 1.0,
+      min: 0.5,
+      max: 3.0,
+    },
+    services: {
+      /**
+       * services field of the user
+       */
+      type: Object,
+      optional: true,
+      blackbox: true,
+    },
+    heartbeat: {
+      /**
+       * last time the user has been seen
+       */
+      type: Date,
+      optional: true,
+    },
+    // Server-only tray delivery fencing/evidence; receipt history lives in a
+    // private collection so user documents retain only one pending delivery.
+    notificationDeliveryRevision: { type: String, optional: true },
+    notificationDeliveryPending: { type: Object, optional: true, blackbox: true },
+
+    isAdmin: {
+      /**
+       * is the user an admin of the board?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    featurePreview: {
+      /**
+       * #6736: a pilot user who sees the features the instance disabled
+       * (Admin Panel / Settings / Visibility / Features). Set only by the
+       * site admin's saveInstanceFeatures method.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    createdThroughApi: {
+      /**
+       * was the user created through the API?
+       */
+      type: Boolean,
+      optional: true,
+    },
+    loginDisabled: {
+      /**
+       * loginDisabled field of the user
+       */
+      type: Boolean,
+      optional: true,
+    },
+    authenticationMethod: {
+      /**
+       * authentication method of the user
+       */
+      type: String,
+      optional: false,
+      defaultValue: 'password',
+    },
+    sessionData: {
+      /**
+       * profile settings
+       */
+      type: Object,
+      optional: true,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert && !this.isSet) {
+          return {};
+        }
+      },
+    },
+    'sessionData.totalHits': {
+      /**
+       * Total hits from last searchquery['members.userId'] = Meteor.userId();
+       * last hit that was returned
+       */
+      type: Number,
+      optional: true,
+    },
+    importUsernames: {
+      /**
+       * username for imported
+       */
+      type: Array,
+      optional: true,
+    },
+    'importUsernames.$': {
+      type: String,
+    },
+    lastConnectionDate: {
+      type: Date,
+      optional: true,
+    },
+    inactivityClockStart: {
+      /**
+       * USERS_DISABLE_INACTIVE_AFTER_DAYS: when the inactivity clock last
+       * (re)started for an account with no lastConnectionDate, or was re-enabled
+       * (models/lib/inactiveUsers.js)
+       */
+      type: Date,
+      optional: true,
+    },
+    loginDisabledReason: {
+      /**
+       * why loginDisabled was set automatically: 'inactive'
+       * (USERS_DISABLE_INACTIVE_AFTER_DAYS) or 'ldap' (LDAP background sync);
+       * cleared whenever the account is enabled again
+       */
+      type: String,
+      optional: true,
+    },
+    anonymized: {
+      /**
+       * #2731: true once anonymizeUser has scrubbed this account's PII in
+       * place (username/profile/emails replaced with a placeholder,
+       * loginDisabled set). Board/card/comment references to this userId are
+       * left untouched - see server/models/users.js anonymizeUser.
+       */
+      type: Boolean,
+      optional: true,
+    },
+    anonymizedAt: {
+      /**
+       * When anonymizeUser last ran for this account.
+       */
+      type: Date,
+      optional: true,
+    },
+  }),
+);
+
+// Security helpers for user updates
+export const USER_UPDATE_ALLOWED_EXACT = ['username', 'profile', 'modifiedAt'];
+export const USER_UPDATE_ALLOWED_PREFIXES = ['profile.'];
+export const USER_UPDATE_FORBIDDEN_PREFIXES = [
+  'notificationDeliveryRevision',
+  'notificationDeliveryPending',
+  'profile.invitedBoards',
+  // #6732: written only by the My Dependencies methods, which check card access.
+  'profile.myDependencies',
+  'services',
+  'emails',
+  'roles',
+  'isAdmin',
+  'createdThroughApi',
+  'orgs',
+  'teams',
+  'loginDisabled',
+  'authenticationMethod',
+  'sessionData',
+];
+
+export function isUserUpdateAllowed(fields) {
+  const result = fields.every((f) =>
+    USER_UPDATE_ALLOWED_EXACT.includes(f) || USER_UPDATE_ALLOWED_PREFIXES.some((p) => f.startsWith(p))
+  );
+  return result;
+}
+
+export function hasForbiddenUserUpdateField(fields, modifier) {
+  // Meteor may report the top-level "profile" field for a leaf update. Inspect
+  // operator paths so ordinary preferences do not become forbidden merely
+  // because another profile descendant is a server-issued capability.
+  const paths = modifier && typeof modifier === 'object'
+    ? Object.entries(modifier).flatMap(([operator, value]) => {
+      if (!operator.startsWith('$') || !value || typeof value !== 'object') return [operator];
+      return operator === '$rename' ? [...Object.keys(value), ...Object.values(value)] : Object.keys(value);
+    }) : fields;
+  const result = paths.some((f) => USER_UPDATE_FORBIDDEN_PREFIXES.some((p) => f === p || f.startsWith(p + '.') || p.startsWith(f + '.')));
+  return result || writesNotificationList(modifier);
+}
+
+// The notification tray is server-written (addNotification). A client marks an
+// entry read or unread and removes entries, nothing more: an entry it could add
+// names an activity, and the notification publications then send that
+// activity's card, comments and attachments from any board.
+export function writesNotificationList(modifier) {
+  if (!modifier || typeof modifier !== 'object') return false;
+  return Object.entries(modifier).some(([operator, value]) => {
+    if (!value || typeof value !== 'object') return false;
+    return Object.keys(value).some(path => {
+      if (path !== 'profile.notifications' && !path.startsWith('profile.notifications.')) return false;
+      if (['$set', '$unset'].includes(operator) && /^profile\.notifications\.\d+\.read$/.test(path)) return false;
+      if (operator === '$pull' && path === 'profile.notifications') return false;
+      return true;
+    });
+  });
+}
+
+// Custom MongoDB engine that enforces field restrictions
+// TODO: Re-enable when easy:search compatibility is fixed
+// class SecureMongoDBEngine extends MongoDBEngine {
+//   getSearchCursor(searchObject, options) {
+//     // Always enforce field projection to prevent data leakage
+//     const secureProjection = {
+//       _id: 1,
+//       username: 1,
+//       'profile.fullname': 1,
+//       'profile.avatarUrl': 1,
+//     };
+
+//     // Override any projection passed in options
+//     const secureOptions = {
+//       ...options,
+//       projection: secureProjection,
+//     };
+
+//     return super.getSearchCursor(searchObject, secureOptions);
+//   }
+// }
+
+// Search a user in the complete server database by its name, username or emails adress. This
+// is used for instance to add a new user to a board.
+// TODO: Fix easy:search compatibility issue - temporarily disabled
+// UserSearchIndex = new Index({
+//   collection: Users,
+//   fields: ['username', 'profile.fullname', 'profile.avatarUrl'],
+//   engine: new MongoDBEngine(),
+// });
+
+// Temporary fallback - create a simple search index object
+export const UserSearchIndex = {
+  search: function(query, options) {
+    // Simple fallback search using MongoDB find
+    const searchRegex = new RegExp(query, 'i');
+    return Users.find({
+      $or: [
+        { username: searchRegex },
+        { 'profile.fullname': searchRegex }
+      ]
+    }, {
+      fields: {
+        _id: 1,
+        username: 1,
+        'profile.fullname': 1,
+        'profile.avatarUrl': 1
+      },
+      limit: options?.limit || 20
+    });
+  }
+};
+
+Users.safeFields = {
+  _id: 1,
+  username: 1,
+  'profile.fullname': 1,
+  'profile.avatarUrl': 1,
+  'profile.initials': 1,
+  'profile.mobileMode': 1,
+  orgs: 1,
+  teams: 1,
+  authenticationMethod: 1,
+  lastConnectionDate: 1,
+};
+
+if (Meteor.isClient) {
+  Users.helpers({
+    isBoardMember() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasMember(this._id);
+    },
+
+    isNotNoComments() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return (
+        board && board.hasMember(this._id) && !board.hasNoComments(this._id)
+      );
+    },
+
+    isNoComments() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasNoComments(this._id);
+    },
+
+    isNotCommentOnly() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return (
+        board && board.hasMember(this._id) && !board.hasCommentOnly(this._id)
+      );
+    },
+
+    isCommentOnly() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasCommentOnly(this._id);
+    },
+
+    isReadOnly() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasReadOnly(this._id);
+    },
+
+    isReadAssignedOnly() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasReadAssignedOnly(this._id);
+    },
+
+    isNotWorker() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasMember(this._id) && !board.hasWorker(this._id);
+    },
+
+    isWorker() {
+      const Utils = getUtils();
+      const board = Utils.getCurrentBoard();
+      return board && board.hasWorker(this._id);
+    },
+
+    isBoardAdmin(boardId) {
+      let board;
+      if (boardId) {
+        board = ReactiveCache.getBoard(boardId);
+      } else {
+        const Utils = getUtils();
+        board = Utils.getCurrentBoard();
+      }
+      return board && board.hasAdmin(this._id);
+    },
+
+    // Whether this user may invite members to the board, mirroring the
+    // server-side check in the inviteUserToBoard method: global site admins and
+    // board admins always may; other board roles only if allowed by the
+    // Admin Panel / People / Roles policy. Used to gate the UI add-member button.
+    canInviteToBoard(boardId) {
+      if (this.isAdmin) return true;
+      let board;
+      if (boardId) {
+        board = ReactiveCache.getBoard(boardId);
+      } else {
+        const Utils = getUtils();
+        board = Utils.getCurrentBoard();
+      }
+      if (!board) return false;
+      if (board.hasAdmin(this._id)) return true;
+      const role = board.memberRole(this._id);
+      if (!role) return false;
+      const doc = InviteToBoardRolesSettings.findOne(INVITE_TO_BOARD_ROLES_ID);
+      const allowed = (doc && doc.allowedRoles) || INVITE_TO_BOARD_ROLES_DEFAULT;
+      return require('/models/lib/invitationBoardPermission').roleMayInvite(role, allowed);
+    },
+  });
+}
+
+Users.parseImportUsernames = (usernamesString) => {
+  return usernamesString.trim().split(new RegExp('\\s*[,;]\\s*'));
+};
+
+Users.helpers({
+  importUsernamesString() {
+    if (this.importUsernames) {
+      return this.importUsernames.join(', ');
+    }
+    return '';
+  },
+  teamIds() {
+    if (this.teams) {
+      // TODO: Should the Team collection be queried to determine if the team isActive?
+      return this.teams.map((team) => {
+        return team.teamId;
+      });
+    }
+    return [];
+  },
+  orgIds() {
+    if (this.orgs) {
+      // TODO: Should the Org collection be queried to determine if the organization isActive?
+      return this.orgs.map((org) => {
+        return org.orgId;
+      });
+    }
+    return [];
+  },
+  // Multitenancy option D: the orgs this user is a PER-TENANT Global Admin of, and
+  // the questions the Admin Panel asks about them. The rules themselves live in
+  // models/lib/tenantAdmin.js so the client, the server and the tests all use one
+  // copy - these helpers only make them reachable from Blaze as
+  // `currentUser.isOrgAdmin` etc.
+  adminOrgIds() {
+    return tenantAdmin.adminOrgIds(this);
+  },
+  isOrgAdminOf(orgId) {
+    return tenantAdmin.isOrgAdmin(this, orgId);
+  },
+  isOrgAdmin() {
+    return tenantAdmin.isTenantAdmin(this);
+  },
+  // The Admin Panel opens for the site admin and for a per-tenant admin; the panes
+  // and tabs each of them sees are decided by tenantAdmin too.
+  isAdminOrOrgAdmin() {
+    return tenantAdmin.canOpenAdminPanel(this);
+  },
+  // #6116: does this user share an Organization / a Team with `otherUser`? The
+  // restriction is two admin settings now - one per kind, each beside the thing it
+  // is about (Admin Panel / People / Organizations and / Teams) - so the two
+  // questions have to be answerable separately.
+  sharesOrgWith(otherUser) {
+    if (!otherUser) {
+      return false;
+    }
+    const myOrgs = new Set(this.orgIds());
+    const otherOrgs =
+      typeof otherUser.orgIds === 'function'
+        ? otherUser.orgIds()
+        : (otherUser.orgs || []).map(org => org.orgId);
+    return otherOrgs.some(orgId => myOrgs.has(orgId));
+  },
+  sharesTeamWith(otherUser) {
+    if (!otherUser) {
+      return false;
+    }
+    const myTeams = new Set(this.teamIds());
+    const otherTeams =
+      typeof otherUser.teamIds === 'function'
+        ? otherUser.teamIds()
+        : (otherUser.teams || []).map(team => team.teamId);
+    return otherTeams.some(teamId => myTeams.has(teamId));
+  },
+  // True when the user shares at least one of the ENABLED kinds. With both enabled
+  // this is the "Organization OR Team" rule the single setting had.
+  sharesRestrictedOrgOrTeamWith(otherUser, { org = false, team = false } = {}) {
+    return (
+      (org && this.sharesOrgWith(otherUser)) ||
+      (team && this.sharesTeamWith(otherUser))
+    );
+  },
+  // Kept for callers that ask the old question: an Organization OR a Team.
+  sharesOrgOrTeamWith(otherUser) {
+    return this.sharesOrgWith(otherUser) || this.sharesTeamWith(otherUser);
+  },
+  // #5850: the email-address domain(s) of this user, used for domain-based board
+  // sharing (board.domains). Lower-cased; primary email's domain.
+  emailDomains() {
+    const domains = [];
+    (this.emails || []).forEach((email) => {
+      const addr = (email && email.address) || '';
+      const at = addr.lastIndexOf('@');
+      if (at !== -1) {
+        const domain = addr.slice(at + 1).toLowerCase().trim();
+        if (domain && !domains.includes(domain)) {
+          domains.push(domain);
+        }
+      }
+    });
+    return domains;
+  },
+  orgsUserBelongs() {
+    if (this.orgs) {
+      return this.orgs
+        .map(function (org) {
+          return org.orgDisplayName;
+        })
+        .sort()
+        .join(',');
+    }
+    return '';
+  },
+  orgIdsUserBelongs() {
+    let ret = '';
+    if (this.orgs) {
+      ret = this.orgs.map(org => org.orgId).join(',');
+    }
+    return ret;
+  },
+  teamsUserBelongs() {
+    if (this.teams) {
+      return this.teams
+        .map(function (team) {
+          return team.teamDisplayName;
+        })
+        .sort()
+        .join(',');
+    }
+    return '';
+  },
+  teamIdsUserBelongs() {
+    let ret = '';
+    if (this.teams) {
+      ret = this.teams.map(team => team.teamId).join(',');
+    }
+    return ret;
+  },
+  boards() {
+    // Fetch unsorted; sorting is per-user via profile.boardSortIndex
+    return Boards.userBoards(this._id, null, {}, {});
+  },
+
+  starredBoards() {
+    const { starredBoards = [] } = this.profile || {};
+    return Boards.userBoards(this._id, false, { _id: { $in: starredBoards } }, {});
+  },
+
+  // #1172: the same per-user id-array shape as starredBoards, generalized to
+  // swimlanes, lists and cards so any of the four can be starred and reached
+  // from the "Starred" page and the header bookmarks dropdown.
+  starredSwimlanes() {
+    const { starredSwimlanes = [] } = this.profile || {};
+    if (!starredSwimlanes.length) return [];
+    return ReactiveCache.getSwimlanes({ _id: { $in: starredSwimlanes } });
+  },
+
+  starredLists() {
+    const { starredLists = [] } = this.profile || {};
+    if (!starredLists.length) return [];
+    return ReactiveCache.getLists({ _id: { $in: starredLists } });
+  },
+
+  starredCards() {
+    const { starredCards = [] } = this.profile || {};
+    if (!starredCards.length) return [];
+    return ReactiveCache.getCards({ _id: { $in: starredCards } });
+  },
+
+  hasStarredSwimlane(swimlaneId) {
+    const { starredSwimlanes = [] } = this.profile || {};
+    return starredSwimlanes.includes(swimlaneId);
+  },
+
+  hasStarredList(listId) {
+    const { starredLists = [] } = this.profile || {};
+    return starredLists.includes(listId);
+  },
+
+  hasStarredCard(cardId) {
+    const { starredCards = [] } = this.profile || {};
+    return starredCards.includes(cardId);
+  },
+
+  // The starred PAGES - the bookmarks. Boards are starred by id; a page has no
+  // id, so it is stored as the pair a bookmark is: where it goes and what to
+  // call it. docs/Features/Pages/Starred.md
+  starredPages() {
+    const { starredPages = [] } = this.profile || {};
+    return starredPagesOf(starredPages);
+  },
+
+  hasStarredPage(url) {
+    const { starredPages = [] } = this.profile || {};
+    return isPageStarred(starredPages, url);
+  },
+
+  // What the star group counts: both kinds, because it is one list of the
+  // places you keep. A count that left the pages out would say 2 above a
+  // dropdown showing five rows.
+  starredCount() {
+    return (
+      this.starredBoards().length +
+      this.starredPages().length +
+      this.starredSwimlanes().length +
+      this.starredLists().length +
+      this.starredCards().length
+    );
+  },
+
+  hasStarred(boardId) {
+    const { starredBoards = [] } = this.profile || {};
+    return starredBoards.includes(boardId);
+  },
+
+  // #2220: the user's default "home" board opened after login.
+  getDefaultBoardId() {
+    return (this.profile && this.profile.defaultBoardId) || null;
+  },
+
+  isDefaultBoard(boardId) {
+    return this.getDefaultBoardId() === boardId;
+  },
+
+  // #4205: the "Board Templates" card the user has marked as their default
+  // template, applied automatically by the plain "type a name and click
+  // Create" board-creation flow.
+  getDefaultBoardTemplateId() {
+    return (this.profile && this.profile.defaultBoardTemplateId) || null;
+  },
+
+  isDefaultBoardTemplate(cardId) {
+    return this.getDefaultBoardTemplateId() === cardId;
+  },
+
+  isAutoWidth(boardId) {
+    const { autoWidthBoards = {} } = this.profile || {};
+    return autoWidthBoards[boardId] === true;
+  },
+
+  // #5729 "Same width for all lists" (fixed width) mode is per-user/per-board.
+  isFixedListWidth(boardId) {
+    const { fixedListWidthBoards = {} } = this.profile || {};
+    return fixedListWidthBoards[boardId] === true;
+  },
+
+  // #5729 The single width applied to every list when fixed width mode is on.
+  getFixedListWidth(boardId) {
+    const { fixedListWidths = {} } = this.profile || {};
+    return normalizeListWidth(fixedListWidths[boardId]);
+  },
+
+  invitedBoards() {
+    const { invitedBoards = [] } = this.profile || {};
+    return Boards.userBoards(this._id, false, { _id: { $in: invitedBoards } }, {});
+  },
+
+  isInvitedTo(boardId) {
+    const { invitedBoards = [] } = this.profile || {};
+    return invitedBoards.includes(boardId);
+  },
+
+  _getListSortBy() {
+    const profile = this.profile || {};
+    const sortBy = profile.listSortBy || defaultSortBy;
+    const keyPattern = /^(-{0,1})(.*$)/;
+    const ret = [];
+    if (keyPattern.exec(sortBy)) {
+      ret[0] = RegExp.$2;
+      ret[1] = RegExp.$1 ? -1 : 1;
+    }
+    return ret;
+  },
+  /**
+   * Get per-user board sort index for a board, or null when not set
+   */
+  getBoardSortIndex(boardId) {
+    const mapping = (this.profile && this.profile.boardSortIndex) || {};
+    const v = mapping[boardId];
+    return typeof v === 'number' ? v : null;
+  },
+  /**
+   * #5799: the user's chosen sort mode for the All Boards page.
+   * One of 'custom' (manual drag order, default), 'title-asc', 'title-desc'.
+   */
+  getAllBoardsSortBy() {
+    const value = this.profile && this.profile.allBoardsSortBy;
+    return allowedAllBoardsSortValues.includes(value) ? value : 'custom';
+  },
+  /**
+   * Sort an array of boards for this user. In 'title-asc' / 'title-desc' mode
+   * (#5799) boards are ordered alphabetically by title; otherwise the per-user
+   * manual drag order (profile.boardSortIndex) is used, falling back to title.
+   */
+  sortBoardsForUser(boardsArr, modeOverride) {
+    const arr = (boardsArr || []).slice();
+    const mode = allowedAllBoardsSortValues.includes(modeOverride)
+      ? modeOverride
+      : this.getAllBoardsSortBy();
+    const byTitle = (a, b) =>
+      (a.title || '').localeCompare(b.title || '', undefined, {
+        sensitivity: 'base',
+      });
+    if (mode === 'title-asc') {
+      arr.sort(byTitle);
+      return arr;
+    }
+    if (mode === 'title-desc') {
+      arr.sort((a, b) => byTitle(b, a));
+      return arr;
+    }
+    const mapping = (this.profile && this.profile.boardSortIndex) || {};
+    arr.sort((a, b) => {
+      const ia = typeof mapping[a._id] === 'number' ? mapping[a._id] : Number.POSITIVE_INFINITY;
+      const ib = typeof mapping[b._id] === 'number' ? mapping[b._id] : Number.POSITIVE_INFINITY;
+      if (ia !== ib) return ia - ib;
+      return byTitle(a, b);
+    });
+    return arr;
+  },
+  hasSortBy() {
+    // if use doesn't have dragHandle, then we can let user to choose sort list by different order
+    return !this.hasShowDesktopDragHandles();
+  },
+  getListSortBy() {
+    return this._getListSortBy()[0];
+  },
+  getListSortTypes() {
+    return allowedSortValues;
+  },
+  getListSortByDirection() {
+    return this._getListSortBy()[1];
+  },
+
+  getListWidths() {
+    const { listWidths = {}, } = this.profile || {};
+    return listWidths;
+  },
+  // Right board sidebar width (px), or undefined for the CSS default. Set by
+  // dragging the sidebar's left edge (desktop only).
+  getSidebarWidth() {
+    return (this.profile || {}).sidebarWidth;
+  },
+  async setSidebarWidth(width) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.sidebarWidth': width } });
+  },
+  getListWidth(boardId, listId) {
+    const listWidths = this.getListWidths();
+    if (listWidths[boardId] && listWidths[boardId][listId]) {
+      // #5659: normalize so an out-of-range stored value can not make one
+      // list's width differ from the shared default everyone else sees.
+      return normalizeListWidth(listWidths[boardId][listId]);
+    } else {
+      return DEFAULT_LIST_WIDTH;
+    }
+  },
+  getListConstraints() {
+    const { listConstraints = {} } = this.profile || {};
+    return listConstraints;
+  },
+  getListConstraint(boardId, listId) {
+    const listConstraints = this.getListConstraints();
+    if (listConstraints[boardId] && listConstraints[boardId][listId]) {
+      return listConstraints[boardId][listId];
+    } else {
+      return 550;
+    }
+  },
+
+  getSwimlaneHeights() {
+    const { swimlaneHeights = {} } = this.profile || {};
+    return swimlaneHeights;
+  },
+  getSwimlaneHeight(boardId, listId) {
+    const swimlaneHeights = this.getSwimlaneHeights();
+    if (swimlaneHeights[boardId] && swimlaneHeights[boardId][listId]) {
+      return swimlaneHeights[boardId][listId];
+    } else {
+      return -1;
+    }
+  },
+
+  /** returns all confirmed move and copy dialog field values
+   * <li> the board, swimlane and list id is stored for each board
+   */
+  getMoveAndCopyDialogOptions() {
+    let _ret = {};
+    if (this.profile && this.profile.moveAndCopyDialog) {
+      _ret = this.profile.moveAndCopyDialog;
+    }
+    return _ret;
+  },
+
+  /** returns all confirmed move checklist dialog field values
+   * <li> the board, swimlane, list and card id is stored for each board
+   */
+  getMoveChecklistDialogOptions() {
+    let _ret = {};
+    if (this.profile && this.profile.moveChecklistDialog) {
+      _ret = this.profile.moveChecklistDialog;
+    }
+    return _ret;
+  },
+
+  /** returns all confirmed copy checklist dialog field values
+   * <li> the board, swimlane, list and card id is stored for each board
+   */
+  getCopyChecklistDialogOptions() {
+    let _ret = {};
+    if (this.profile && this.profile.copyChecklistDialog) {
+      _ret = this.profile.copyChecklistDialog;
+    }
+    return _ret;
+  },
+
+  /** returns all confirmed "copy checklist(s) from template card" dialog
+   * field values (#4017)
+   * <li> the board, swimlane, list and (source) card id is stored for each board
+   */
+  getCopyChecklistFromTemplateDialogOptions() {
+    let _ret = {};
+    if (this.profile && this.profile.copyChecklistFromTemplateDialog) {
+      _ret = this.profile.copyChecklistFromTemplateDialog;
+    }
+    return _ret;
+  },
+
+  hasTag(tag) {
+    const { tags = [] } = this.profile || {};
+    return tags.includes(tag);
+  },
+
+  hasNotification(activityId) {
+    const { notifications = [] } = this.profile || {};
+    return notifications.includes(activityId);
+  },
+
+  notifications() {
+    const { notifications = [] } = this.profile || {};
+    for (const index in notifications) {
+      if (!notifications.hasOwnProperty(index)) continue;
+      const notification = notifications[index];
+      // this preserves their db sort order for editing
+      notification.dbIndex = index;
+      if (!notification.activityObj && typeof(notification.activity) === 'string') {
+        notification.activityObj = ReactiveMiniMongoIndex.getActivityWithId(notification.activity);
+      }
+    }
+    // #5325: drop notifications whose activity no longer exists (e.g. the card or
+    // board it referenced was deleted). The notifications drawer dereferences
+    // activityObj (activity.user, activity._id, …), so a single orphaned entry
+    // threw and broke the whole notifications popup.
+    // newest first. don't use reverse() because it changes the array inplace, so sometimes the array is reversed twice and oldest items at top again
+    const ret = notifications.filter(notification => notification.activityObj).toReversed();
+    return ret;
+  },
+
+  hasShowDesktopDragHandles() {
+    const profile = this.profile || {};
+    return profile.showDesktopDragHandles || false;
+  },
+
+  // Is the left menu collapsed? Open is the default: a menu that remembered
+  // itself collapsed for a user who has never collapsed one would be a page
+  // with no visible way to navigate. docs/Features/All-Boards/Left-Menu.md
+  isLeftMenuCollapsed() {
+    const profile = this.profile || {};
+    return profile.leftMenuCollapsed || false;
+  },
+
+  // Is this workspace folded? Only the folded ones are in the map, so a missing
+  // key is an OPEN workspace - which is the right default for one you have
+  // never touched. docs/Features/All-Boards/Workspaces.md
+  isWorkspaceCollapsed(workspaceId) {
+    if (!workspaceId) return false;
+    const map = (this.profile || {}).collapsedWorkspaces || {};
+    return map[workspaceId] === true;
+  },
+
+  // How wide the left menu was dragged to, or undefined for the CSS default -
+  // NOT a number of its own, so the default lives in one place, the stylesheet.
+  // docs/Features/All-Boards/Left-Menu.md
+  getLeftMenuWidth() {
+    const width = (this.profile || {}).leftMenuWidth;
+    return typeof width === 'number' ? width : undefined;
+  },
+
+  hasSubmitOnEnter() {
+    const profile = this.profile || {};
+    return profile.submitOnEnter || false;
+  },
+
+  // #2111 / #1604: when the member turned on unread changes, or null.
+  unreadChangesSince() {
+    return (this.profile || {}).unreadChangesSince || null;
+  },
+
+  // #1273: keep the #label / @member text in a new card's title.
+  hasKeepTitleTags() {
+    return !!((this.profile || {}).keepTitleTags);
+  },
+
+  // #5427: does this user want a short "ding" sound when a checklist item is
+  // checked off? Off by default.
+  hasChecklistDingSound() {
+    const profile = this.profile || {};
+    return profile.checklistDingSound || false;
+  },
+
+  // #6531: does this user want several cards open at once? Off by default, so a
+  // click opens the card it was aimed at and closes the previous one.
+  hasOpenManyCardsAtOnce() {
+    const profile = this.profile || {};
+    return profile.openManyCardsAtOnce || false;
+  },
+
+  // Member Settings / Change color: are the All Boards tiles painted in the
+  // theme's lighter colour instead of each board's own? Off by default.
+  hasAllBoardsThemeTiles() {
+    const profile = this.profile || {};
+    return profile.allBoardsThemeTiles || false;
+  },
+
+
+  getDismissedAnnouncementVersion() {
+    const profile = this.profile || {};
+    return profile.dismissedAnnouncementVersion || null;
+  },
+
+  hasDismissedAnnouncement(announcement) {
+    const { announcementVersion } = require('/models/announcements');
+    const version = announcementVersion(announcement);
+    return !!version && this.getDismissedAnnouncementVersion() === version;
+  },
+
+  hasCustomFieldsGrid() {
+    const profile = this.profile || {};
+    return profile.customFieldsGrid || false;
+  },
+
+  hasCardMaximized() {
+    const profile = this.profile || {};
+    return profile.cardMaximized || false;
+  },
+
+  hasShowActivities() {
+    const profile = this.profile || {};
+    return profile.showActivities || false;
+  },
+
+  hasHiddenMinicardLabelText() {
+    const profile = this.profile || {};
+    return profile.hiddenMinicardLabelText || false;
+  },
+
+  // #4256: null when there is no override (follow the board's own setting),
+  // else the user's explicit true/false override.
+  getShowLabelTextOverride() {
+    const profile = this.profile || {};
+    return typeof profile.showLabelTextOverride === 'boolean'
+      ? profile.showLabelTextOverride
+      : null;
+  },
+
+  hasRescuedCardDescription() {
+    const profile = this.profile || {};
+    return profile.rescueCardDescription || false;
+  },
+
+  getEmailBuffer() {
+    const { emailBuffer = [] } = this.profile || {};
+    return emailBuffer;
+  },
+
+  // The letters an avatar falls back to when there is no picture. It must
+  // never throw: it is called while RENDERING, from two helpers of
+  // userAvatarInitials, and a throw there took out the avatar, the `viewBox`
+  // computed beside it ("0 0  15") and everything Blaze was drawing in the same
+  // pass. It threw whenever a user document arrived without a `username` -
+  // `this.username[0]` - which a publication that sends only the fields an
+  // avatar needs, or a user still syncing, can do. A word of a fullname can be
+  // empty too ("  Ann  " splits into empty strings), which used to put the
+  // literal text "undefined" in the circle.
+  getInitials() {
+    const profile = this.profile || {};
+    if (profile.initials) return profile.initials;
+    if (profile.fullname) {
+      const initials = profile.fullname
+        .split(/\s+/)
+        .filter(word => word.length > 0)
+        .map(word => word[0])
+        .join('')
+        .toUpperCase();
+      if (initials) return initials;
+    }
+    // No name of any kind: an empty string, so the avatar draws a blank circle
+    // rather than breaking the page around it.
+    return (this.username || '').slice(0, 1).toUpperCase();
+  },
+
+  getLimitToShowCardsCount() {
+    const profile = this.profile || {};
+    return profile.showCardsCountAt;
+  },
+
+  getMapProvider() {
+    const profile = this.profile || {};
+    return profile.mapProvider || 'openstreetmap';
+  },
+
+  getName() {
+    const profile = this.profile || {};
+    return profile.fullname || this.username;
+  },
+
+  getLanguage() {
+    const profile = this.profile || {};
+    return profile.language || 'en';
+  },
+
+  getStartDayOfWeek() {
+    const profile = this.profile || {};
+    if (typeof profile.startDayOfWeek === 'undefined') {
+      // default is 'Monday' (1)
+      return 1;
+    }
+    return profile.startDayOfWeek;
+  },
+
+  getDateFormat() {
+    const profile = this.profile || {};
+    return profile.dateFormat || 'YYYY-MM-DD';
+  },
+
+  getCalendarSystem() {
+    const profile = this.profile || {};
+    return profile.calendarSystem || 'gregorian';
+  },
+
+  getTemplatesBoardId() {
+    return (this.profile || {}).templatesBoardId;
+  },
+
+  getTemplatesBoardSlug() {
+    //return (ReactiveCache.getBoard((this.profile || {}).templatesBoardId) || {}).slug;
+    return 'templates';
+  },
+
+  isKeyboardShortcuts() {
+    const { keyboardShortcuts = true } = this.profile || {};
+    return keyboardShortcuts;
+  },
+
+  isVerticalScrollbars() {
+    const { verticalScrollbars = true } = this.profile || {};
+    return verticalScrollbars;
+  },
+
+  isShowWeekOfYear() {
+    const { showWeekOfYear = true } = this.profile || {};
+    return showWeekOfYear;
+  },
+
+  remove() {
+    return User.removeAsync({
+      _id: this._id,
+    });
+  },
+
+  getListWidthFromStorage(boardId, listId) {
+    // For logged-in users, get from profile
+    if (this._id) {
+      return this.getListWidth(boardId, listId);
+    }
+
+    // For non-logged-in users, get from validated localStorage
+    if (typeof localStorage !== 'undefined' && typeof getValidatedLocalStorageData === 'function') {
+      try {
+        const widths = getValidatedLocalStorageData('wekan-list-widths', validators.listWidths);
+        if (widths[boardId] && widths[boardId][listId]) {
+          const width = widths[boardId][listId];
+          // Validate it's a valid number
+          if (validators.isValidNumber(width, MIN_LIST_WIDTH, 1000)) {
+            return width;
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading list widths from localStorage:', e);
+      }
+    }
+
+    // #5659: same default as every other width-resolution path.
+    return DEFAULT_LIST_WIDTH;
+  },
+
+  setListWidthToStorage(boardId, listId, width) {
+    assertSafeMapKey(boardId, listId);
+    // For logged-in users, save to profile
+    if (this._id) {
+      return this.setListWidth(boardId, listId, width);
+    }
+
+    // Validate width before storing
+    if (!validators.isValidNumber(width, MIN_LIST_WIDTH, 1000)) {
+      console.warn('Invalid list width:', width);
+      return false;
+    }
+
+    // For non-logged-in users, save to validated localStorage
+    if (typeof localStorage !== 'undefined' && typeof setValidatedLocalStorageData === 'function') {
+      try {
+        const widths = getValidatedLocalStorageData('wekan-list-widths', validators.listWidths);
+
+        if (!widths[boardId]) {
+          widths[boardId] = {};
+        }
+        widths[boardId][listId] = width;
+
+        return setValidatedLocalStorageData('wekan-list-widths', widths, validators.listWidths);
+      } catch (e) {
+        console.warn('Error saving list width to localStorage:', e);
+        return false;
+      }
+    }
+    return false;
+  },
+
+  getListConstraintFromStorage(boardId, listId) {
+    // For logged-in users, get from profile
+    if (this._id) {
+      return this.getListConstraint(boardId, listId);
+    }
+
+    // For non-logged-in users, get from localStorage
+    try {
+      const stored = localStorage.getItem('wekan-list-constraints');
+      if (stored) {
+        const constraints = JSON.parse(stored);
+        if (constraints[boardId] && constraints[boardId][listId]) {
+          return constraints[boardId][listId];
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading list constraints from localStorage:', e);
+    }
+
+    return 550; // Return default constraint instead of -1
+  },
+
+  setListConstraintToStorage(boardId, listId, constraint) {
+    assertSafeMapKey(boardId, listId);
+    // For logged-in users, save to profile
+    if (this._id) {
+      return this.setListConstraint(boardId, listId, constraint);
+    }
+
+    // For non-logged-in users, save to localStorage
+    try {
+      const stored = localStorage.getItem('wekan-list-constraints');
+      let constraints = stored ? JSON.parse(stored) : {};
+
+      if (!constraints[boardId]) {
+        constraints[boardId] = {};
+      }
+      constraints[boardId][listId] = constraint;
+
+      localStorage.setItem('wekan-list-constraints', JSON.stringify(constraints));
+      return true;
+    } catch (e) {
+      console.warn('Error saving list constraint to localStorage:', e);
+      return false;
+    }
+  },
+
+  getSwimlaneHeightFromStorage(boardId, swimlaneId) {
+    // For logged-in users, get from profile
+    if (this._id) {
+      return this.getSwimlaneHeight(boardId, swimlaneId);
+    }
+
+    // For non-logged-in users, get from localStorage
+    try {
+      const stored = localStorage.getItem('wekan-swimlane-heights');
+      if (stored) {
+        const heights = JSON.parse(stored);
+        if (heights[boardId] && heights[boardId][swimlaneId]) {
+          return heights[boardId][swimlaneId];
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading swimlane heights from localStorage:', e);
+    }
+
+    return -1; // Return -1 if not found
+  },
+
+  setSwimlaneHeightToStorage(boardId, swimlaneId, height) {
+    assertSafeMapKey(boardId, swimlaneId);
+    // For logged-in users, save to profile
+    if (this._id) {
+      return this.setSwimlaneHeight(boardId, swimlaneId, height);
+    }
+
+    // For non-logged-in users, save to localStorage
+    try {
+      const stored = localStorage.getItem('wekan-swimlane-heights');
+      let heights = stored ? JSON.parse(stored) : {};
+
+      if (!heights[boardId]) {
+        heights[boardId] = {};
+      }
+      heights[boardId][swimlaneId] = height;
+
+      localStorage.setItem('wekan-swimlane-heights', JSON.stringify(heights));
+      return true;
+    } catch (e) {
+      console.warn('Error saving swimlane height to localStorage:', e);
+      return false;
+    }
+  },
+  // Per-user collapsed state helpers for lists/swimlanes
+  getCollapsedList(boardId, listId) {
+    const { collapsedLists = {} } = this.profile || {};
+    if (collapsedLists[boardId] && typeof collapsedLists[boardId][listId] === 'boolean') {
+      return collapsedLists[boardId][listId];
+    }
+    return null;
+  },
+  getCollapsedSwimlane(boardId, swimlaneId) {
+    const { collapsedSwimlanes = {} } = this.profile || {};
+    if (collapsedSwimlanes[boardId] && typeof collapsedSwimlanes[boardId][swimlaneId] === 'boolean') {
+      return collapsedSwimlanes[boardId][swimlaneId];
+    }
+    return null;
+  },
+  // #1591: the whole-minicard collapse, same shape as getCollapsedList above.
+  getCollapsedCard(boardId, cardId) {
+    const { collapsedCards = {} } = this.profile || {};
+    if (collapsedCards[boardId] && typeof collapsedCards[boardId][cardId] === 'boolean') {
+      return collapsedCards[boardId][cardId];
+    }
+    return null;
+  },
+  /** Logged-in-only, unlike getCollapsedListFromStorage: see the comment on
+   * Utils.getCardCollapseState for why there is no anonymous/cookie fallback. */
+  getCollapsedCardFromStorage(boardId, cardId) {
+    if (this._id) {
+      return this.getCollapsedCard(boardId, cardId);
+    }
+    return null;
+  },
+  /** #1591: null means "never set", so the caller can apply its own default
+   * (expanded) instead of a stored false being indistinguishable from absent. */
+  getCollapsedCardSection(cardId, sectionKey) {
+    const { collapsedCardSections = {} } = this.profile || {};
+    if (collapsedCardSections[cardId] &&
+        typeof collapsedCardSections[cardId][sectionKey] === 'boolean') {
+      return collapsedCardSections[cardId][sectionKey];
+    }
+    return null;
+  },
+  /** The key for one checklist, so the opened card and the minicard agree. */
+  checklistSectionKey(checklistId) {
+    return `checklist-${checklistId}`;
+  },
+  /** #3078: when this user last opened this card, or null if never. */
+  getCardLastViewedAt(cardId) {
+    const { cardLastViews = {} } = this.profile || {};
+    return cardLastViews[cardId] || null;
+  },
+  setCollapsedListToStorage(boardId, listId, collapsed) {
+    assertSafeMapKey(boardId, listId);
+    // Logged-in users: save to profile
+    if (this._id) {
+      return this.setCollapsedList(boardId, listId, collapsed);
+    }
+    // Public users: save to cookie
+    try {
+      const name = 'wekan-collapsed-lists';
+      const stored = (typeof document !== 'undefined') ? document.cookie : '';
+      const cookies = stored.split(';').map(c => c.trim());
+      let json = '{}';
+      for (const c of cookies) {
+        if (c.startsWith(name + '=')) {
+          json = decodeURIComponent(c.substring(name.length + 1));
+          break;
+        }
+      }
+      let data = {};
+      try { data = JSON.parse(json || '{}'); } catch (e) { data = {}; }
+      if (!data[boardId]) data[boardId] = {};
+      data[boardId][listId] = !!collapsed;
+      const serialized = encodeURIComponent(JSON.stringify(data));
+      const maxAge = 60 * 60 * 24 * 365; // 1 year
+      document.cookie = `${name}=${serialized}; path=/; max-age=${maxAge}`;
+      return true;
+    } catch (e) {
+      console.warn('Error saving collapsed list to cookie:', e);
+      return false;
+    }
+  },
+  getCollapsedListFromStorage(boardId, listId) {
+    // Logged-in users: read from profile
+    if (this._id) {
+      const v = this.getCollapsedList(boardId, listId);
+      return v;
+    }
+    // Public users: read from cookie
+    try {
+      const name = 'wekan-collapsed-lists';
+      const stored = (typeof document !== 'undefined') ? document.cookie : '';
+      const cookies = stored.split(';').map(c => c.trim());
+      let json = '{}';
+      for (const c of cookies) {
+        if (c.startsWith(name + '=')) {
+          json = decodeURIComponent(c.substring(name.length + 1));
+          break;
+        }
+      }
+      const data = JSON.parse(json || '{}');
+      if (data[boardId] && typeof data[boardId][listId] === 'boolean') {
+        return data[boardId][listId];
+      }
+    } catch (e) {
+      console.warn('Error reading collapsed list from cookie:', e);
+    }
+    return null;
+  },
+  setCollapsedSwimlaneToStorage(boardId, swimlaneId, collapsed) {
+    assertSafeMapKey(boardId, swimlaneId);
+    // Logged-in users: save to profile
+    if (this._id) {
+      return this.setCollapsedSwimlane(boardId, swimlaneId, collapsed);
+    }
+    // Public users: save to cookie
+    try {
+      const name = 'wekan-collapsed-swimlanes';
+      const stored = (typeof document !== 'undefined') ? document.cookie : '';
+      const cookies = stored.split(';').map(c => c.trim());
+      let json = '{}';
+      for (const c of cookies) {
+        if (c.startsWith(name + '=')) {
+          json = decodeURIComponent(c.substring(name.length + 1));
+          break;
+        }
+      }
+      let data = {};
+      try { data = JSON.parse(json || '{}'); } catch (e) { data = {}; }
+      if (!data[boardId]) data[boardId] = {};
+      data[boardId][swimlaneId] = !!collapsed;
+      const serialized = encodeURIComponent(JSON.stringify(data));
+      const maxAge = 60 * 60 * 24 * 365; // 1 year
+      document.cookie = `${name}=${serialized}; path=/; max-age=${maxAge}`;
+      return true;
+    } catch (e) {
+      console.warn('Error saving collapsed swimlane to cookie:', e);
+      return false;
+    }
+  },
+  getCollapsedSwimlaneFromStorage(boardId, swimlaneId) {
+    // Logged-in users: read from profile
+    if (this._id) {
+      const v = this.getCollapsedSwimlane(boardId, swimlaneId);
+      return v;
+    }
+    // Public users: read from cookie
+    try {
+      const name = 'wekan-collapsed-swimlanes';
+      const stored = (typeof document !== 'undefined') ? document.cookie : '';
+      const cookies = stored.split(';').map(c => c.trim());
+      let json = '{}';
+      for (const c of cookies) {
+        if (c.startsWith(name + '=')) {
+          json = decodeURIComponent(c.substring(name.length + 1));
+          break;
+        }
+      }
+      const data = JSON.parse(json || '{}');
+      if (data[boardId] && typeof data[boardId][swimlaneId] === 'boolean') {
+        return data[boardId][swimlaneId];
+      }
+    } catch (e) {
+      console.warn('Error reading collapsed swimlane from cookie:', e);
+    }
+    return null;
+  },
+
+  async setMoveAndCopyDialogOption(boardId, options) {
+    assertSafeMapKey(boardId);
+    let currentOptions = this.getMoveAndCopyDialogOptions();
+    currentOptions[boardId] = options;
+    return await Users.updateAsync(this._id, { $set: { 'profile.moveAndCopyDialog': currentOptions } });
+  },
+
+  async setMoveChecklistDialogOption(boardId, options) {
+    assertSafeMapKey(boardId);
+    let currentOptions = this.getMoveChecklistDialogOptions();
+    currentOptions[boardId] = options;
+    return await Users.updateAsync(this._id, { $set: { 'profile.moveChecklistDialog': currentOptions } });
+  },
+
+  async setCopyChecklistDialogOption(boardId, options) {
+    assertSafeMapKey(boardId);
+    let currentOptions = this.getCopyChecklistDialogOptions();
+    currentOptions[boardId] = options;
+    return await Users.updateAsync(this._id, { $set: { 'profile.copyChecklistDialog': currentOptions } });
+  },
+
+  async setCopyChecklistFromTemplateDialogOption(boardId, options) {
+    assertSafeMapKey(boardId);
+    let currentOptions = this.getCopyChecklistFromTemplateDialogOptions();
+    currentOptions[boardId] = options;
+    return await Users.updateAsync(this._id, { $set: { 'profile.copyChecklistFromTemplateDialog': currentOptions } });
+  },
+
+  async toggleBoardStar(boardId) {
+    const queryKind = this.hasStarred(boardId) ? '$pull' : '$addToSet';
+    return await Users.updateAsync(this._id, { [queryKind]: { 'profile.starredBoards': boardId } });
+  },
+
+  // #1172: same toggle pattern as toggleBoardStar, targeting the other three
+  // id-array fields.
+  async toggleSwimlaneStar(swimlaneId) {
+    const queryKind = this.hasStarredSwimlane(swimlaneId) ? '$pull' : '$addToSet';
+    return await Users.updateAsync(this._id, { [queryKind]: { 'profile.starredSwimlanes': swimlaneId } });
+  },
+
+  async toggleListStar(listId) {
+    const queryKind = this.hasStarredList(listId) ? '$pull' : '$addToSet';
+    return await Users.updateAsync(this._id, { [queryKind]: { 'profile.starredLists': listId } });
+  },
+
+  async toggleCardStar(cardId) {
+    const queryKind = this.hasStarredCard(cardId) ? '$pull' : '$addToSet';
+    return await Users.updateAsync(this._id, { [queryKind]: { 'profile.starredCards': cardId } });
+  },
+
+  // #2220: toggle this board as the user's default "home" board (opened after
+  // login). Clicking the current default clears it (back to the All Boards page).
+  async toggleDefaultBoard(boardId) {
+    if (this.isDefaultBoard(boardId)) {
+      return await Users.updateAsync(this._id, { $unset: { 'profile.defaultBoardId': '' } });
+    }
+    return await Users.updateAsync(this._id, { $set: { 'profile.defaultBoardId': boardId } });
+  },
+
+  // #4205: toggle this "Board Templates" card as the user's default board
+  // template. Clicking the current default clears it (back to blank-board
+  // creation, unchanged from before this feature).
+  async toggleDefaultBoardTemplate(cardId) {
+    if (this.isDefaultBoardTemplate(cardId)) {
+      return await Users.updateAsync(this._id, { $unset: { 'profile.defaultBoardTemplateId': '' } });
+    }
+    return await Users.updateAsync(this._id, { $set: { 'profile.defaultBoardTemplateId': cardId } });
+  },
+
+  async setBoardSortIndex(boardId, sortIndex) {
+    assertSafeMapKey(boardId);
+    const mapping = (this.profile && this.profile.boardSortIndex) || {};
+    mapping[boardId] = sortIndex;
+    return await Users.updateAsync(this._id, { $set: { 'profile.boardSortIndex': mapping } });
+  },
+
+  // #6439: persist a whole boardSortIndex mapping in one write. Used by the
+  // All Boards page after a drag-reorder recomputes the manual order.
+  async setBoardSortIndexes(mapping) {
+    const merged = Object.assign({}, (this.profile && this.profile.boardSortIndex) || {}, mapping || {});
+    return await Users.updateAsync(this._id, { $set: { 'profile.boardSortIndex': merged } });
+  },
+
+  async toggleAutoWidth(boardId) {
+    assertSafeMapKey(boardId);
+    const { autoWidthBoards = {} } = this.profile || {};
+    autoWidthBoards[boardId] = !autoWidthBoards[boardId];
+    return await Users.updateAsync(this._id, { $set: { 'profile.autoWidthBoards': autoWidthBoards } });
+  },
+
+  // #5729 Enable/disable "same width for all lists" mode for a board.
+  async setFixedListWidthEnabled(boardId, enabled) {
+    assertSafeMapKey(boardId);
+    const { fixedListWidthBoards = {} } = this.profile || {};
+    fixedListWidthBoards[boardId] = !!enabled;
+    return await Users.updateAsync(this._id, { $set: { 'profile.fixedListWidthBoards': fixedListWidthBoards } });
+  },
+
+  // #5729 Set the single width used by every list in fixed width mode.
+  async setFixedListWidth(boardId, width) {
+    assertSafeMapKey(boardId);
+    const { fixedListWidths = {} } = this.profile || {};
+    fixedListWidths[boardId] = width;
+    return await Users.updateAsync(this._id, { $set: { 'profile.fixedListWidths': fixedListWidths } });
+  },
+
+  async toggleKeyboardShortcuts() {
+    const { keyboardShortcuts = true } = this.profile || {};
+    return await Users.updateAsync(this._id, { $set: { 'profile.keyboardShortcuts': !keyboardShortcuts } });
+  },
+
+  async toggleVerticalScrollbars() {
+    const { verticalScrollbars = true } = this.profile || {};
+    return await Users.updateAsync(this._id, { $set: { 'profile.verticalScrollbars': !verticalScrollbars } });
+  },
+
+  async toggleShowWeekOfYear() {
+    const { showWeekOfYear = true } = this.profile || {};
+    return await Users.updateAsync(this._id, { $set: { 'profile.showWeekOfYear': !showWeekOfYear } });
+  },
+
+  async addInvite(boardId) {
+    return await Users.updateAsync(this._id, { $addToSet: { 'profile.invitedBoards': boardId } });
+  },
+
+  async removeInvite(boardId) {
+    return await Users.updateAsync(this._id, { $pull: { 'profile.invitedBoards': boardId } });
+  },
+
+  async addTag(tag) {
+    return await Users.updateAsync(this._id, { $addToSet: { 'profile.tags': tag } });
+  },
+
+  async removeTag(tag) {
+    return await Users.updateAsync(this._id, { $pull: { 'profile.tags': tag } });
+  },
+
+  async toggleTag(tag) {
+    if (this.hasTag(tag)) {
+      return await this.removeTag(tag);
+    } else {
+      return await this.addTag(tag);
+    }
+  },
+
+  async setListSortBy(value) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.listSortBy': value } });
+  },
+
+  async setAllBoardsSortBy(value) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.allBoardsSortBy': value } });
+  },
+
+  async setName(value) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.fullname': value } });
+  },
+
+  async toggleDesktopHandles(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.showDesktopDragHandles': !value } });
+  },
+
+  async toggleFieldsGrid(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.customFieldsGrid': !value } });
+  },
+
+  async toggleCardMaximized(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.cardMaximized': !value } });
+  },
+
+  async toggleCardCollapsed(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.cardCollapsed': !value } });
+  },
+
+  async toggleShowActivities(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.showActivities': !value } });
+  },
+
+  async toggleLabelText(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.hiddenMinicardLabelText': !value } });
+  },
+
+  async toggleRescueCardDescription(value = false) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.rescueCardDescription': !value } });
+  },
+
+
+  // #5778: the user's optional global theme color override (a board color name),
+  // or null when unset.
+  getGlobalThemeColor() {
+    return (this.profile && this.profile.globalThemeColor) || null;
+  },
+
+  // The custom colors for a flat/clear global theme (docs/Theme/Theme.md), or [].
+  getGlobalThemeCustomColors() {
+    return (this.profile && this.profile.globalThemeCustomColors) || [];
+  },
+
+  // #4759: the user's chosen UI font (a curated font name), or null when unset.
+  getUiFont() {
+    return (this.profile && this.profile.uiFont) || null;
+  },
+
+  // #4759: the user's chosen UI font-size preset key, or null (default size).
+  getUiFontSize() {
+    return (this.profile && this.profile.uiFontSize) || null;
+  },
+
+  // #4759: custom UI text color (hex), or null when unset. There was a
+  // getUiTextBgColor() beside it, for the removed "text background color".
+  getUiTextColor() {
+    return (this.profile && this.profile.uiTextColor) || null;
+  },
+
+  // The CSS class the global override maps to, or '' when unset. Used by the header
+  // template on non-board pages and by the <body> autorun.
+  globalThemeColorClass() {
+    const color = this.getGlobalThemeColor();
+    return color ? `board-color-${color}` : '';
+  },
+
+  async setGlobalThemeColor(color) {
+    if (color) {
+      return await Users.updateAsync(this._id, { $set: { 'profile.globalThemeColor': color } });
+    }
+    return await Users.updateAsync(this._id, { $unset: { 'profile.globalThemeColor': '' } });
+  },
+
+  async setDismissedAnnouncementVersion(version) {
+    return await Users.updateAsync(this._id, {
+      $set: { 'profile.dismissedAnnouncementVersion': version },
+    });
+  },
+
+  async addNotification(activityId) {
+    const { addNotificationOnce } = require('/models/lib/notificationInsertion');
+    return await addNotificationOnce(Users, this._id, activityId);
+  },
+
+  async removeNotification(activityId) {
+    return await Users.updateAsync(this._id, {
+      $pull: { 'profile.notifications': { activity: activityId } },
+    });
+  },
+
+  async addEmailBuffer(text) {
+    return await Users.updateAsync(this._id, { $addToSet: { 'profile.emailBuffer': text } });
+  },
+
+  async clearEmailBuffer(texts) {
+    check(texts, [String]);
+    return await Users.updateAsync(this._id, { $pullAll: { 'profile.emailBuffer': texts } });
+  },
+
+  async setAvatarUrl(avatarUrl) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.avatarUrl': avatarUrl } });
+  },
+
+  // Member-level override of the 3-tier Notification Settings system (see
+  // models/lib/notificationSettings.js): admin default -> board override ->
+  // member override, the same precedence the board/member theme override
+  // uses. `service` is 'tray' or 'email'; `value` is true/false to override,
+  // or null/undefined to clear it and fall back to the board/admin default.
+  async setNotifyOverride(service, value) {
+    const field = service === 'email' ? 'profile.notifyOverrideEmail'
+      : service === 'tray' ? 'profile.notifyOverrideTray'
+      : null;
+    if (!field) return false;
+    const modifier = value === true || value === false
+      ? { $set: { [field]: value } }
+      : { $unset: { [field]: '' } };
+    return await Users.updateAsync(this._id, modifier);
+  },
+
+  // #572: the kinds of card activity this member mutes (see
+  // models/lib/notificationActivityGroups.js). Unknown keys are dropped.
+  async setNotifyMutedActivities(groups) {
+    const muted = cleanMutedGroups(groups);
+    const modifier = muted.length
+      ? { $set: { 'profile.notifyMutedActivities': muted } }
+      : { $unset: { 'profile.notifyMutedActivities': '' } };
+    return await Users.updateAsync(this._id, modifier);
+  },
+
+  async setShowCardsCountAt(limit) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.showCardsCountAt': limit } });
+  },
+
+  async setStartDayOfWeek(startDay) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.startDayOfWeek': startDay } });
+  },
+
+  async setDateFormat(dateFormat, override) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.dateFormat': dateFormat, 'profile.dateFormatOverride': override } });
+  },
+
+  async setCalendarSystem(calendarSystem) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.calendarSystem': calendarSystem } });
+  },
+
+  // #4906 / #4256: with a board, the view is that board's only; without one
+  // (no board open), it is the shared fallback it always was.
+  async setBoardView(view, boardId) {
+    if (boardId) {
+      assertSafeMapKey(boardId);
+      const { isKnownBoardView } = require('/models/lib/boardViewSettings');
+      if (!isKnownBoardView(view)) throw new Meteor.Error('invalid-board-view', 'Unknown board view');
+      return await Users.updateAsync(this._id, { $set: { [`profile.boardViews.${boardId}`]: view } });
+    }
+    return await Users.updateAsync(this._id, { $set: { 'profile.boardView': view } });
+  },
+
+  async setListWidth(boardId, listId, width) {
+    assertSafeMapKey(boardId, listId);
+    let currentWidths = this.getListWidths();
+    if (!currentWidths[boardId]) currentWidths[boardId] = {};
+    currentWidths[boardId][listId] = width;
+    return await Users.updateAsync(this._id, { $set: { 'profile.listWidths': currentWidths } });
+  },
+
+  async setListConstraint(boardId, listId, constraint) {
+    assertSafeMapKey(boardId, listId);
+    let currentConstraints = this.getListConstraints();
+    if (!currentConstraints[boardId]) currentConstraints[boardId] = {};
+    currentConstraints[boardId][listId] = constraint;
+    return await Users.updateAsync(this._id, { $set: { 'profile.listConstraints': currentConstraints } });
+  },
+
+  async setSwimlaneHeight(boardId, swimlaneId, height) {
+    assertSafeMapKey(boardId, swimlaneId);
+    let currentHeights = this.getSwimlaneHeights();
+    if (!currentHeights[boardId]) currentHeights[boardId] = {};
+    currentHeights[boardId][swimlaneId] = height;
+    return await Users.updateAsync(this._id, { $set: { 'profile.swimlaneHeights': currentHeights } });
+  },
+
+  async setCollapsedList(boardId, listId, collapsed) {
+    assertSafeMapKey(boardId, listId);
+    const current = (this.profile && this.profile.collapsedLists) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][listId] = !!collapsed;
+    return await Users.updateAsync(this._id, { $set: { 'profile.collapsedLists': current } });
+  },
+
+  async setCollapsedCard(boardId, cardId, collapsed) {
+    assertSafeMapKey(boardId, cardId);
+    const current = (this.profile && this.profile.collapsedCards) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][cardId] = !!collapsed;
+    return await Users.updateAsync(this._id, { $set: { 'profile.collapsedCards': current } });
+  },
+
+  async setCollapsedSwimlane(boardId, swimlaneId, collapsed) {
+    assertSafeMapKey(boardId, swimlaneId);
+    const current = (this.profile && this.profile.collapsedSwimlanes) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][swimlaneId] = !!collapsed;
+    return await Users.updateAsync(this._id, { $set: { 'profile.collapsedSwimlanes': current } });
+  },
+
+  async setCollapsedCardSection(cardId, sectionKey, collapsed) {
+    assertSafeMapKey(cardId);
+    const current = (this.profile && this.profile.collapsedCardSections) || {};
+    if (!current[cardId]) current[cardId] = {};
+    current[cardId][sectionKey] = !!collapsed;
+    return await Users.updateAsync(this._id, { $set: { 'profile.collapsedCardSections': current } });
+  },
+
+  /** #3078: record that this user just opened this card, clearing its
+   * "unread comments" highlight on every minicard that shows it. */
+  async setCardLastViewed(cardId) {
+    assertSafeMapKey(cardId);
+    // #6745: one entry, not the whole map - see models/lib/unreadComments.js.
+    const views = this.profile && this.profile.cardLastViews;
+    return await Users.updateAsync(this._id, cardLastViewsModifier(views, cardId, new Date()));
+  },
+
+  async setMobileMode(enabled) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.mobileMode': enabled } });
+  },
+
+  async setCardZoom(level) {
+    return await Users.updateAsync(this._id, { $set: { 'profile.cardZoom': level } });
+  },
+});
+
+if (Meteor.isServer) {
+  // #1289 ("Error after deleting a user"): deleting a user (Admin Panel
+  // `removeUser` method, self-service account delete, or
+  // DELETE /api/users/:userId) removed only the users document and left
+  // dangling references everywhere — "ghost" board members with empty
+  // avatars, stale card members/assignees and watcher entries — that
+  // previously had to be cleaned up by hand or by editing the database.
+  // This after.remove hook runs for every deletion path (they all go through
+  // Users.removeAsync / Meteor.users.removeAsync on this same collection) and
+  // prunes those references. Activities/comments are intentionally kept so
+  // history stays readable; see models/lib/userDeletionCleanup.js.
+  const {
+    buildUserDeletionCleanupPlan,
+    applyUserDeletionCleanup,
+  } = require('/models/lib/userDeletionCleanup');
+  Users.after.remove(async function(currentUserId, doc) {
+    try {
+      const plan = buildUserDeletionCleanupPlan(doc && doc._id);
+      if (!plan) return;
+      await applyUserDeletionCleanup(plan, {
+        boards: Boards,
+        // Required lazily: cards/lists/avatars are not imported at the top of
+        // this shared model, and avatars.js must only resolve server-side
+        // config when actually needed here.
+        cards: require('/models/cards').default,
+        lists: require('/models/lists').default,
+        avatars: require('/models/avatars').default,
+      });
+    } catch (error) {
+      console.error(
+        '[userDeletionCleanup] Failed to prune references of deleted user',
+        doc && doc._id,
+        error,
+      );
+    }
+  });
+
+  Meteor.methods({
+    // Permanently dismiss the current global announcement for the logged-in
+    // user (#6051). The version is computed server-side from the current
+    // announcement so the client cannot dismiss an arbitrary/future version.
+    async dismissAnnouncement() {
+      if (!this.userId) {
+        throw new Meteor.Error('not-logged-in', 'User must be logged in');
+      }
+      const Announcements = require('/models/announcements').default;
+      const { announcementVersion } = require('/models/announcements');
+      const announcement = await Announcements.findOneAsync();
+      const version = announcementVersion(announcement);
+      if (!version) {
+        return null;
+      }
+      await Users.updateAsync(this.userId, {
+        $set: { 'profile.dismissedAnnouncementVersion': version },
+      });
+      return version;
+    },
+
+    // #1566: dismiss a board's announcement, at the version it has now - the
+    // server reads it, so a client cannot dismiss a future edit in advance.
+    async dismissBoardAnnouncement(boardId) {
+      check(boardId, String);
+      if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+      assertSafeMapKey(boardId);
+      const Boards = require('/models/boards').default;
+      const board = await Boards.findOneAsync({ _id: boardId }, { fields: { announcement: 1, members: 1, permission: 1 } });
+      if (!board || !board.isVisibleBy || !(await board.isVisibleBy(await Meteor.users.findOneAsync(this.userId)))) {
+        throw new Meteor.Error('not-found', 'Board not found');
+      }
+      const { boardAnnouncementVersion } = require('/models/lib/boardAnnouncement');
+      const version = boardAnnouncementVersion(board);
+      if (!version) return null;
+      await Users.updateAsync(this.userId, { $set: { [`profile.dismissedBoardAnnouncements.${boardId}`]: version } });
+      return version;
+    },
+  });
+}
+
+export default Users;

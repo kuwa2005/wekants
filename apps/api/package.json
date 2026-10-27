@@ -1,0 +1,26 @@
+{
+  "name": "@wekants/api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.6",
+    "@wekants/shared": "workspace:*",
+    "@wekants/wekan-core-node": "workspace:*",
+    "drizzle-orm": "^0.44.7",
+    "hono": "^4.10.3",
+    "postgres": "^3.4.7",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

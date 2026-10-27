@@ -1,0 +1,337 @@
+import { Blaze } from 'meteor/blaze';
+import { Template } from 'meteor/templating';
+import { Tracker } from 'meteor/tracker';
+import { TAPi18n } from '/imports/i18n';
+import { EscapeActions } from '/client/lib/escapeActions';
+import { Utils } from '/client/lib/utils';
+import { computePopupOffset } from '/client/lib/popupOffset';
+import { focusFirstControl } from '/client/lib/accessibility';
+
+window.Popup = new (class {
+  constructor() {
+    // The template we use to render popups
+    this.template = Template.popup;
+
+    // We only want to display one popup at a time and we keep the view object
+    // in this `Popup.current` variable. If there is no popup currently opened
+    // the value is `null`.
+    this.current = null;
+
+    // It's possible to open a sub-popup B from a popup A. In that case we keep
+    // the data of popup A so we can return back to it. Every time we open a new
+    // popup the stack grows, every time we go back the stack decrease, and if
+    // we close the popup the stack is reseted to the empty stack [].
+    this._stack = [];
+
+    // We invalidate this internal dependency every time the top of the stack
+    // has changed and we want to re-render a popup with the new top-stack data.
+    this._dep = new Tracker.Dependency();
+  }
+
+  focusCurrentPopup() {
+    Tracker.afterFlush(() => {
+      const popup = document.querySelector('.js-pop-over');
+      if (!popup) return;
+      focusFirstControl(popup);
+    });
+  }
+
+  /// This function returns a callback that can be used in an event map:
+  ///   Template.tplName.events({
+  ///     'click .elementClass': Popup.open("popupName"),
+  ///   });
+  /// The popup inherit the data context of its parent.
+  ///
+  /// `openOptions.titleKey` names the translation to use for the header title,
+  /// for a popup whose title is a phrase the app ALREADY has. The convention is
+  /// `<popupName>-title`, which is right when the title is that popup's own
+  /// words; it is wrong when they are words that exist elsewhere, because
+  /// adding the convention key would put a second copy of one phrase into all
+  /// 147 language files - starting as English in every one of them, so most
+  /// languages would show English for something they have already translated.
+  open(name, openOptions = {}) {
+    const self = this;
+    const popupName = `${name}Popup`;
+    function clickFromPopup(evt) {
+      return $(evt.target).closest('.js-pop-over').length !== 0;
+    }
+    /** opens the popup
+     * @param evt the current event
+     * @param options options (dataContextIfCurrentDataIsUndefined use this dataContext if this.currentData() is undefined)
+     */
+    return function(evt, options) {
+      // If a popup is already opened, clicking again on the opener element
+      // should close it -- and interrupt the current `open` function.
+      if (self.isOpen()) {
+        const previousOpenerElement = self._getTopStack().openerElement;
+        if (previousOpenerElement === evt.currentTarget) {
+          self.close();
+          return;
+        } else {
+          $(previousOpenerElement).removeClass('is-active');
+          // Clean up previous popup content to prevent mixing
+          self._cleanupPreviousPopupContent();
+          // #6686: a popup opened from a card (e.g. the Labels popup) that is
+          // never explicitly closed (the card is closed/switched without going
+          // through Popup.close/back) leaves this popup's stack non-empty. The
+          // next *fresh* open (not a sub-popup opened from within the current
+          // popup) must replace that stale stack rather than push on top of
+          // it - otherwise the old, still-rendered entry stacks alongside the
+          // new one and its data context (the previous card) can end up
+          // reacting to clicks meant for the new card. A sub-popup opened
+          // from inside the currently open popup (clickFromPopup) legitimately
+          // grows the stack and must not be reset here.
+          if (!clickFromPopup(evt)) {
+            self._stack = [];
+          }
+        }
+      }
+
+      // We determine the `openerElement` (the DOM element that is being clicked
+      // and the one we take in reference to position the popup) from the event
+      // if the popup has no parent, or from the parent `openerElement` if it
+      // has one. This allows us to position a sub-popup exactly at the same
+      // position than its parent.
+      let openerElement;
+      if (clickFromPopup(evt) && self._getTopStack()) {
+        openerElement = self._getTopStack().openerElement;
+      } else {
+        // For Member Settings sub-popups, always start fresh to avoid content mixing
+        if (popupName.includes('changeLanguage') || popupName.includes('changeAvatar') ||
+            popupName.includes('editProfile') || popupName.includes('changePassword') ||
+            popupName.includes('invitePeople') || popupName.includes('support')) {
+          self._stack = [];
+        }
+        openerElement = evt.currentTarget;
+      }
+      $(openerElement).addClass('is-active');
+      evt.preventDefault();
+
+      // We push our popup data to the stack. The top of the stack is always
+      // used as the data source for our current popup.
+      self._stack.push({
+        popupName,
+        openerElement,
+        hasPopupParent: clickFromPopup(evt),
+        title: self._getTitle(popupName, openOptions.titleKey),
+        depth: self._stack.length,
+        offset: self._getOffset(openerElement, popupName),
+        dataContext: openOptions.dataContext || (this && this.currentData && this.currentData()) || (options && options.dataContextIfCurrentDataIsUndefined) || this,
+      });
+
+      const $contentWrapper = $('.content-wrapper')
+      if ($contentWrapper.length > 0) {
+        const contentWrapper = $contentWrapper[0];
+        self._getTopStack().scrollTop = contentWrapper.scrollTop;
+        // scroll from e.g. delete comment to the top (where the confirm button is)
+        $contentWrapper.scrollTop(0);
+      }
+
+      // If there are no popup currently opened we use the Blaze API to render
+      // one into the DOM. We use a reactive function as the data parameter that
+      // return the complete along with its top element and depends on our
+      // internal dependency that is being invalidated every time the top
+      // element of the stack has changed and we want to update the popup.
+      //
+      // Otherwise if there is already a popup open we just need to invalidate
+      // our internal dependency, and since we just changed the top element of
+      // our internal stack, the popup will be updated with the new data.
+      if (!self.isOpen()) {
+        if (!Template[popupName]) {
+          console.error('Template not found:', popupName);
+          return;
+        }
+        self.current = Blaze.renderWithData(
+          self.template,
+          () => {
+            self._dep.depend();
+            return { ...self._getTopStack(), stack: self._stack };
+          },
+          document.body,
+        );
+        self.focusCurrentPopup();
+      } else {
+        self._dep.changed();
+        self.focusCurrentPopup();
+      }
+    };
+  }
+
+  /// This function returns a callback that can be used in an event map:
+  ///   Template.tplName.events({
+  ///     'click .elementClass': Popup.afterConfirm("popupName", function() {
+  ///       // What to do after the user has confirmed the action
+  ///     }),
+  ///   });
+  afterConfirm(name, action) {
+    const self = this;
+
+    return function(evt, tpl) {
+      const context = (this.currentData && this.currentData()) || this;
+      // #6479: store the pending confirm action on the Popup instance, NOT on the
+      // Blaze data context. The old code stashed it as a field on the context and
+      // the confirm button read it back as `this.__afterConfirmAction`; but the
+      // context is a ReactiveCache/Minimongo document (e.g. a board member sub-doc),
+      // and once Blaze re-renders the confirmation popup with a fresh/immutable copy
+      // of that context the field is gone, so clicking "Remove member" (and every
+      // other confirm dialog) silently did nothing. The instance field survives the
+      // re-render; the action is still invoked with the confirmation popup's own data
+      // context as `this`, so `this.userId` etc. keep working.
+      self._afterConfirmAction = action;
+      self.open(name).call(context, evt, tpl);
+    };
+  }
+
+  /// The public reactive state of the popup.
+  isOpen() {
+    this._dep.changed();
+    return Boolean(this.current);
+  }
+
+  /// In case the popup was opened from a parent popup we can get back to it
+  /// with this `Popup.back()` function. You can go back several steps at once
+  /// by providing a number to this function, e.g. `Popup.back(2)`. In this case
+  /// intermediate popup won't even be rendered on the DOM. If the number of
+  /// steps back is greater than the popup stack size, the popup will be closed.
+  back(n = 1) {
+    if (this._stack.length > n) {
+      const $contentWrapper = $('.content-wrapper')
+      if ($contentWrapper.length > 0) {
+        const contentWrapper = $contentWrapper[0];
+        const stack = this._stack[this._stack.length - n];
+        // scrollTopMax and scrollLeftMax only available at Firefox (https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTopMax)
+        const scrollTopMax = contentWrapper.scrollTopMax || contentWrapper.scrollHeight - contentWrapper.clientHeight;
+        if (scrollTopMax && stack.scrollTop > scrollTopMax) {
+          // sometimes scrollTopMax is lower than scrollTop, so i need this dirty hack
+          setTimeout(() => {
+            $contentWrapper.scrollTop(stack.scrollTop);
+          }, 6);
+        }
+        // restore the old popup scroll position
+        $contentWrapper.scrollTop(stack.scrollTop);
+      }
+      for (let i = 0; i < n; i++) this._stack.pop();
+      this._dep.changed();
+      this.focusCurrentPopup();
+    } else {
+      this.close();
+    }
+  }
+
+  /// Close the current opened popup.
+  close() {
+    if (this.isOpen()) {
+      Blaze.remove(this.current);
+      this.current = null;
+
+      const openerElement = this._getTopStack().openerElement;
+      $(openerElement).removeClass('is-active');
+
+      this._stack = [];
+      // Clean up popup content when closing
+      this._cleanupPreviousPopupContent();
+      Tracker.afterFlush(() => {
+        if (openerElement?.isConnected && typeof openerElement.focus === 'function') {
+          openerElement.focus();
+        }
+      });
+    }
+  }
+
+  getOpenerComponent(n=4) {
+    const { openerElement } = Template.parentData(n);
+    if (!openerElement) return null;
+    const view = Blaze.getView(openerElement);
+    let current = view;
+    while (current) {
+      if (current.templateInstance) return current.templateInstance();
+      current = current.parentView;
+    }
+    return null;
+  }
+
+  // An utility function that returns the top element of the internal stack
+  _getTopStack() {
+    return this._stack[this._stack.length - 1];
+  }
+
+  _cleanupPreviousPopupContent() {
+    // Force a re-render to ensure proper cleanup
+    if (this._dep) {
+      this._dep.changed();
+    }
+  }
+
+  // We automatically calculate the popup offset from the reference element
+  // position and dimensions. We also reactively use the window dimensions to
+  // ensure that the popup is always visible on the screen.
+  _getOffset(element, popupName) {
+    const $element = $(element);
+    return () => {
+      Utils.windowResizeDep.depend();
+
+      // #5667: read the current page scroll and the opener's document offset,
+      // then delegate the geometry to the pure, unit-tested computePopupOffset.
+      // It lays the popup out in VIEWPORT coordinates — so a date-picker opened
+      // low on a scrolled page stays fully visible instead of extending past the
+      // visible area — and returns document coordinates for the absolute style.
+      const hasOpener = !!($element && $element.length);
+      const offset = hasOpener ? $element.offset() : null;
+      const opener = hasOpener
+        ? { top: offset.top, left: offset.left, height: $element.outerHeight() }
+        : null;
+
+      return computePopupOffset({
+        viewportWidth: $(window).width(),
+        viewportHeight: $(window).height(),
+        scrollTop: $(window).scrollTop() || 0,
+        scrollLeft: $(window).scrollLeft() || 0,
+        opener,
+        popupName,
+        isMiniScreen: Utils.isMiniScreen(),
+        isAdminEditPopup:
+          hasOpener &&
+          ($element.hasClass('edit-user') ||
+            $element.hasClass('edit-org') ||
+            $element.hasClass('edit-team')),
+        isLanguagePopup: hasOpener && $element.hasClass('js-change-language'),
+        viewportPadding: 10,
+      });
+    };
+  }
+
+  // We get the title from the translation files. Instead of returning the
+  // result, we return a function that compute the result and since `TAPi18n.__`
+  // is a reactive data source, the title will be changed reactively.
+  _getTitle(popupName, titleKey) {
+    return () => {
+      // An explicit key wins, for a title the app already has words for.
+      const translationKey = titleKey || `${popupName}-title`;
+
+      // XXX There is no public API to check if there is an available
+      // translation for a given key. So we try to translate the key and if the
+      // translation output equals the key input we deduce that no translation
+      // was available and returns `false`. There is a (small) risk a false
+      // positives.
+      const title = TAPi18n.__(translationKey);
+      // when popup showed as full of small screen, we need a default header to clearly see [X] button
+      const defaultTitle = Utils.isMiniScreen() ? '' : false;
+      return title !== translationKey ? title : defaultTitle;
+    };
+  }
+})();
+
+// We close a potential opened popup on any left click on the document, or go
+// one step back by pressing escape.
+const escapeActions = ['back', 'close'];
+escapeActions.forEach(actionName => {
+  EscapeActions.register(
+    `popup-${actionName}`,
+    () => Popup[actionName](),
+    () => Popup.isOpen(),
+    {
+      noClickEscapeOn: '.js-pop-over,.js-open-card-title-popup,.js-open-inlined-form,.textcomplete-dropdown',
+      enabledOnClick: actionName === 'close',
+    },
+  );
+});

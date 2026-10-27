@@ -1,0 +1,58 @@
+import { Meteor } from 'meteor/meteor';
+// Absent from the Sandstorm .spk (releases/sandstorm-slim.mjs), so asked for
+// only when the package is in the build.
+const AccountsLockout = Package['wekan-accounts-lockout']
+  ? require('meteor/wekan-accounts-lockout').AccountsLockout
+  : null;
+import { ReactiveCache } from '/imports/reactiveCache';
+import LockoutSettings from '/models/lockoutSettings';
+
+// The lockout reporter (and why it names the TARGET): server/lib/lockoutReporter.js.
+import { reportLockout } from '/server/lib/lockoutReporter';
+
+
+Meteor.methods({
+  async reloadAccountsLockout() {
+    // Check if user has admin rights
+    const userId = this.userId;
+    if (!userId) {
+      throw new Meteor.Error('error-invalid-user', 'Invalid user');
+    }
+    const user = await ReactiveCache.getUser(userId);
+    if (!user || !user.isAdmin) {
+      throw new Meteor.Error('error-not-allowed', 'Not allowed');
+    }
+    // No password login, so nothing to lock out (the Sandstorm .spk).
+    if (!AccountsLockout) return false;
+
+    try {
+      // Get configurations from database
+      const knownUsersConfig = {
+        failuresBeforeLockout: (await LockoutSettings.findOneAsync('known-failuresBeforeLockout'))?.value || 3,
+        lockoutPeriod: (await LockoutSettings.findOneAsync('known-lockoutPeriod'))?.value || 60,
+        failureWindow: (await LockoutSettings.findOneAsync('known-failureWindow'))?.value || 15
+      };
+
+      const unknownUsersConfig = {
+        failuresBeforeLockout: (await LockoutSettings.findOneAsync('unknown-failuresBeforeLockout'))?.value || 3,
+        lockoutPeriod: (await LockoutSettings.findOneAsync('unknown-lockoutPeriod'))?.value || 60,
+        failureWindow: (await LockoutSettings.findOneAsync('unknown-failureWindow'))?.value || 15
+      };
+
+      // Initialize the AccountsLockout with configuration
+      const accountsLockout = new AccountsLockout({
+        knownUsers: knownUsersConfig,
+        unknownUsers: unknownUsersConfig,
+        onLockout: reportLockout,
+      });
+
+      // Start the accounts lockout mechanism
+      accountsLockout.startup();
+
+      return true;
+    } catch (error) {
+      console.error('Failed to reload accounts lockout:', error);
+      throw new Meteor.Error('error-reloading-settings', 'Error reloading settings');
+    }
+  }
+});

@@ -1,0 +1,549 @@
+.hidden {
+  display: none;
+}
+.attachment-upload {
+  text-align: center;
+  font-weight: bold;
+}
+.attachment-gallery {
+  display: flex;
+  flex-direction: column;
+}
+.attachment-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.attachment-item:hover {
+  background: #e0e0e0;
+}
+/* The thumbnail is a <button> (the keyboard control, with its aria-label),
+   and forms.css fills every button with the theme accent - at rest and on
+   hover, focus and active. button:hover is as specific as one class, so the
+   reset has to name every state the global rule paints. The tile is a fixed
+   frame on a neutral ground: the same size on every row, the whole picture
+   visible (contain), never on a blue control. */
+button.attachment-thumbnail-container,
+button.attachment-thumbnail-container:hover,
+button.attachment-thumbnail-container:focus,
+button.attachment-thumbnail-container:active,
+button.attachment-thumbnail-container:active:hover,
+button.attachment-thumbnail-container:active:focus {
+  display: block;
+  flex: 0 0 144px;
+  width: 144px;
+  height: 96px;
+  min-width: 144px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: inherit;
+  font-weight: 400;
+  line-height: 0;
+  text-align: center;
+  box-shadow: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+button.attachment-thumbnail-container:focus-visible {
+  outline: 2px solid #01628c;
+  outline-offset: 2px;
+}
+img.attachment-thumbnail,
+video.attachment-thumbnail {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  background: transparent;
+}
+/* My Attachments (client/components/main/myAttachments.jade) uses the same
+   classes on a plain div; it keeps its previous sizing. */
+div.attachment-thumbnail-container {
+  display: block;
+  width: 150px;
+  min-width: 150px;
+  max-height: 150px;
+  padding-inline-end: 16px;
+}
+div.attachment-thumbnail-container .attachment-thumbnail {
+  width: auto;
+  height: auto;
+  max-width: 150px;
+  max-height: 150px;
+  min-height: 2em;
+  cursor: pointer;
+}
+div.attachment-thumbnail-container .attachment-thumbnail-text {
+  width: auto;
+  height: auto;
+  min-height: 2em;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+.attachment-thumbnail-text {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2em;
+  line-height: 1;
+  cursor: pointer;
+}
+.attachment-details-container {
+  display: block;
+  flex-grow: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attachment-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-inline-end: 25px; /* Make sure the icons are not to far to the right */
+}
+.attachment-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.attachment-actions a {
+  margin-inline-start: 16px;
+}
+.attachment-actions a:first-child {
+  margin-inline-start: 0;
+}
+/* #6796: the add button is a small "+" like every other section's
+   (.card-label.add-label), not a full-width dashed box. */
+.attachment-gallery .add-attachment {
+  align-self: flex-start;
+  margin-top: 4px;
+  cursor: pointer;
+}
+/* A file with nothing to preview, or every file when Attachments: Preview is
+   off: a small button with the file icon and its extension, which still opens
+   the preview, instead of a 144x96 box (models/lib/attachmentTile.cjs). */
+.attachment-item.attachment-item-compact {
+  margin-top: 8px;
+  gap: 8px;
+}
+button.attachment-thumbnail-container.attachment-thumbnail-compact,
+button.attachment-thumbnail-container.attachment-thumbnail-compact:hover,
+button.attachment-thumbnail-container.attachment-thumbnail-compact:focus,
+button.attachment-thumbnail-container.attachment-thumbnail-compact:active {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 2.6em;
+  height: 2.6em;
+  padding: 0 0.4em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  line-height: 1;
+}
+.attachment-thumbnail-compact .attachment-thumbnail-ext {
+  font-size: 0.75em;
+  text-transform: lowercase;
+}
+/* The name first and on a line of its own, so a long one is read, not hidden
+   behind the buttons; who, when and the buttons follow on the next line. */
+.attachment-details > div:first-child {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.icon {
+  font-size: 1.5em;
+  cursor: pointer;
+  margin-inline-start: 10px;
+}
+.icon:hover {
+  color: #666;
+}
+#viewer-overlay {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  inset-inline-start: 0;
+  z-index: 9999 !important;
+  background: rgba(13, 13, 13, 0.95);
+}
+#viewer-overlay.hidden {
+  display: none;
+}
+#viewer-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+#viewer-top-bar {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+#attachment-name {
+  color: white;
+  font-size: 1.5em;
+  max-width: calc(
+    100% - 50px
+  ); /* Make sure the name does not overlap the close button */
+}
+#viewer-close {
+  color: white;
+  cursor: pointer;
+  font-size: 4em;
+  position: absolute;
+  inset-inline-end: 50px;
+  top: 16px;
+}
+
+/* Upload progress indicators for drag-and-drop uploads */
+.minicard-upload-progress,
+.card-details-upload-progress {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+  font-size: calc(14px * var(--wekan-ui-font-scale, 1));
+}
+
+.upload-progress-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #495057;
+}
+
+.upload-progress-header i {
+  margin-inline-end: 8px;
+  color: #007bff;
+}
+
+.upload-progress-item {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: white;
+  border-radius: 3px;
+  border: 1px solid #dee2e6;
+}
+
+.upload-progress-item.upload-error {
+  border-color: #dc3545;
+  background: #f8d7da;
+}
+
+.upload-progress-filename {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #495057;
+  word-break: break-all;
+}
+
+.upload-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+.upload-progress-item.upload-error .upload-progress-fill {
+  background: #dc3545;
+}
+
+.upload-progress-error,
+.upload-progress-success {
+  display: flex;
+  align-items: center;
+  font-size: calc(12px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+}
+
+.upload-progress-error {
+  color: #dc3545;
+}
+
+.upload-progress-success {
+  color: #28a745;
+}
+
+.upload-progress-error i,
+.upload-progress-success i {
+  margin-inline-end: 4px;
+}
+
+/* Minicard specific styles */
+.minicard-upload-progress {
+  margin: 4px 0;
+  padding: 8px;
+  font-size: calc(12px * var(--wekan-ui-font-scale, 1));
+}
+
+.minicard-upload-progress .upload-progress-item {
+  padding: 6px;
+  margin-bottom: 6px;
+}
+
+.minicard-upload-progress .upload-progress-filename {
+  font-size: calc(11px * var(--wekan-ui-font-scale, 1));
+}
+
+/* Card details specific styles */
+.card-details-upload-progress {
+  margin: 12px 0;
+  padding: 16px;
+}
+
+.card-details-upload-progress .upload-progress-header {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  margin-bottom: 12px;
+}
+
+.card-details-upload-progress .upload-progress-item {
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.card-details-upload-progress .upload-progress-filename {
+  font-size: calc(14px * var(--wekan-ui-font-scale, 1));
+}
+
+/* Drag over state for minicards */
+.minicard.is-dragging-over {
+  border: 2px dashed #007bff !important;
+  background: rgba(0, 123, 255, 0.1) !important;
+}
+
+/* Drag over state for card details */
+.js-card-details.is-dragging-over {
+  border: 2px dashed #007bff !important;
+  background: rgba(0, 123, 255, 0.05) !important;
+}
+.attachment-arrow {
+  font-size: 4em;
+  color: white;
+  cursor: pointer;
+  align-self: center;
+  margin: 0 20px;
+}
+#prev-attachment {
+  font-size: 4em;
+  color: white;
+  cursor: pointer;
+  align-self: center;
+  margin-inline-start: 70px;
+}
+#next-attachment {
+  font-size: 4em;
+  color: white;
+  cursor: pointer;
+  align-self: center;
+  margin-inline-end: 70px;
+}
+#viewer-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+#image-viewer {
+  background: repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%) 50% /
+    20px 20px; /* Checkerboard background for transparent images */
+  max-width: 100%;
+  max-height: 100%;
+}
+#video-viewer {
+  max-width: 100%;
+  max-height: 100%;
+}
+#audio-viewer {
+  max-width: 100%;
+}
+#pdf-viewer {
+  width: 100%;
+  height: 100%;
+}
+#txt-viewer {
+  background-color: white;
+  width: 100%;
+  height: 100%;
+}
+#office-viewer {
+  background-color: #e5e7eb;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+#zip-viewer {
+  background: white;
+  color: #222;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 1em;
+  box-sizing: border-box;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+#zip-viewer li {
+  padding: 0.3em;
+  white-space: pre-wrap;
+}
+.pdf-preview-error {
+  margin-top: 180px;
+  display: block;
+  font-size: 2em;
+  color: white;
+}
+
+@media screen and (max-width: 800px) {
+  #viewer-container {
+    display: block;
+  }
+  .attachment-arrow {
+    position: absolute;
+    bottom: 2.2em;
+    font-size: 1.6em;
+    padding: 16px;
+  }
+  #prev-attachment {
+    inset-inline-start: 0;
+    position: absolute;
+    bottom: 2.2em;
+    font-size: 1.6em;
+    padding: 16px;
+    margin-inline-start: 0;
+  }
+  #next-attachment {
+    inset-inline-end: 0;
+    position: absolute;
+    bottom: 2.2em;
+    font-size: 1.6em;
+    padding: 16px;
+    margin-inline-end: 0;
+  }
+  #pdf-viewer {
+    width: 100%;
+    height: calc(
+      100vh - 155px
+    ); /* Full height - height of top and bottom bars */
+  }
+  #zip-viewer,
+  #txt-viewer,
+  #office-viewer {
+    width: 100%;
+    height: calc(
+      100vh - 155px
+    ); /* Full height - height of top and bottom bars */
+  }
+  #audio-viewer {
+    margin-top: 20%;
+    width: 100%;
+  }
+  button.attachment-thumbnail-container,
+  button.attachment-thumbnail-container:hover,
+  button.attachment-thumbnail-container:focus,
+  button.attachment-thumbnail-container:active,
+  button.attachment-thumbnail-container:active:hover,
+  button.attachment-thumbnail-container:active:focus {
+    flex: 0 0 96px;
+    width: 96px;
+    height: 64px;
+    min-width: 96px;
+  }
+  div.attachment-thumbnail-container {
+    width: 100px;
+    min-width: 100px;
+  }
+  div.attachment-thumbnail-container .attachment-thumbnail {
+    max-width: 100px;
+  }
+  .attachment-details {
+    flex-direction: column;
+    margin-inline-end: 0px;
+  }
+  .attachment-actions {
+    flex-direction: row;
+    margin-top: 10px;
+  }
+}
+
+/* Native viewer controls retain the previous icon-only presentation. */
+#viewer-close, #prev-attachment, #next-attachment {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+
+/* #3257: a card attached to this card, beside the files. */
+.attachment-gallery .attached-card-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.attachment-gallery .attached-card-link {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-decoration: none;
+}
+.attachment-gallery .attached-card-link .attached-card-title {
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+.attachment-gallery .attached-card-where,
+.attachment-gallery .attached-card-archived,
+.attachment-gallery .attached-card-unavailable {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.attachment-gallery .js-detach-card {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* #6796: the upload rules, in the upload popup rather than above the list. */
+.attachment-upload-help {
+  margin: 8px 12px 4px;
+  font-size: 0.85em;
+}

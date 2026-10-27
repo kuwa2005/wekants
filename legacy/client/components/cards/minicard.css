@@ -1,0 +1,1216 @@
+.minicard-wrapper {
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+/* #3078: a subtle highlight for a minicard that has comments the current
+   user has not seen yet. An inset ring plus a left-edge stripe, not a
+   background fill, so it stays visible against every label swatch and
+   colorStyle background a minicard can already have (an inline
+   background-color always wins over these box-shadow rings anyway). */
+.minicard.minicard-unread-comments {
+  box-shadow: inset 3px 0 0 0 #f2c94c, inset 0 0 0 1px rgba(242, 201, 76, 0.55);
+}
+.minicard-wrapper.placeholder {
+  background: #ccc;
+  border-radius: 17px;
+}
+.minicard-wrapper.card-drop-preview {
+  background: transparent;
+  border-radius: 0;
+  pointer-events: none;
+}
+.minicard-wrapper.ui-sortable-helper {
+  cursor: grabbing;
+  transform: rotate(4deg);
+  display: block !important;
+}
+.minicard-wrapper.ui-sortable-helper .and-n-other {
+  width: 100%;
+  height: 25px;
+  padding: 5px;
+  background-color: #f2f2f2;
+  text-align: center;
+  border-radius: 6px;
+}
+.minicard-wrapper.ui-sortable-helper .multi-selection-checkbox {
+  display: none;
+}
+.minicard-wrapper .multi-selection-checkbox + .minicard {
+  margin-inline-start: 14px;
+}
+/* Enlarge the clickable area of the small selection checkbox so it can be
+   reliably clicked at the left side of the minicard. The visible 13px box (and
+   its rotated is-checked checkmark) keep their size; an invisible overlay only
+   extends the hit target. */
+.minicard-wrapper .multi-selection-checkbox::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  inset-inline-start: -8px;
+  inset-inline-end: -8px;
+  bottom: -8px;
+}
+@media only screen {
+  .minicard {
+    padding: 8px 14px 3px;
+    position: relative;
+    flex: 1;
+    flex-wrap: wrap;
+    background-color: #fff;
+    min-height: 25px;
+    box-shadow: 0 2px 3px rgba(0,0,0,0.15);
+    border-radius: 4px;
+    color: #4d4d4d;
+    overflow: hidden;
+    transition: transform 0.2s, border-radius 0.2s;
+  }
+}
+/* #1591: the whole-minicard collapse caret, top-left corner - unobtrusive,
+   the same size as the per-checklist caret it mirrors. It sits BEFORE
+   .minicard-title in the markup (see minicard.jade) so it stays at the
+   start of the title's line rather than floating separately. */
+.minicard .minicard-collapse {
+  float: inline-start;
+  margin-inline-end: 4px;
+  font-size: 0.875rem;
+  color: #999;
+  cursor: pointer;
+}
+.minicard .minicard-collapse:hover {
+  color: #4d4d4d;
+}
+.minicard-details-menu-with-handle {
+  float: inline-end;
+  padding-inline-start: 10px;
+  font-size: 0.875rem;
+  padding: 0;
+  z-index: 1;
+}
+.minicard-details-menu {
+  float: inline-end;
+  font-size: 0.875rem;
+  padding-inline-start: 10px;
+}
+@media print {
+  .minicard-details-menu,
+  .minicard-details-menu-with-handle {
+    display: none;
+  }
+}
+.minicard.linked-board .linked-icon,
+.minicard.linked-card .linked-icon {
+  display: inline-block;
+  margin-inline-end: 21px;
+  vertical-align: baseline;
+  font-size: 0.9em;
+}
+.minicard.linked-board .linked-archived,
+.minicard.linked-card .linked-archived {
+  color: #937760;
+}
+.is-selected .minicard {
+  transform: translateX(21px);
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+  z-index: 25;
+  box-shadow: -4px 2px 3px rgba(0,0,0,0.2);
+}
+.minicard:hover:not(.minicard-composer),
+.is-selected .minicard,
+.draggable-hover-card .minicard {
+  background: #f7f7f7;
+}
+.draggable-hover-card .minicard {
+  background: #ededed;
+}
+.minicard .minicard-cover {
+  height: 120px;
+  margin: 0 -14px 8px -14px;
+  overflow: hidden;
+  background: #f4f5f7;
+  border-radius: 0;
+  user-select: none;
+}
+/* Cover, not contain: the banner fills the card width. The attachment row
+   (attachments.css) uses contain, where the whole file must stay visible. */
+.minicard .minicard-cover-image {
+  width: 100%;
+  height: 120px;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+.minicard .minicard-labels {
+  float: none;
+  margin-inline-end: 84px;
+}
+.minicard .minicard-labels .minicard-label {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  margin-inline-end: 6px;
+  margin-bottom: 4px;
+}
+/* Keep text labels on a single compact line. The label name is rendered
+   inside a `.viewer`, whose global `min-height: 2.5vh` otherwise forces every
+   label to roughly double height on the minicard. */
+.minicard .minicard-labels .card-label {
+  min-height: 0;
+  padding: 1px 6px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.minicard .minicard-labels .card-label .viewer {
+  min-height: 0;
+  display: inline;
+}
+.minicard .minicard-labels .card-label .viewer p {
+  display: inline;
+}
+.minicard .minicard-labels-no-text {
+  display: flex;
+  flex-wrap: wrap;
+}
+.minicard .minicard-custom-fields {
+  display: block;
+  margin-inline-end: 84px;
+}
+.minicard .minicard-custom-field {
+  display: flex;
+}
+.minicard .minicard-custom-field-item {
+  flex-grow: 1;
+  display: block;
+  word-wrap: break-word;
+  /* Fixed, not 13vw: a chip that grew with the window made the card reflow. */
+  max-width: 160px;
+  margin-inline-end: 7px;
+}
+.minicard .minicard-custom-field-item-fullwidth {
+  flex-grow: 1;
+  display: block;
+  word-wrap: break-word;
+  max-width: 100%;
+  margin-inline-end: 7px;
+}
+.minicard .minicard-custom-field-checkbox-icon.minicard-custom-field-checkbox-true {
+  color: #2ecc71;
+}
+.minicard .minicard-custom-field-checkbox-icon.minicard-custom-field-checkbox-false {
+  color: #e74c3c;
+}
+.minicard .handle {
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  inset-inline-end: 1px;
+  top: 28px;
+  display: none;
+  z-index: 1;
+}
+@media only screen {
+  .minicard .handle {
+    display: block;
+  }
+}
+/* #6521: on a touch device the handle is the ONLY way to drag a card - the rest
+   of the minicard deliberately pans the board instead - so it has to be a target
+   a finger can actually hit. A 20-28px icon in the corner is a mouse-sized
+   target; on a wall-mounted infoscreen it is close to unusable.
+
+   On a coarse pointer the card's two controls become one column down the
+   TRAILING (right in LTR) edge: the details menu on top, the drag handle
+   directly BELOW it. That is where the handle already is for a mouse - just
+   under the menu button - so both pointer kinds put it in the same place, and
+   the thumb-sized version does not move it somewhere else to be looked for.
+   (It was a full-height strip on the LEADING edge, which reached the size goal
+   but put the handle on the opposite side from every other card control.)
+
+   The handle runs from under the menu to the bottom of the card, so on a tall
+   card it is a large target, and a minimum height keeps it a real one on a card
+   with nothing but a title. Mouse users keep the compact corner handle, since
+   `pointer: coarse` does not match a mouse. */
+/* MOBILE MODE on every browser. The explicit Desktop/Mobile Mode toggle decides
+   this layout, not pointer type: a desktop browser in Mobile Mode must place the
+   controls exactly like a phone does. A phone switched to Desktop Mode keeps the
+   compact desktop handle because none of these body.mobile-mode rules match. */
+  /* Pinned rather than floated: the card gets trailing padding below to keep its
+     text out of this column, and a float would be pushed inward by it. */
+  body.mobile-mode .minicard .minicard-details-menu-with-handle {
+    position: absolute;
+    float: none;
+    top: 0;
+    inset-inline-end: 0;
+    width: 44px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  body.mobile-mode .minicard .handle {
+    width: 44px;
+    /* From just below the menu button down to the bottom of the card. */
+    top: 32px;
+    bottom: 0;
+    height: auto;
+    min-height: 36px;
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Keep the handle visually part of the minicard. The icon identifies the
+       drag target; a tinted target area looked like a separate grey button. */
+    /* Safari can paint a transparent, positioned touch target as a grey layer.
+       Use the card's actual background instead, so the target disappears into
+       white, coloured and hover-state minicards alike. */
+    background: inherit !important;
+    border: 0;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+    border-end-end-radius: inherit;
+  }
+  body.mobile-mode .minicard .handle::before,
+  body.mobile-mode .minicard .handle::after {
+    background: transparent !important;
+  }
+  /* The card's own content must not sit under the column, and the card must be
+     tall enough to hold menu + handle at their minimum sizes (32 + 36). */
+  body.mobile-mode .minicard.minicard-with-handle {
+    padding-inline-end: 44px;
+    min-height: 68px;
+  }
+  body.mobile-mode .minicard .handle .drag-handle,
+  body.mobile-mode .minicard .handle .fa {
+    font-size: 1.375rem;
+    /* Both glyphs are centered by their equal-width parent controls. Do not add
+       a device- or direction-specific nudge: it makes their actual x centers
+       differ, and the error grows with mobile font scaling. */
+  }
+
+.minicard .handle .drag-handle {
+  font-size: 1rem;
+  color: #ccc;
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+}
+.minicard .minicard-title {
+  /* #6465: one step below the list heading above it (16px), and above the
+     "Add card" affordance below (13px). It used to inherit the 16px document
+     size, which made a card title exactly as loud as the heading of the column
+     holding it. See the note on .list-header-name in lists/list.css. */
+  font-size: 0.875rem;
+  margin-inline-end: 21px;
+  /* #6444: isolate each title's bidirectional context. The title is a
+     dir="auto" .viewer; under a global dir="rtl" document, non-isolated
+     dir="auto" runs share bidi state, so typing a strong RTL (e.g. Arabic)
+     character into another list's dir="auto" composer re-resolved the shared
+     context and visibly reflowed OTHER lists' minicard titles (no data change,
+     reverts on refresh). Isolation makes each title a self-contained run. */
+  unicode-bidi: isolate;
+}
+/* #4990: the title text is the edit target. It is a block so that the whole
+   line, not only the words, is that target: a click on the empty space after a
+   short title is still a click on the title. */
+.minicard .minicard-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.minicard .minicard-title .minicard-title-text {
+  display: block;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Direct title editing is disabled; the former editor styles are retained as
+   commented code while the title serves as a card-drag/board-scroll surface.
+.minicard .minicard-title .minicard-title-text.is-editable {
+  cursor: text;
+}
+.minicard .js-minicard-title-form textarea.minicard-title-editor {
+  font-size: 0.875rem;
+  width: 100%;
+  min-height: 40px;
+  max-height: 200px;
+  margin-bottom: 4px;
+  overflow-y: auto;
+  resize: none;
+  user-select: text;
+  Same bidi isolation as the title it stands in for.
+  unicode-bidi: isolate;
+}
+*/
+.minicard .minicard-title .card-number {
+  color: #b3b3b3;
+  display: inline-block;
+  margin-inline-end: 10px;
+}
+@media only screen {
+  .minicard .minicard-title p:last-child {
+    margin-bottom: 0;
+  }
+  .minicard .minicard-title .viewer {
+    display: block;
+    word-wrap: break-word;
+    /* #6465: the minicard title renders inside a .viewer, which inherits the
+       global `.viewer { min-height: 2.5vh }` (layouts.css). On tall screens that
+       reserves a big empty band under a one-line title, so half of every
+       minicard was white space. Collapse it to fit the text (same fix already
+       applied to the label .viewer above). */
+    min-height: 0;
+  }
+}
+.minicard .dates {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 5;
+  margin-inline-end: 84px;
+  clear: both;
+}
+.minicard .date {
+  margin-inline-end: 6px;
+}
+
+/* Font Awesome glyphs for minicard dates - matching cardDate.css */
+.minicard .card-date time::before {
+  font-family: FontAwesome;
+  font-weight: normal;
+  font-style: normal;
+  text-decoration: inherit;
+}
+.minicard .card-date.end-date time::before {
+  content: "\f11e"; /* fa-flag-checkered - end/completion */
+}
+.minicard .card-date.due-date time::before {
+  content: "\f017"; /* fa-clock-o - due/deadline */
+}
+.minicard .card-date.start-date time::before {
+  content: "\f135"; /* fa-rocket - start/launch */
+}
+.minicard .card-date.received-date time::before {
+  content: "\f01c"; /* fa-inbox - received/incoming */
+}
+
+.minicard .card-date time::before {
+  font-size: inherit;
+  margin-inline-end: 0.3em;
+  display: inline-block;
+}
+
+/* Date type specific colors for minicards - matching cardDate.css */
+.minicard .card-date.received-date {
+  background-color: #dbdbdb; /* Grey for received - same as base card-date */
+}
+
+.minicard .card-date.received-date:hover,
+.minicard .card-date.received-date.is-active {
+  background-color: #b3b3b3;
+}
+
+.minicard .card-date.start-date {
+  background-color: #90ee90; /* Light green for start */
+  color: #000; /* Black text for start */
+}
+
+.minicard .card-date.start-date:hover,
+.minicard .card-date.start-date.is-active {
+  background-color: #7dd87d;
+}
+
+.minicard .card-date.due-date {
+  background-color: #ffd700; /* Yellow for due */
+  color: #000; /* Black text for due */
+}
+
+.minicard .card-date.due-date:hover,
+.minicard .card-date.due-date.is-active {
+  background-color: #e6c200;
+}
+
+.minicard .card-date.end-date {
+  background-color: #ffb3b3; /* Light red for end */
+  color: #000; /* Black text for end */
+}
+
+.minicard .card-date.end-date:hover,
+.minicard .card-date.end-date.is-active {
+  background-color: #ff9999;
+}
+
+/* Date status colors for minicards - matching cardDate.css */
+.minicard .card-date.overdue {
+  background-color: #ff4444 !important; /* Red for overdue */
+  color: #fff !important;
+}
+.minicard .card-date.overdue:hover,
+.minicard .card-date.overdue.is-active {
+  background-color: #cc3333 !important;
+}
+
+.minicard .card-date.due-soon {
+  background-color: #ffaa00 !important; /* Amber for due soon */
+  color: #000 !important;
+}
+.minicard .card-date.due-soon:hover,
+.minicard .card-date.due-soon.is-active {
+  background-color: #e69900 !important;
+}
+
+.minicard .card-date.not-due {
+  /* No special background - uses default date type colors */
+}
+
+.minicard .card-date.current {
+  background-color: #5ba639 !important; /* Green for current/active */
+  color: #fff !important;
+}
+.minicard .card-date.current:hover,
+.minicard .card-date.current.is-active {
+  background-color: #46802c !important;
+}
+
+.minicard .card-date.completed {
+  background-color: #90ee90 !important; /* Light green for completed */
+  color: #000 !important;
+}
+.minicard .card-date.completed:hover,
+.minicard .card-date.completed.is-active {
+  background-color: #7dd87d !important;
+}
+
+.minicard .card-date.completed-early {
+  background-color: #4caf50 !important; /* Green for completed early */
+  color: #fff !important;
+}
+.minicard .card-date.completed-early:hover,
+.minicard .card-date.completed-early.is-active {
+  background-color: #45a049 !important;
+}
+
+.minicard .card-date.completed-late {
+  background-color: #ff9800 !important; /* Orange for completed late */
+  color: #fff !important;
+}
+.minicard .card-date.completed-late:hover,
+.minicard .card-date.completed-late.is-active {
+  background-color: #f57c00 !important;
+}
+
+.minicard .card-date.completed-on-time {
+  background-color: #2196f3 !important; /* Blue for completed on time */
+  color: #fff !important;
+}
+.minicard .card-date.completed-on-time:hover,
+.minicard .card-date.completed-on-time.is-active {
+  background-color: #1976d2 !important;
+}
+
+.minicard .badges {
+  float: inline-start;
+  margin-top: 8px;
+  color: #808080;
+}
+.minicard .badges:empty {
+  display: none;
+}
+.minicard .badges .badge {
+  float: inline-start;
+  margin-inline-end: 21px;
+  margin-bottom: 4px;
+  font-size: 0.9em;
+}
+.minicard .badges .badge.is-finished {
+  background: #3cb500;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: #fff;
+}
+.minicard .badges .badge:last-of-type {
+  margin-inline-end: 0;
+}
+.minicard .badges .badge .badge-icon,
+.minicard .badges .badge .badge-text {
+  vertical-align: middle;
+}
+.minicard .badges .badge .badge-icon.badge-comment,
+.minicard .badges .badge .badge-text.badge-comment {
+  margin-bottom: 0.1rem;
+}
+.minicard .badges .badge .badge-text {
+  font-size: 0.9em;
+  padding-inline-start: 4px;
+  line-height: 1.2;
+}
+.minicard .badges .badge .check-list-text {
+  padding-inline-start: 0px;
+  line-height: 1.1;
+}
+.minicard .minicard-members,
+.minicard .minicard-assignees,
+.minicard .minicard-creator {
+  float: inline-end;
+  margin-inline-start: 10px;
+  margin-bottom: 4px;
+  /* #2110: the avatars in the order people were added, first at the start,
+     as on the opened card. Floating each one to the end drew them reversed. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.minicard .minicard-members .member,
+.minicard .minicard-assignees .member,
+.minicard .minicard-creator .member {
+  float: none;
+  position: relative;
+  border-radius: 50%;
+  height: 24px;
+  width: 24px;
+  margin-bottom: 4px;
+}
+.minicard .minicard-members .assignee,
+.minicard .minicard-assignees .assignee,
+.minicard .minicard-creator .assignee {
+  float: none;
+  position: relative;
+  border-radius: 50%;
+  height: 24px;
+  width: 24px;
+}
+.minicard .minicard-members + .badges,
+.minicard .minicard-assignees + .badges,
+.minicard .minicard-creator + .badges {
+  margin-top: 6px;
+}
+.minicard .minicard-assignees {
+  border-bottom: 1px solid #f00;
+}
+.minicard .minicard-creator {
+  border-bottom: 1px solid #008000;
+}
+.minicard .minicard-members:empty,
+.minicard .minicard-assignees:empty {
+  display: none;
+}
+.minicard .minicard-description {
+  padding: 8px 0 0 14px;
+  color: #000;
+  background-color: #eee;
+  width: 100%;
+  margin-bottom: 3px;
+  margin-inline-start: -7px;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+/* #4285: compact preview of the most recent comments on the minicard.
+
+   The comments get a line of their own. The assignee, member and creator
+   avatars are `float: inline-end` and the badges `float: inline-start`, and
+   the comments come right after them in the default order. Each
+   .minicard-comment is `overflow: hidden`, which makes it a block formatting
+   context, and a block formatting context next to a float is NARROWED to the
+   space the float leaves: with seven assignees that was a few characters, so
+   the comment read "Någr…" beside a row of avatars. `clear: both` starts the
+   comments under every float, at full width, the way .minicard-checklist does.
+
+   The text wraps and is clamped to three lines with the ellipsis at the end,
+   instead of `nowrap` cutting it at whatever width was left. */
+.minicard .minicard-comments {
+  clear: both;
+  width: 100%;
+  margin-bottom: 3px;
+}
+.minicard .minicard-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: calc(11px * var(--wekan-ui-font-scale, 1));
+  color: #555;
+  overflow: hidden;
+}
+.minicard .minicard-comment-icon {
+  flex: 0 0 auto;
+}
+.minicard .minicard-comment-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.minicard .minicard-comments-more {
+  font-size: calc(11px * var(--wekan-ui-font-scale, 1));
+  color: #888;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.minicard.minicard-composer {
+  margin-bottom: 12px;
+}
+.minicard.minicard-composer textarea.minicard-composer-textarea,
+.minicard.minicard-composer textarea.minicard-composer-textarea:focus {
+  resize: none;
+  background: none;
+  border: none;
+  box-shadow: none;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  min-height: 50px;
+  margin-bottom: 20px;
+  overflow-y: auto;
+  /* #6444: isolate the composer's dir="auto" bidi run so typing a strong RTL
+     character here cannot perturb the rendering of the surrounding minicard
+     titles under a dir="rtl" document. */
+  unicode-bidi: isolate;
+}
+.parent-prefix {
+  color: #b3b3b3;
+  font-size: 0.9em;
+}
+.parent-subtext {
+  color: #b3b3b3;
+  font-size: 0.9em;
+}
+@media screen and (max-width: 800px) {
+  .is-selected .minicard {
+    transform: translateX(0px);
+    border-bottom-right-radius: 0;
+    border-top-right-radius: 0;
+    z-index: 15;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+}
+/* https://github.com/wekan/wekan/issues/4254#issuecomment-1037192960 */
+.minicard-green {
+  background-color: #3cb500 !important;
+  color: #fff !important;
+}
+.minicard-green:hover:not(.minicard-composer),
+.is-selected .minicard-green,
+.draggable-hover-card .minicard-green {
+  background: #3ab000;
+}
+.draggable-hover-card .minicard-green {
+  background: #38a800;
+}
+.minicard-yellow {
+  background-color: #fad900 !important;
+}
+.minicard-yellow:hover:not(.minicard-composer),
+.is-selected .minicard-yellow,
+.draggable-hover-card .minicard-yellow {
+  background: #f3d200;
+}
+.draggable-hover-card .minicard-yellow {
+  background: #e9ca00;
+}
+.minicard-orange {
+  background-color: #ff9f19 !important;
+}
+.minicard-orange:hover:not(.minicard-composer),
+.is-selected .minicard-orange,
+.draggable-hover-card .minicard-orange {
+  background: #ff9b11;
+}
+.draggable-hover-card .minicard-orange {
+  background: #ff9705;
+}
+.minicard-red {
+  background-color: #eb4646 !important;
+  color: #fff !important;
+}
+.minicard-red:hover:not(.minicard-composer),
+.is-selected .minicard-red,
+.draggable-hover-card .minicard-red {
+  background: #ea3e3e;
+}
+.draggable-hover-card .minicard-red {
+  background: #e93333;
+}
+.minicard-purple {
+  background-color: #a632db !important;
+  color: #fff !important;
+}
+.minicard-purple:hover:not(.minicard-composer),
+.is-selected .minicard-purple,
+.draggable-hover-card .minicard-purple {
+  background: #a32bda;
+}
+.draggable-hover-card .minicard-purple {
+  background: #9e25d5;
+}
+.minicard-blue {
+  background-color: #0079bf !important;
+  color: #fff !important;
+}
+.minicard-blue:hover:not(.minicard-composer),
+.is-selected .minicard-blue,
+.draggable-hover-card .minicard-blue {
+  background: #0075b9;
+}
+.draggable-hover-card .minicard-blue {
+  background: #0071b2;
+}
+.minicard-pink {
+  background-color: #ff78cb !important;
+}
+.minicard-pink:hover:not(.minicard-composer),
+.is-selected .minicard-pink,
+.draggable-hover-card .minicard-pink {
+  background: #ff6dc7;
+}
+.draggable-hover-card .minicard-pink {
+  background: #ff5ec1;
+}
+.minicard-sky {
+  background-color: #00c2e0 !important;
+  color: #fff !important;
+}
+.minicard-sky:hover:not(.minicard-composer),
+.is-selected .minicard-sky,
+.draggable-hover-card .minicard-sky {
+  background: #00bcd9;
+}
+.draggable-hover-card .minicard-sky {
+  background: #00b4d0;
+}
+.minicard-black {
+  background-color: #4d4d4d !important;
+  color: #fff !important;
+}
+.minicard-black:hover:not(.minicard-composer),
+.is-selected .minicard-black,
+.draggable-hover-card .minicard-black {
+  background: #4b4b4b;
+}
+.draggable-hover-card .minicard-black {
+  background: #484848;
+}
+.minicard-lime {
+  background-color: #51e898 !important;
+}
+.minicard-lime:hover:not(.minicard-composer),
+.is-selected .minicard-lime,
+.draggable-hover-card .minicard-lime {
+  background: #49e793;
+}
+.draggable-hover-card .minicard-lime {
+  background: #3ee58d;
+}
+.minicard-silver {
+  background-color: #c0c0c0 !important;
+}
+.minicard-silver:hover:not(.minicard-composer),
+.is-selected .minicard-silver,
+.draggable-hover-card .minicard-silver {
+  background: #bababa;
+}
+.draggable-hover-card .minicard-silver {
+  background: #b3b3b3;
+}
+.minicard-peachpuff {
+  background-color: #ffdab9 !important;
+}
+.minicard-peachpuff:hover:not(.minicard-composer),
+.is-selected .minicard-peachpuff,
+.draggable-hover-card .minicard-peachpuff {
+  background: #ffd3ac;
+}
+.draggable-hover-card .minicard-peachpuff {
+  background: #ffca9a;
+}
+.minicard-crimson {
+  background-color: #dc143c !important;
+  color: #fff !important;
+}
+.minicard-crimson:hover:not(.minicard-composer),
+.is-selected .minicard-crimson,
+.draggable-hover-card .minicard-crimson {
+  background: #d5133a;
+}
+.draggable-hover-card .minicard-crimson {
+  background: #cd1338;
+}
+.minicard-plum {
+  background-color: #dda0dd !important;
+}
+.minicard-plum:hover:not(.minicard-composer),
+.is-selected .minicard-plum,
+.draggable-hover-card .minicard-plum {
+  background: #da98da;
+}
+.draggable-hover-card .minicard-plum {
+  background: #d68cd6;
+}
+.minicard-darkgreen {
+  background-color: #006400 !important;
+  color: #fff !important;
+}
+.minicard-darkgreen:hover:not(.minicard-composer),
+.is-selected .minicard-darkgreen,
+.draggable-hover-card .minicard-darkgreen {
+  background: #006100;
+}
+.draggable-hover-card .minicard-darkgreen {
+  background: #005d00;
+}
+.minicard-slateblue {
+  background-color: #6a5acd !important;
+  color: #fff !important;
+}
+.minicard-slateblue:hover:not(.minicard-composer),
+.is-selected .minicard-slateblue,
+.draggable-hover-card .minicard-slateblue {
+  background: #6453cb;
+}
+.draggable-hover-card .minicard-slateblue {
+  background: #5c4ac8;
+}
+.minicard-magenta {
+  background-color: #f0f !important;
+  color: #fff !important;
+}
+.minicard-magenta:hover:not(.minicard-composer),
+.is-selected .minicard-magenta,
+.draggable-hover-card .minicard-magenta {
+  background: #f700f7;
+}
+.draggable-hover-card .minicard-magenta {
+  background: #ed00ed;
+}
+.minicard-gold {
+  background-color: #ffd700 !important;
+}
+.minicard-gold:hover:not(.minicard-composer),
+.is-selected .minicard-gold,
+.draggable-hover-card .minicard-gold {
+  background: #f7d100;
+}
+.draggable-hover-card .minicard-gold {
+  background: #edc800;
+}
+.minicard-navy {
+  background-color: #000080 !important;
+  color: #fff !important;
+}
+.minicard-navy:hover:not(.minicard-composer),
+.is-selected .minicard-navy,
+.draggable-hover-card .minicard-navy {
+  background: #00007c;
+}
+.draggable-hover-card .minicard-navy {
+  background: #007;
+}
+.minicard-gray {
+  background-color: #808080 !important;
+  color: #fff !important;
+}
+.minicard-gray:hover:not(.minicard-composer),
+.is-selected .minicard-gray,
+.draggable-hover-card .minicard-gray {
+  background: #7c7c7c;
+}
+.draggable-hover-card .minicard-gray {
+  background: #777;
+}
+.minicard-saddlebrown {
+  background-color: #8b4513 !important;
+  color: #fff !important;
+}
+.minicard-saddlebrown:hover:not(.minicard-composer),
+.is-selected .minicard-saddlebrown,
+.draggable-hover-card .minicard-saddlebrown {
+  background: #874312;
+}
+.draggable-hover-card .minicard-saddlebrown {
+  background: #814012;
+}
+.minicard-paleturquoise {
+  background-color: #afeeee !important;
+}
+.minicard-paleturquoise:hover:not(.minicard-composer),
+.is-selected .minicard-paleturquoise,
+.draggable-hover-card .minicard-paleturquoise {
+  background: #a5ecec;
+}
+.draggable-hover-card .minicard-paleturquoise {
+  background: #97e9e9;
+}
+.minicard-mistyrose {
+  background-color: #ffe4e1 !important;
+}
+.minicard-mistyrose:hover:not(.minicard-composer),
+.is-selected .minicard-mistyrose,
+.draggable-hover-card .minicard-mistyrose {
+  background: #ffd7d3;
+}
+.draggable-hover-card .minicard-mistyrose {
+  background: #ffc6bf;
+}
+.minicard-indigo {
+  background-color: #4b0082 !important;
+  color: #fff !important;
+}
+.minicard-indigo:hover:not(.minicard-composer),
+.is-selected .minicard-indigo,
+.draggable-hover-card .minicard-indigo {
+  background: #49007e;
+}
+.draggable-hover-card .minicard-indigo {
+  background: #460079;
+}
+.text-red {
+  color: #f00;
+}
+.text-green {
+  color: #008000;
+}
+
+/* Drag and drop file upload visual feedback */
+.minicard.is-dragging-over {
+  border: 2px dashed #0079bf;
+  background-color: #e3f2fd !important;
+  transform: scale(1.02);
+  transition: all 0.2s ease;
+}
+
+/* The name of the LIST this card is in, under the badges - "Show on Minicard /
+   List title", for reading a card away from the column it lives in (a
+   swimlane, search results, My Cards).
+
+   `clear` is the whole rule: `.minicard .badges` is `float: inline-start`, so
+   without it this block shares the badges' line and reads as one more badge
+   rather than as the line it is. Logical `inline-start`, so it clears the
+   floats on whichever side the page starts. */
+.minicard-list-name {
+  clear: inline-start;
+  font-size: 0.75em;
+  color: #8c8c8c;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* #2426: the swimlane-name label, same place/weight as the list name above -
+   a small, unobtrusive line at the bottom of the minicard. */
+.minicard-swimlane-name {
+  clear: inline-start;
+  font-size: 0.75em;
+  color: #8c8c8c;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Checklist display on minicard */
+.minicard-checklist {
+  width: 100%;
+  box-sizing: border-box;
+  clear: both;
+  margin-top: 2px;
+  margin-bottom: 5px;
+  padding: 3px 7px;
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.minicard-checklist .checklist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.minicard-checklist .checklist-title {
+  font-size: 0.8em;
+  font-weight: bold;
+  color: #4d4d4d;
+  flex: 1;
+  margin: 0;
+}
+
+.minicard-checklist .checklist-menu {
+  font-size: 1.2em;
+  color: #666;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.minicard-checklist .checklist-menu:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.minicard-checklist .checklist-item {
+  font-size: 0.75em;
+  color: #666;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.2;
+  cursor: pointer;
+  padding: 2px 0;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.minicard-checklist .checklist-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.minicard-checklist .checklist-item.is-checked {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.minicard-checklist .checklist-item .check-box-unicode {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  margin-top: 1px;
+  transition: transform 0.2s;
+}
+
+.minicard-checklist .checklist-item:hover .check-box-unicode {
+  transform: scale(1.1);
+}
+
+.minicard-checklist .checklist-item .item-title {
+  flex: 1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Trello-style "mark complete" toggle, left of the minicard title */
+.minicard-title .minicard-complete-toggle {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+  margin-inline-end: 0;
+  cursor: pointer;
+}
+
+/* Sticker icon highlight styles (used instead of colour): taco pack => underline,
+   pete pack => round (ring around the icon). Icon keeps its normal colour. */
+.minicard-sticker i.sticker-underline {
+  border-bottom: 2px solid currentColor;
+  padding-bottom: 1px;
+  line-height: 1;
+}
+.minicard-sticker i.sticker-round {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 1.6em;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+/* #3984: Visual card aging — progressively fade cards that have not been
+ * touched recently, when card aging is enabled for the board. */
+.minicard.minicard-aging-1 {
+  opacity: 0.85;
+}
+.minicard.minicard-aging-2 {
+  opacity: 0.6;
+}
+.minicard.minicard-aging-3 {
+  opacity: 0.4;
+}
+.minicard.minicard-aging-1:hover,
+.minicard.minicard-aging-2:hover,
+.minicard.minicard-aging-3:hover {
+  opacity: 1;
+}
+
+/* Jira issue type badge (models/lib/issueTypeIcon.js). */
+.minicard .badge.minicard-issue-type .badge-text {
+  max-width: 8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.minicard .issue-type-red .badge-icon { color: #d04437; }
+.minicard .issue-type-green .badge-icon { color: #2e8540; }
+.minicard .issue-type-blue .badge-icon { color: #2a6ebb; }
+.minicard .issue-type-purple .badge-icon { color: #7a4fb0; }
+.minicard .issue-type-orange .badge-icon { color: #c26a00; }
+.minicard .issue-type-grey .badge-icon { color: #6b778c; }
+
+/* Markdown title headings retain their hierarchy after the global reset and
+   mobile normal-text rules. Relative sizes follow the selected UI font scale. */
+#content .minicard-title-text .viewer h1 { font-size: 2em !important; }
+#content .minicard-title-text .viewer h2 { font-size: 1.5em !important; }
+#content .minicard-title-text .viewer h3 { font-size: 1.25em !important; }
+#content .minicard-title-text .viewer h4 { font-size: 1.125em !important; }
+#content .minicard-title-text .viewer h5 { font-size: 1em !important; }
+#content .minicard-title-text .viewer h6 { font-size: 0.875em !important; }
+
+/* Board Settings / Card, Show on Minicard (2026-10-02): the compact lines of
+   what the opened card shows. */
+.minicard-description-title,
+.minicard-location,
+.minicard-requested-by,
+.minicard-assigned-by,
+.minicard-attachment-name,
+.minicard-last-activity {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.minicard-checklist-due {
+  font-size: 0.85em;
+  margin-inline-start: 4px;
+}
+.minicard-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.minicard-card-buttons button {
+  font-size: 0.8em;
+  padding: 1px 6px;
+  margin: 0;
+}
+
+/* At risk, Show on Minicard (docs/Features/Cards/At-Risk.md). */
+.minicard .badges .minicard-at-risk .badge-icon {
+  color: #c62828;
+}
+
+/* #2111 / #1604: changed since this member last opened it (Member Settings). */
+.minicard.minicard-unread-changes {
+  box-shadow: inset 4px 0 0 #2b6cb0;
+}

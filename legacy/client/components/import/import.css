@@ -1,0 +1,282 @@
+.map-members:after {
+  content: "";
+  flex: auto;
+}
+.map-members .mapping-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -7px;
+}
+.map-members .mapping-list .mapping-item {
+  max-width: min(300px, 40vw);
+  min-width: min(200px, 26vw);
+  padding: 7px 11px;
+  margin: 6px;
+  flex: 1;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.15);
+}
+.map-members .mapping-list .mapping-item:hover {
+  background: #f2f2f2;
+}
+.map-members .mapping-list .mapping-item.filled {
+  background: #e0ffe5;
+}
+.map-members .mapping-list .mapping-item.filled:hover {
+  background: #ffe0e0;
+}
+.map-members .mapping-list .mapping-item.ghost-item {
+  height: 0;
+  visibility: hidden;
+  border: none;
+}
+.map-members .mapping-list .profile-source {
+  display: inline-block;
+  width: 80%;
+}
+.map-members .mapping-list .wekan {
+  display: inline-block;
+  width: 63px;
+}
+.map-members .mapping-list .wekan .member {
+  float: none;
+}
+a.show-mapping {
+  text-decoration: underline;
+}
+.import-members-map-note {
+  font-size: 90%;
+  font-weight: bold;
+}
+
+/* Trello API import: file rows, workspace tree, job progress and errors */
+/* The shared page spinners are centered with a large top margin (e.g. bounce
+   uses margin:100px auto), which leaves a big empty gap above the spinner in
+   this compact panel. Make spinners here small and inline instead. */
+.trello-api-import .sk-spinner {
+  margin: 0 8px 0 0;
+  display: inline-block;
+  vertical-align: middle;
+  width: auto;
+}
+.trello-api-import .import-file-row label {
+  display: block;
+  font-weight: bold;
+}
+.trello-api-import .import-file-row input,
+.trello-api-import .import-file-row select {
+  width: 100%;
+}
+.trello-workspaces {
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  padding: 8px;
+  margin: 8px 0;
+}
+.trello-workspace {
+  margin-bottom: 8px;
+}
+.trello-workspace .trello-boards {
+  margin-inline-start: 22px;
+}
+.trello-workspace-title,
+.trello-board {
+  align-items: center;
+  padding: 3px 0;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+.trello-workspace-title .materialCheckBox,
+.trello-board .materialCheckBox {
+  flex: 0 0 auto;
+  margin-inline-end: 12px;
+}
+.trello-select-controls button {
+  margin-inline-end: 6px;
+}
+.trello-job-controls button {
+  margin-inline-end: 6px;
+}
+/* Import progress meter, styled like Admin Panel / Attachments / Move Attachments */
+.trello-progress-label {
+  margin: 8px 0 6px;
+}
+.trello-progress-bar {
+  background: #e9ecef;
+  border-radius: 8px;
+  height: 12px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.trello-progress-fill {
+  background: linear-gradient(90deg, #28a745, #20c997);
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+.trello-progress-fill.is-running::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: trelloProgressShimmer 2s infinite;
+}
+@keyframes trelloProgressShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.trello-progress-percent {
+  text-align: end;
+  font-size: calc(12px * var(--wekan-ui-font-scale, 1));
+  color: #666;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.trello-import-result.is-ok {
+  color: #3cb500;
+}
+.trello-import-result.is-error {
+  color: #eb4646;
+}
+.js-trello-errors-text {
+  width: 100%;
+  font-family: monospace;
+  white-space: pre;
+}
+
+/* Trello API credential Save/Delete buttons */
+.trello-api-creds-buttons button {
+  margin-inline-end: 6px;
+}
+.trello-creds-saved {
+  color: #3cb500;
+}
+
+/* Simplified per-field hint text under the Trello file upload labels */
+.import-file-row .import-file-hint {
+  display: block;
+  font-size: 0.85em;
+  margin: 2px 0 4px;
+}
+
+/* ── The import page's two questions ────────────────────────────────────────
+   WHICH SOURCE, and WHAT TO TAKE FROM IT. They are asked in that order and
+   answered in either, so on a wide page they are two columns: fourteen sources
+   in one and two dozen parts in the other, both on screen at once instead of
+   the parts living below a list you scroll past. `auto-fit` with a minimum, so
+   a narrow window stacks them without a second rule. */
+.import-page .import-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.import-page .import-columns h2 {
+  font-size: 1.1em;
+  margin: 0 0 8px;
+}
+
+.import-page .import-source-list,
+.import-page .import-part-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* And each list fills its own width too. One row per line left a wide window
+   showing WeKan, Trello and Jira and leaving the rest below the fold, beside a
+   column of empty space. A column width rather than a count, so the lists take
+   as many columns as fit - several on a wide screen, one on a phone - and
+   every source and every part is on screen at once wherever there is room.
+   A row never splits between two columns. */
+.import-page .import-source-list,
+.import-page .import-part-list {
+  columns: 200px;
+  column-gap: 16px;
+}
+
+.import-page .import-source-list li,
+.import-page .import-part-list li {
+  break-inside: avoid;
+}
+
+/* A row is EXACTLY the row Admin Panel / Announcement draws:
+   `a.flex > .materialCheckBox + span`, and no geometry of its own. That matters
+   more than it looks: `.materialCheckBox.is-checked` becomes the tick by
+   turning two borders transparent, rotating 40deg and shifting itself
+   (`top: -4px; left: -3px; margin-right: 6px`) - offsets
+   written for the plain flow `.flex` gives it. An `align-items: center` and a
+   `gap` on top of that fight those offsets, and the tick lands on the first
+   word of the label, which is what this page did before.
+
+   So only the things that move nothing: something to click against, and a
+   pointer. forms.css does the rest, the same way it does on the Announcement
+   page. */
+.import-page .import-source-list a.flex,
+.import-page .import-part-list a.flex {
+  padding: 4px 4px;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.import-page .import-source-list a.flex:hover,
+.import-page .import-part-list a.flex:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* A space between the box and its label, in BOTH states.
+   `.materialCheckBox` is 13px plus a 2px border on each side, and carries no
+   margin, so an unchecked row's text starts right against the box. Checked, it
+   is a different shape entirely - 7px wide, shifted `left: -3px`,
+   with `margin-right: 6px` - so its text starts 8px + 6px in.
+   Lining the two up is arithmetic: 17 + 8 = 25 for the unchecked box, and
+   8 + 17 = 25 for the checked one, so a row's label sits in the same place
+   whether it is ticked or not and ticking one no longer nudges its text. */
+.import-page .import-source-list a.flex .materialCheckBox,
+.import-page .import-part-list a.flex .materialCheckBox {
+  margin-inline-end: 8px;
+}
+
+.import-page .import-source-list a.flex .materialCheckBox.is-checked,
+.import-page .import-part-list a.flex .materialCheckBox.is-checked {
+  margin-right: 17px;
+}
+
+/* #6786: the tick is placed physically (forms.css), but the gap before the
+   label is the row's, so right-to-left it is on the left: the tick keeps its 6px
+   on the right - which puts it on the square's left edge, as left-to-right - and
+   the other 11px of the 17 are the gap. */
+[dir="rtl"] .import-page .import-source-list a.flex .materialCheckBox.is-checked,
+[dir="rtl"] .import-page .import-part-list a.flex .materialCheckBox.is-checked {
+  margin-right: 6px;
+  margin-left: 11px;
+}
+
+/* The loss report replaces the page until the board is opened. */
+.import-page.has-import-report .import-columns {
+  display: none;
+}
+.import-report {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid #e6a100;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #333;
+}
+.import-report ul {
+  margin: 8px 0 12px;
+  padding-inline-start: 20px;
+}
+.import-report-row {
+  overflow-wrap: anywhere;
+}

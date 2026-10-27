@@ -1,0 +1,1136 @@
+# Backup and restore
+
+Choose the backup according to what you need to recover. To copy a complete
+FerretDB/SQLite installation, including users and attachments, use a stopped
+copy of its data and settings. A board export has a smaller scope.
+
+The alternatives below collect the advice and screenshots in
+[Backup and Restore, issue #6683](https://github.com/wekan/wekan/issues/6683),
+reported by markusst1982 and explained by xet7. The screenshot shows the
+September 2026 interface; labels and available formats can change with releases.
+
+| Alternative | What it preserves | Guide |
+| --- | --- | --- |
+| Copy the stopped `files` directory | Local SQLite database, users, attachment records, local attachment and avatar files | [Copy to another server](#copy-a-ferretdbsqlite-installation) |
+| ZIP the stopped `files` directory | The same data, in a portable archive | [Archive the data directory](#archive-the-files-directory) |
+| ZIP the stopped installation directory | Data plus startup scripts and settings kept inside it | [Archive the whole installation](#archive-the-whole-installation) |
+| Admin Panel backup, now or scheduled | All application collections and selected attachment/avatar versions; see coverage limits below | [Scheduled backups](#admin-panel-backup-and-schedules) |
+| Admin Panel continuous backup | Every change to the database, filesystem attachments, avatars and logs within seconds, restorable to a chosen moment | [Continuous-Backup.md](Continuous-Backup.md) |
+| Local or remote S3-compatible storage | A destination for archives or separately backed-up objects | [Storage alternatives](#s3-compatible-and-other-storage) |
+| Board, list, swimlane or card export | Selected content for exchange, rather than a complete server copy | [Export and import](#export-and-import-selected-content) |
+| MongoDB, Snap, Docker or Sandstorm backup | Deployment-specific data and settings | [Other deployments](#other-deployments-and-older-installations) |
+
+## Copy a FerretDB/SQLite installation
+
+Find the actual `WRITABLE_PATH` in your startup configuration. A common layout is:
+
+```text
+<WRITABLE_PATH>/
+  files/
+    attachments/
+    avatars/
+    db/
+      wekan.sqlite
+    app/
+    tmp/
+```
+
+Some installations set `WRITABLE_PATH` directly to the `files` directory,
+including Snap. In that case, do not append another `files`. Database names and
+locations can differ: check FerretDB's SQLite URL too. Copy the whole database
+directory, not just the example `wekan.sqlite` file.
+
+1. Stop WeKan, FerretDB and any other processes writing to these directories.
+   For raw SQLite copies, stopping only the web application is insufficient.
+2. Copy the complete `files` directory to a separate backup location or server.
+   Keep database files and local attachments/avatars from the same stopped copy.
+   Also save startup scripts, environment settings and any data outside this tree.
+3. Restart the source after the copy finishes successfully.
+4. On the destination, keep its services stopped and preserve its existing data
+   separately before installing the copied directory. Do not merge two raw
+   database directories or overwrite a database while it is running.
+5. Set the destination `WRITABLE_PATH`, SQLite URL, ownership and permissions for
+   the service account. Adjust host-specific settings such as `ROOT_URL`.
+6. Start FerretDB, then WeKan. Test an existing login, boards, cards, attachment
+   downloads and avatars before using the restored installation.
+
+This copies user accounts because they are in the database. It does not copy
+files stored in external buckets, mounted paths outside the copied tree, or a
+separate MongoDB/PostgreSQL database. Back those up separately. See
+[FerretDB v1 with SQLite](../Databases/FerretDB/1/README.md),
+[attachment storage](../Features/Admin-Panel/Attachments/README.md) and
+[upgrade procedures](Upgrade.md).
+
+## Archive the files directory
+
+After stopping the writers as above, run this from the parent of `files`.
+Choose an archive name that does not already exist:
+
+```bash
+zip -r wekan-files-backup-2026-09-23.zip files
+unzip -t wekan-files-backup-2026-09-23.zip
+```
+
+Store the archive outside `files`, so it cannot include itself. Restart the
+source after archiving. To restore, extract into a separate staging directory,
+then follow the destination steps above. An archive integrity check confirms
+that the ZIP can be read; a restore test confirms that the installation works.
+
+## Archive the whole installation
+
+If `/home/wekan` contains the data, startup scripts and settings, the issue
+recommends backing up that whole directory as root. Stop all writers first:
+
+```bash
+cd /home
+sudo zip -r wekan-installation-backup-2026-09-23.zip wekan
+sudo unzip -t wekan-installation-backup-2026-09-23.zip
+```
+
+Restart after the archive succeeds. Use the same staged restore procedure as
+for `files`, and verify permissions before starting the destination. Include
+service definitions or configuration stored elsewhere separately. A ZIP is not
+a machine image and may not preserve every filesystem attribute.
+
+## Admin Panel backup and schedules
+
+Open **Admin Panel / Attachments / Backup**. This alternative runs while WeKan
+is online, as described in the issue.
+
+1. Choose **Whole instance** as a site administrator to include accounts and
+   instance settings in the database data. An Organization backup is limited to its
+   boards and excludes accounts, instance settings and Organization/Team records.
+2. Select all three: **Attachments**, **Avatars** and **Data (text)** for a full
+   application backup. A subset backs up only the selected categories.
+3. Choose **Save to storage**: filesystem, S3/MinIO, Azure or Google Cloud
+   Storage, with credentials configured in the corresponding storage pane.
+4. Click **Backup now** and wait for completion, or choose daily, weekly or
+   monthly scheduling, the time and day, then **Save**. Scheduling is site-wide
+   and available to site administrators.
+5. For filesystem archives, **List backups** lists the archives available to
+   your scope. Restore can add missing entries or replace entries. Replacing
+   instance data clears each restored collection before importing its contents.
+
+![Admin Panel backup scope, file and data checkboxes, destination, schedule and restore controls](admin-panel-attachments-backup-schedule-and-storage.png)
+
+Screenshot source:
+[xet7's backup screenshot in #6683](https://github.com/wekan/wekan/issues/6683#issuecomment-5604698350).
+
+### Did the backup work? History, health and monitoring
+
+Every backup run - scheduled or **Backup now** - is recorded in the database
+(collection `backupRuns`, kept 400 days), so its result survives a restart and
+every WeKan server or Kubernetes pod shows the same answer. The status is shown
+in **Admin Panel / Problems / Settings / Backup** (`/admin/problems/backup`, with a
+link to the backup settings) and above the schedule in **Admin Panel /
+Attachments / Backup**:
+
+- the time of the **last successful** instance backup, marked **overdue** when a
+  schedule is on and no backup succeeded within its period (daily: 26 hours,
+  weekly: 7 days + 2 hours, monthly: 31 days + 2 hours);
+- the **last run** and its error, when it failed;
+- the **next run** of the schedule;
+- a **history** table of the last 30 runs: when, scheduled or by whom, scope,
+  storage, status, size, duration and error.
+
+A failed backup, or a scheduled one that is overdue, is also listed on **Admin
+Panel / Problems / Summary**.
+
+A run still marked running 24 hours after it started is shown as failed: its
+server stopped during the backup. A scheduled backup that could not start
+because another backup was still running is recorded as failed too, so a missed
+night is visible. A per-tenant administrator sees only their Organizations' runs.
+
+For monitoring, `/metrics` (see `METRICS_ACCEPTED_IP_ADDRESS`) includes:
+
+```
+wekan_backup_last_success_timestamp_seconds   # 0 = never
+wekan_backup_last_run_timestamp_seconds
+wekan_backup_last_run_success                 # 1 or 0
+wekan_backup_overdue                          # 1 when a scheduled backup is missing
+```
+
+Example Prometheus alert: `time() - wekan_backup_last_success_timestamp_seconds > 26*3600`.
+
+### Keeping only recent backups
+
+`BACKUP_KEEP_DAYS=7` deletes local (filesystem) backups older than seven days
+after each successful backup, separately for the whole instance and for each
+Organization. The newest backup of each is always kept, however old, so a
+period of failures never leaves you without one. Unset or `0` keeps every
+backup, as before. Archives in S3/MinIO, Azure or Google Cloud Storage are not
+deleted by WeKan; use the provider's lifecycle rules.
+
+Filesystem backups are written to `<WRITABLE_PATH>/files/backup`. To keep them
+on NFS, SMB or another share, mount it at that path (in Kubernetes: a volume
+mounted at `/data/files/backup`).
+
+### What the repaired archive includes
+
+Select **Whole instance**, **Attachments**, **Avatars** and **Data (text)** for
+all application database collections and every recorded attachment/avatar
+version. This includes accounts, settings, attachment/avatar metadata, GridFS
+collections and indexes. Database data uses BSON Extended JSON so binary data,
+ObjectIds, dates and large integers survive the round trip. File versions are
+read through the configured filesystem, GridFS or cloud reader and included in
+the archive. Restore writes their content to the destination filesystem and
+updates their metadata paths, so the source machine's absolute paths are not
+required. Selecting only a file category also includes that category's metadata.
+
+The manifest inventories the payloads and SHA-256 checksums. Restore checks
+all payloads before changing the destination. Missing source files, short reads,
+malformed archives and database write errors fail explicitly. A local archive
+appears in **List backups** only after it completes successfully.
+
+This repairs the older archive format, which excluded attachment/avatar database
+records and GridFS collections. Older archives still have those coverage gaps;
+upgrading the app cannot add missing content to an already-created archive.
+Organization archives remain restricted to their own boards and are not a
+full-instance backup.
+
+The online export reads collections and files sequentially; it is not an atomic
+snapshot of concurrent writes. For a consistent point-in-time server copy, stop
+writes and use the appropriate database/filesystem backup method. Operating
+system users, service definitions, environment variables, external identity
+providers and unreferenced objects in cloud buckets are outside the application
+archive. Keep those separately. Archives contain account credentials and
+configured service secrets; give them the same access protection as the database.
+
+Filesystem archives live below `files/backup/YYYY/MM/DD/<time>/backup.zip`;
+the time directory includes a unique suffix to avoid overwriting another backup.
+Organization archives add `org/<orgId>` below `backup`. Copy archives to
+independent storage. The current listing and restore functions use local archive
+paths. For cloud archives, retrieve the ZIP into the appropriate local backup
+tree before restoring, and test the procedure on a separate server.
+
+Schedules use the **server's timezone**, which may differ from the browser or
+administrator's computer. Choose the time accordingly. The
+[Admin Panel validation report](../Features/Admin-Panel/Validation.md) records
+the repaired scheduler and the scope of the backup and storage tests.
+
+Read [backup scope and storage settings](../Features/Admin-Panel/Attachments/README.md)
+and [Organization isolation](../Design/Multitenancy/Multitenancy.md).
+
+## S3-compatible and other storage
+
+The issue links to [wekan/minio-metadata](https://github.com/wekan/minio-metadata)
+for S3-compatible, on-premises alternatives. Configure the chosen service in
+**Admin Panel / Attachments / S3/MinIO Storage**. Keeping archives in another
+bucket or machine protects against losing the original disk; moving attachments
+to that storage is a separate operation and does not itself create a backup.
+
+![Move Attachment pane showing attachment and avatar scope, source and destination storage](admin-panel-move-attachments-storage-destination.png)
+
+The [Rclone guide](Rclone/Rclone.md) describes a mounted-storage alternative.
+Its older screenshots and version-specific upgrade examples are historical;
+current native backend settings are in the
+[Attachments menu guide](../Features/Admin-Panel/Attachments/README.md).
+After a move or restore, use [file status checks](../Features/Admin-Panel/Problems/File-status.md)
+to inspect missing files and metadata. These checks report findings; they do not
+replace missing bytes or create a backup.
+
+## Export and import selected content
+
+Use **Right sidebar / Board Settings / Export** for a board, or **Export** in a
+list, swimlane or card menu. Choose the content and format. Export/import
+availability depends on permissions and the instance's security settings.
+These exports do not preserve all user accounts, credentials or site settings.
+
+![Board export with content checkboxes and available formats](board-export-formats-and-content-selection.png)
+
+![List export with content checkboxes and available formats](list-export-formats-and-content-selection.png)
+
+![Swimlane export with content checkboxes and available formats](swimlane-export-formats-and-content-selection.png)
+
+![Card export with content checkboxes and available formats](card-export-formats-and-content-selection.png)
+
+Use **Import** from board creation or the appropriate existing board/item menu.
+Select the matching input format; an Admin Panel backup ZIP and a board-export
+ZIP are different archives with different restore entry points.
+
+![Board import choices including WeKan JSON and ZIP and external application formats](board-import-supported-formats.png)
+
+See [format coverage and round-trip limits](../Features/Board-Sidebar/Board-Settings/Import-Export/Format-Coverage.md),
+[importing a previous WeKan export](../Features/Board-Sidebar/Board-Settings/Import-Export/WeKan/From-Previous-Export.md),
+[CSV/TSV](../Features/Board-Sidebar/Board-Settings/Import-Export/CSV/CSV.md),
+[features by menu](../Features/Features.md) and the [REST API](../API/REST-API.md).
+The export/import/move screenshots above are the companion images already
+referenced by the issue's link to `docs/Backup`.
+
+## Other deployments and older installations
+
+The sections below retain older deployment-specific procedures. Select them
+by database backend, not just by the packaging name: MongoDB dump/restore
+examples do not back up a FerretDB SQLite directory or external file storage.
+
+- [Docker MongoDB export](../Platforms/FOSS/Container/Docker/Export-Docker-Mongo-Data.md)
+- [Snap backup and restore](../Platforms/FOSS/Container/Snap/Backup-and-restore.md)
+- [Sandstorm grain export](../Platforms/FOSS/Container/Sandstorm/Export-from-Wekan-Sandstorm-grain-.zip-file.md)
+- [Upgrade](Upgrade.md) and [MongoDB repair](Repair-MongoDB.md)
+
+---
+
+# Backup Sandstorm
+
+1. Please first backup your Sandstorm https://docs.sandstorm.io/en/latest/administering/backups/
+2. Please first download all of your grains to .zip files from top menu row down arrow button, just in case.
+
+# Upgrade Sandstorm WeKan
+
+[Upgrade Sandstorm WeKan ](../Platforms/FOSS/Container/Sandstorm) 
+
+# Backup Docker
+
+[Also see: Upgrading Synology with Wekan quay images](https://github.com/wekan/wekan/issues/3874#issuecomment-867526249)
+
+Note: Do not run `docker compose down` because it could delete data. https://docs.docker.com/compose/reference/down/
+
+[docker-compose.yml](https://raw.githubusercontent.com/wekan/wekan/master/docker-compose.yml)
+
+This presumes your Wekan Docker is currently running with:
+```bash
+docker compose up -d
+```
+Backup to directory dump:
+```bash
+docker stop wekan-app
+docker exec wekan-db rm -rf /data/dump
+docker exec wekan-db mongodump -o /data/dump
+docker cp wekan-db:/data/dump .
+docker start wekan-app
+```
+Copy dump directory to other server or to your backup.
+
+# Restore Docker
+```bash
+docker stop wekan-app
+docker exec wekan-db rm -rf /data/dump
+docker cp dump wekan-db:/data/
+docker exec wekan-db mongorestore --drop --dir=/data/dump
+docker start wekan-app
+```
+# Upgrade Docker Wekan version
+
+1. Check that you use newest [docker-compose.yml](https://raw.githubusercontent.com/wekan/wekan/refs/heads/main/docker-compose.yml)
+   that has for example: `image: ghcr.io/wekan/wekan:latest` . If you have old docker-compose.yml, copy it's settings like ROOT_URL to newest docker-compose.yml.
+
+```bash
+docker compose stop
+docker rm wekan-app
+docker compose up -d
+```
+2. If you are migrating from Snap to Docker, if there is files at `/var/snap/wekan/common/files` , copy that directory to be at
+   docker-compose.yml setting path, for example `export WRITABLE_PATH=/data` , copy files directory to be at `/data/files`
+   with same user:group directory recursive permissions that directory data has, for example: `sudo chown -R user:group data`
+
+3. When you open board, if cards or attachments are not visible, click right sidebar / Board Settings / Migrations.
+   From there, run most migrations, but not migration about `Restore all from archive`, because it would unarchive cards etc from archive.
+
+# Backup Wekan Snap to directory dump
+```bash
+sudo snap stop wekan.wekan
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+export PATH="/snap/wekan/current/bin:$PATH"
+mongodump --port 27019
+sudo snap get wekan > snap-settings.sh
+```
+NOTE for Arch Linux: Use this path instead. [Source](https://github.com/wekan/wekan/issues/3941).
+```bash
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-}:/var/lib/snapd/snap/wekan/current/lib/x86_64-linux-gnu
+```
+username is your /home/username
+```bash
+sudo chown username:username snap-settings.sh
+sudo snap start wekan.wekan
+```
+Modify snap-settings.sh so that it has commands like:
+```bash
+sudo snap set wekan root-url='http://localhost'
+```
+Set snap-settings.sh executeable:
+```bash
+chmod +x snap-settings.sh
+```
+
+# Restore Wekan Snap
+```bash
+sudo snap stop wekan.wekan
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+export PATH="$PATH:/snap/wekan/current/bin"
+mongorestore --drop --port 27019
+sudo snap start wekan.wekan
+./snap-settings.sh
+```
+
+# Upgrade WeKan Snap Stable 6.x to newest WeKan Snap Candidate
+
+1. Check that you have enough disk space: `df -h` . Also check size of your data: `sudo du -sh /var/snap/wekan/common` .
+2. [Backup Snap](#backup-wekan-snap-to-directory-dump)
+3. Move WeKan database common directory content elsewhere:
+```
+sudo su
+snap stop wekan
+mkdir /root/common
+mv /var/snap/wekan/common/* /root/common/
+```
+4. Change Snap Stable to Snap Candidate:
+```
+sudo snap refresh wekan --channel=latest/candidate --amend
+```
+5. [Restore Snap](#restore-wekan-snap)
+6. Copy back **only the `files` directory**, if it is there — that is the attachments
+   and avatars, which live on disk and are not in the database:
+   `sudo cp -pR /root/common/files /var/snap/wekan/common/`
+
+   **Do NOT copy the rest of `/root/common` back.** Step 3 moved the whole directory
+   aside, so `cp -pR /root/common/* /var/snap/wekan/common/` looks like the obvious
+   way to undo it — and it is the one command here that destroys the database you
+   have just restored. Everything beside `files` is the OLD raw database
+   (`*.wt`, `WiredTiger*`, `_mdb_catalog.wt`, `sizeStorer.wt`, `storage.bson`,
+   `mongod.lock`, `journal/`), and dropping those on top of a RUNNING MongoDB
+   replaces the files it has open underneath it: mongod aborts (`SIGABRT`,
+   `status=134/n/a` in `snap logs wekan.mongodb`), and when the snap restarts, the
+   boards restored in step 5 are gone. Nothing is recoverable from that except your
+   backup, which is why step 2 exists.
+
+   The old database directory is only ever put back as a WHOLE, onto a STOPPED snap,
+   with the current contents removed first — that is the "going back to 6.09"
+   procedure below, and it is a different operation from this step.
+7. If you use [Caddy](../Platforms/Webserver/Caddy.md), that is included in WeKan, edit /var/snap/wekan/Caddyfile to new syntax:
+```
+wekan.yourcompany.com {
+        tls {
+                load /etc/caddy/certs
+                alpn http/1.1
+        }
+        reverse_proxy 127.0.0.1:2000
+}
+```
+This is if you have WeKan Node.js running at port 2000, for example with these settings:
+```
+sudo snap set wekan root-url='https://wekan.yourcompany.com'
+sudo snap set wekan port='2000'
+sudo snap set wekan caddy-enabled='true'
+sudo snap enable wekan
+sudo snap start wekan
+```
+You can check is caddy, wekan and mongodb running with:
+```
+sudo snap services
+```
+If you need to disable WeKan included Caddy, because you have system-wide installed Caddy or other webserver:
+```
+sudo snap stop wekan.caddy
+sudo systemctl disable snap.wekan.caddy
+sudo systemctl stop snap.wekan.caddy
+```
+7. When you open board, if cards or attachments are not visible, click right sidebar / Board Settings / Migrations.
+From there, run most migrations, but not migration about `Restore all from archive`, because it would unarchive cards etc from archive.
+
+# If upgrade did not work, going back to WeKan Snap Stable 6.09
+
+This is only if you have old 6.09 common directory at /root/common .
+
+```
+sudo su
+mkdir /root/common-newest
+snap stop wekan
+mv /var/snap/wekan/common/* /root/common-newest/
+snap start wekan
+snap refresh wekan --channel=latest/stable --amend
+snap stop wekan
+rm -rf /var/snap/wekan/common/*
+mv /root/common/* /var/snap/wekan/common/
+snap start wekan
+./snap-settings.sh
+```
+
+# Upgrade Snap manually immediately (usually it updates automatically)
+
+```bash
+sudo snap refresh
+```
+
+# Backup Wekan Gantt GPLv2 Snap to directory dump
+```bash
+sudo snap stop wekan-gantt-gpl.wekan
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan-gantt-gpl/current/lib/x86_64-linux-gnu
+export PATH="$PATH:/snap/wekan-gantt-gpl/current/bin"
+mongodump --port 27019
+sudo snap get wekan-gantt-gpl > snap-settings.sh
+```
+username is your /home/username
+```bash
+sudo chown username:username snap-settings.sh
+sudo snap start wekan-gantt-gpl.wekan
+```
+Modify snap-settings.sh so that it has command like:
+```bash
+sudo snap set wekan-gantt-gpl root-url='http://localhost'
+```
+Set snap-settings.sh executeable:
+```bash
+chmod +x snap-settings.sh
+```
+
+# Restore Wekan Gantt GPLv2 Snap
+```bash
+sudo snap stop wekan-gantt-gpl.wekan
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan-gantt-gpl/current/lib/x86_64-linux-gnu
+export PATH="$PATH:/snap/wekan-gantt-gpl/current/bin"
+mongorestore --drop --port 27019
+sudo snap start wekan-gantt-gpl.wekan
+./snap-settings.sh
+```
+
+# DBGate, Open Source MongoDB GUI
+
+https://dbgate.org - https://github.com/dbgate/dbgate
+
+# Using nosqlbooster closed source MongoDB GUI with Wekan Snap to edit MongoDB database
+
+https://nosqlbooster.com/downloads
+
+### At server where Wekan Snap is installed, MongoDB is running at localhost port 27019
+
+<img src="nosqlbooster-basic-connection.png" width="60%" alt="NoSQLBooster basic connection" />
+
+### You can tunnel via SSH to server, using password auth or private key auth dropdown selection
+
+<img src="nosqlbooster-ssh-tunnel.png" width="60%" alt="NoSQLBooster SSH tunnel" />
+
+# Scheduled backups to local or remote server
+
+For below scheduled backup scripts, no info from above of this wiki page is required. Backup scripts below have the required settings.
+
+This does backup of [Wekan+RocketChat snap databases](../Features/Login-Page/OAuth2.md) and php website etc.
+
+If you need to backup some remote server or cloud, you can use scp, or read [rclone docs](https://rclone.org/docs/) about how to configure saving to some other remote server or cloud.
+
+The following .sh bash scripts are added as root user to your `/root/` directory.
+
+Backups are created to subdirectories of `/root/backups/`.
+
+Cron is used to schedule backups, for example once a day.
+
+1. To add bash scripts, you change to root user with this command, and your sudo or root password.
+```bash
+sudo su
+```
+2. Use nano editor for editing cron. If you don't have it installed, type:
+```bash
+apt install nano
+```
+3. Then we set text editor to be nano. Otherwise it probably uses vi, that is harder to use.
+```bash
+export EDITOR=nano
+```
+4. Now we start editing cron scheduler. 
+```bash
+crontab -e
+```
+For more info how to make cron time, see https://crontab.guru
+
+In this example, we set backups every day at 04:00, then it runs backup.sh script, and saves output of the backup commands to the bottom of textfile backup.log.txt
+```bash
+# m h  dom mon dow   command
+0 4 * * * /root/backup.sh >> /root/backup.log.txt 2>&1
+```
+- For changing to `/root` directory, type: `cd /root`
+- for editing backup.sh file, type: `nano backup.sh`
+- For saving in nano, press Ctrl-o Enter
+- For exiting nano, press Ctrl-x Enter
+- Set every .sh file as executeable, for example: `chmod +x backup.sh`
+
+This is content of `backup.sh` script. It runs all the other backup scripts.
+If you do not need to backup rocketchat or website, or do not need to use rclone,
+you don't need to add those command lines at all.
+```bash
+cd /root
+./backup-wekan.sh
+./backup-rocketchat.sh
+./backup-website.sh
+rclone move backups cloudname:backup.example.com
+```
+More about rclone:
+
+/root/rclone-ls-all.sh , shows directory contests at cloud:
+```bash
+rclone lsd cloudname:
+```
+In this example, cron does run backup scripts as root.
+This is if you edit cron with command `crontab -e` as root user,
+so it edits the cron of root user.
+
+If mongodump command works as normal user for you, you could instead
+run backups as normal user, by exiting root user with `exit` and
+then as normal user editing cron with `crontab -e`.
+You can also list current cron with command `crontab -l`.
+
+If you like to backup Wekan snap settings with this command, then it
+only works with sudo at front, or as a root user without sudo at front.
+```bash
+sudo snap get wekan > snap-settings.txt
+```
+
+This below is backup script for backing up Wekan.
+
+/root/backup-wekan.sh
+```bash
+#!/bin/bash
+
+makeDump()
+{
+
+    # Backups will be created below this directory.
+    backupdir="/root/backups/wekan"
+
+    # Gets the version of the snap.
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    # Gets current time to variable "now"
+    now=$(date +'%Y-%m-%d_%H.%M.%S')
+
+    # Creates new backup directory like BACKUPDIR/BACKUPVERSIO-TIMENOW
+    mkdir -p $backupdir/$version-$now
+
+    # Targets the dump file.
+    #dump=$"/snap/wekan/$version/bin/mongodump"
+
+    # Changes to backup directory
+    cd $backupdir/$version-$now
+
+    # Backup Caddy settings
+    snap get wekan > snap-settings.txt
+
+    # Show text that database backup is in progress
+    printf "\nThe database backup is in progress.\n\n"
+
+    # Backup to current directory, creates subdirectory called "dump"
+    # with database dump files
+    mongodump --port 27019
+
+    # Change diretory (=cd) to parent directory
+    cd ..
+
+    # Show text "Makes the tar.gz archive file"
+    printf "\nMakes the tar.gz archive file.\n"
+
+    # Creates tar.gz archive file. This works similarly like creating .zip file.
+    tar -zcvf $version-$now.tar.gz $version-$now
+
+    # Delete temporary files that have already been
+    # compressed to above tar.gz file
+    rm -rf $version-$now
+
+    # Shows text "Backup done."
+    printf "\nBackup done.\n"
+
+    # Show where backup archive file is.
+    echo "Backup is archived to .tar.gz file at $backupdir/${version}-${now}.tar.gz"
+}
+
+# Checks is the user is sudo/root
+if [ "$UID" -ne "0" ]
+then
+    echo "This program must be launched with sudo/root."
+    exit 1
+fi
+
+# Starts
+makeDump
+```bash
+/root/backup-rocketchat.sh
+```bash
+#!/bin/bash
+
+makeDump()
+{
+
+    backupdir="/root/backups/rocketchat"
+
+    # Gets the version of the snap.
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    # Prepares.
+    now=$(date +'%Y-%m-%d_%H.%M.%S')
+    mkdir -p $backupdir/$version-$now
+
+    # Targets the dump file.
+    dump=$"/snap/wekan/$version/bin/mongodump"
+
+    # Makes the backup.
+    cd $backupdir/$version-$now
+    printf "\nThe database backup is in progress.\n\n"
+    $dump --port 27017
+
+    # Makes the tar.gz file.
+    cd ..
+    printf "\nMakes the tar.gz file.\n"
+    tar -zcvf $version-$now.tar.gz $version-$now
+
+    # Cleanups
+    rm -rf $version-$now
+
+    # End.
+    printf "\nBackup done.\n"
+    echo "Backup is archived to .tar.gz file at $backupdir/${version}-${now}.tar.gz"
+}
+
+# Checks is the user is sudo/root
+if [ "$UID" -ne "0" ]
+then
+    echo "This program must be launched with sudo/root."
+    exit 1
+fi
+
+# Starts
+makeDump
+```
+/root/backup-website.sh
+```bash
+#!/bin/bash
+
+makeDump()
+{
+
+    backupdir="/root/backups/example.com"
+
+    # Gets the version of the snap.
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    # Prepares.
+    now=$(date +'%Y-%m-%d_%H.%M.%S')
+    mkdir -p $backupdir/$version-$now
+
+    # Makes the backup.
+    cd $backupdir/$version-$now
+    printf "\nThe file backup is in progress.\n\n"
+
+    # Makes the tar.gz file.
+    cd ..
+    printf "\nMakes the tar.gz file.\n"
+    cp -pR /var/snap/wekan/common/example.com $version-$now
+    tar -zcvf $version-$now.tar.gz $version-$now
+
+    # Cleanups
+    rm -rf $version-$now
+
+    # End.
+    printf "\nBackup done.\n"
+    echo "Backup is archived to .tar.gz file at $backupdir/${version}-${now}.tar.gz"
+}
+
+# Checks is the user is sudo/root
+if [ "$UID" -ne "0" ]
+then
+    echo "This program must be launched with sudo/root."
+    exit 1
+fi
+
+# Starts
+makeDump
+```
+/var/snap/wekan/common/Caddyfile
+```bash
+chat.example.com {
+	reverse_proxy localhost:3000
+}
+
+https://boards.example.com {
+	reverse_proxy localhost:3001
+}
+
+example.com {
+	root * /var/snap/wekan/common/example.com
+	php_fastcgi unix//var/run/php/php7.0-fpm.sock
+}
+
+matomo.example.com {
+        root * /var/snap/wekan/common/matomo.example.com
+        php_fastcgi unix//var/run/php/php7.0-fpm.sock
+}
+
+# Example CloudFlare free wildcard SSL Origin Certificate, there is example.com.pem at certificates directory with private key at to and cert at bottom.
+# Caddy 2 redirects http:// to https:// by itself.
+files.example.com {
+        tls {
+            load /var/snap/wekan/common/certificates
+            alpn http/1.1
+        }
+        root * /var/snap/wekan/common/files.example.com
+        file_server browse
+}
+
+static.example.com {
+	root * /var/snap/wekan/common/static.example.com
+	file_server
+}
+```
+
+## Related talk about MongoDB backup
+
+Related talk, search for "mongodb" this page:
+https://fosdem.org/2020/schedule/events/
+
+There is this:
+
+Percona Backup for MongoDB: Status and Plans
+
+Open Source solution for consistent backups of multi-shard MongoDB
+
+- [Slides](https://fosdem.org/2020/schedule/event/perconamongodb/attachments/slides/3768/export/events/attachments/perconamongodb/slides/3768/Percona_Backup_for_MongoDB.pdf)
+- [Video webm](https://video.fosdem.org/2020/UD2.119/perconamongodb.webm)
+- [Same Video mp4](https://video.fosdem.org/2020/UD2.119/perconamongodb.mp4)
+
+## Related Sandstorm issue
+
+[Creating a backup while the grain is running could cause corruption](https://github.com/sandstorm-io/sandstorm/issues/3186).
+
+## Combining old and new Wekan version data
+
+Note: Do mongodump/mongorestore only when Wekan is stopped: wekan.wekan (Snap) or wekan-app (Docker).
+
+1. From new Wekan export all boards to Wekan JSON.
+2. Backup new Wekan with mongodump.
+3. Backup old Wekan with mongodump.
+4. Restore old Wekan data to new Wekan with mongorestore.
+5. Restore new Wekan JSON exported boards by importing them.
+
+## Rescuing board that does not load
+
+Wekan web UI Import/Export JSON does not have all content currently. To upgrade from old Wekan version, use mongodump/mongorestore to newest Wekan, like described below.
+
+To import big JSON file, on Linux you can use xclip to copy textfile to clipboard:
+```bash
+sudo apt-get install xclip
+cat board.json | xclip -se c
+```
+Then paste to webbrowser Wekan Add Board / Import / From previous export.
+
+You can [save all MongoDB database content as JSON files](../Platforms/FOSS/Container/Sandstorm/Export-from-Wekan-Sandstorm-grain-.zip-file.md). Files are base64 encoded in JSON files.
+
+Export board to Wekan JSON, and import as Wekan JSON can make some part of board to load, but you should check is some data missing.
+
+With Wekan Snap, you can use [nosqlbooster GUI](https://nosqlbooster.com/downloads) to login through SSH to Wekan server localhost port 27019 and browse data.
+
+You could use [daff](https://github.com/paulfitz/daff) to compare tables.
+
+## Using Snap Mongo commands on your bash CLI
+
+Add to your `~/.bashrc`
+```bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+export PATH="$PATH:/snap/wekan/current/bin"
+```
+Then you can backup:
+```bash
+mongodump --port 27019
+```
+And restore:
+```bash
+mongorestore --drop --port 27019
+```
+
+## MongoDB shell on Wekan Snap
+
+mongoshell.sh
+```bash
+#/bin/bash
+export LC_ALL=C
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+mongo=$"/snap/wekan/$version/bin/mongo"
+$mongo --port 27019
+```
+
+***
+
+# Snap backup-restore v2
+
+Originally from https://github.com/wekan/wekan-snap/issues/62#issuecomment-470622601
+
+## Backup
+
+wekan-backup.sh
+```bash
+#!/bin/bash
+export LC_ALL=C
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+
+version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+now=$(date +"%Y%m%d-%H%M%S")
+parent_dir="/data/backups/wekan"
+backup_dir="${parent_dir}/${now}"
+log_file="${parent_dir}/backup-progress.log.${now}"
+
+error () {
+  printf "%s: %s\n" "$(basename "${BASH_SOURCE}")" "${1}" >&2
+  exit 1
+}
+
+trap 'error "An unexpected error occurred."' ERR
+
+take_backup () {
+  mkdir -p "${backup_dir}"
+
+  cd "${backup_dir}"
+
+  /snap/wekan/$version/bin/mongodump --quiet --port 27019
+
+  cd ..
+
+  tar -zcf "${now}.tar.gz" "${now}"
+
+  rm -rf "${now}"
+}
+
+printf "\n======================================================================="
+printf "\nWekan Backup"
+printf "\n======================================================================="
+printf "\nBackup in progress..."
+
+take_backup 2> "${log_file}"
+
+if [[ -s "${log_file}" ]]
+then
+  printf "\nBackup failure! Check ${log_file} for more information."
+  printf "\n=======================================================================\n\n"
+else
+  rm "${log_file}"
+  printf "...SUCCESS!\n"
+  printf "Backup created at ${backup_dir}.tar.gz"
+  printf "\n=======================================================================\n\n"
+fi
+```
+wekan-restore.sh
+```bash
+#!/bin/bash
+export LC_ALL=C
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/snap/wekan/current/lib/x86_64-linux-gnu
+
+makesRestore()
+{
+    file=$1
+
+    ext=$"$(basename $file)"
+    parentDir=$"${file:0:${#file}-${#ext}}"
+    cd "${parentDir}"
+
+    printf "\nMakes the untar of the archive.\n"
+
+    tar -zxvf "${file}"
+    file="${file:0:${#file}-7}"
+
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    restore=$"/snap/wekan/${version}/bin/mongorestore"
+
+    printf "\nThe database restore is in progress.\n\n"
+
+    ## Only if you get errors about existing indexes, use this below instead:
+    ## $restore --quiet --drop --noIndexRestore -d wekan --port 27019 "${file}/dump/wekan"
+
+    $restore --quiet --drop -d wekan --port 27019 "${file}/dump/wekan"
+
+    rm -rf "${file}"
+
+    printf "\nRestore done.\n"
+}
+
+makesRestore $1
+```
+
+***
+
+# Snap backup-restore v1
+
+## Backup script for MongoDB Data, if running Snap MongoDB at port 27019
+
+```bash
+#!/bin/bash
+
+makeDump()
+{
+    # Gets the version of the snap.
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    # Prepares.
+    now=$(date +'%Y-%m-%d_%H.%M.%S')
+    mkdir -p /var/backups/wekan/$version-$now
+
+    # Targets the dump file.
+    dump=$"/snap/wekan/$version/bin/mongodump"
+
+    # Makes the backup.
+    cd /var/backups/wekan/$version-$now
+    printf "\nThe database backup is in progress.\n\n"
+    $dump --port 27019
+
+    # Makes the tar.gz file.
+    cd ..
+    printf "\nMakes the tar.gz file.\n"
+    tar -zcvf $version-$now.tar.gz $version-$now
+
+    # Cleanups
+    rm -rf $version-$now
+
+    # End.
+    printf "\nBackup done.\n"
+    echo "Backup is archived to .tar.gz file at /var/backups/wekan/${version}-${now}.tar.gz"
+}
+
+# Checks is the user is sudo/root
+if [ "$UID" -ne "0" ]
+then
+    echo "This program must be launched with sudo/root."
+    exit 1
+fi
+
+
+# Starts
+makeDump
+
+```
+
+## Restore script for MongoDB Data, if running Snap MongoDB at port 27019 with a tar.gz archive.
+
+```bash
+#!/bin/bash
+
+makesRestore()
+{
+    # Prepares the folder used for the backup.
+    file=$1
+    if [[ "$file" != *tar.gz* ]]
+    then
+        echo "The backup archive must be a tar.gz."
+        exit -1
+    fi
+
+    # Goes into the parent directory.
+    ext=$"$(basename $file)"
+    parentDir=$"${file:0:${#file}-${#ext}}"
+    cd $parentDir
+
+    # Untar the archive.
+    printf "\nMakes the untar of the archive.\n"
+    tar -zxvf $file
+    file="${file:0:${#file}-7}"
+    
+    # Gets the version of the snap.
+    version=$(snap list | grep wekan | awk -F ' ' '{print $3}')
+
+    # Targets the dump file.
+    restore=$"/snap/wekan/$version/bin/mongorestore"
+
+    # Restores.
+    printf "\nThe database restore is in progress.\n\n"
+    ## Only if you get errors about existing indexes, use this below instead:
+    ## $restore --drop --noIndexRestore wekan --port 27019 $file/dump/wekan
+    $restore --drop wekan --port 27019 $file/dump/wekan
+    printf "\nRestore done.\n"
+
+    # Cleanups
+    rm -rf $file
+}
+
+# Checks is the user is sudo/root.
+if [ "$UID" -ne "0" ]
+then
+    echo "This program must be launched with sudo/root."
+    exit 1
+fi
+
+
+# Start.
+makesRestore $1
+
+```
+
+## Docker Backup and Restore
+
+[Docker Backup and Restore](../Platforms/FOSS/Container/Docker/Export-Docker-Mongo-Data.md)
+
+[Wekan Docker Upgrade](https://github.com/wekan/wekan-mongodb#backup-before-upgrading)
+
+## Snap Backup
+
+[Snap Backup and Restore](https://github.com/wekan/wekan-snap/wiki/Backup-and-restore)
+
+[Wekan Snap upgrade](https://github.com/wekan/wekan-snap/wiki/Install#5-install-all-snap-updates-automatically-between-0200am-and-0400am)
+
+## Sandstorm Backup
+
+Download Wekan grain with arrow down download button to .zip file. You can restore it later.
+
+[Export data from Wekan Sandstorm grain .zip file](../Platforms/FOSS/Container/Sandstorm/Export-from-Wekan-Sandstorm-grain-.zip-file.md)
+
+## <a name="cloudron">Cloudron
+
+If those [Backup](Backup.md) ways are not easily found at [Cloudron](../Platforms/Propietary/SaaS/Cloudron), one way is to install [Redash](https://redash.io/) and then backup this way:
+
+Redash works with this kind of queries:
+```json
+{
+	"collection": "accountSettings",
+	"query": {
+		"type": 1
+	},
+	"fields": {
+		"_id": 1,
+		"booleanValue": 1,
+		"createdAt": 1,
+		"modifiedAt": 1,		
+	}
+}
+```
+So:
+
+1) Create this kind of query:
+```json
+{
+	"collection": "boards"
+}
+```
+
+Later when you modify query, you can remove text like boards with double-click-with-mouse and delete-key-at-keyboard (or select characters with mouse and delete-key-at-keyboard), and then click collection/table >> button to insert name of next collection/table.
+
+2) Click Save
+
+3) Click Execute. This will cache query for use with REST API.
+
+4) Click at right top `[...]` => `Show API key`
+
+It looks like this:
+
+https://redash.example.com/api/queries/1/results.json?api_key=...
+
+5) Only when saving first collection/table, Save API key to text file script like this `dl.sh` 
+```bash
+#!/bin/bash
+
+# Example: ./dl.sh boards
+
+export APIKEY=https://redash.example.com/api/queries/1/results.json?api_key=...
+
+curl -o $1.json $APIKEY
+```
+
+6) Run save script like:
+```bash
+./dl.sh boards
+```
+Note: 1) Save 2) Execute => webbrowser can give this kind of timeout,
+but downloading with API script still works:
+
+> wekan
+> Error running query: failed communicating with server. Please check your Internet connection and try again.
+
+7) Repeat steps 1-4 and 6 for every collection/table like boards,cards, etc
+
+8) Remove from downloaded .json files extra query related data, so that it is similar like [any other Wekan database backup JSON files](../Platforms/FOSS/Container/Sandstorm/Export-from-Wekan-Sandstorm-grain-.zip-file.md)
+
+9) Insert data to some other Wekan install with nosqlbooster like mentioned at page [Backup](Backup.md)
+
+

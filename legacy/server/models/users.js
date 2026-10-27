@@ -1,0 +1,3401 @@
+const { CALENDAR_SYSTEM_IDS } = require('/imports/lib/calendarSystems');
+const { assertSafeMapKey } = require('/models/lib/safeMapKey');
+const { memberCan } = require('/models/lib/boardRoleCapabilities');
+import { Meteor } from 'meteor/meteor';
+// Only the authorized server method can populate this creation context.
+const adminCreation = new Meteor.EnvironmentVariable();
+
+import { WebApp } from 'meteor/webapp';
+import { Accounts } from 'meteor/accounts-base';
+import { Email } from 'meteor/email';
+import { check, Match } from 'meteor/check';
+import { safeSelector } from '/server/lib/selectorGuard';
+import { authEnv } from '/server/lib/authConfig';
+import { EJSON } from 'meteor/ejson';
+import { Random } from 'meteor/random';
+import { CollectionHooks } from 'meteor/matb33:collection-hooks';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { debounce } from '/imports/lib/collectionHelpers';
+import { boardMemberRestriction } from '/server/lib/orgTeamRestriction';
+// Multitenancy option D: per-tenant Global Admin rules, shared with the client, the
+// publications and the tests (docs/Design/Multitenancy/Multitenancy.md).
+import * as tenantAdmin from '/models/lib/tenantAdmin';
+import { Authentication } from '/server/authentication';
+import { sendJsonResult } from '/server/apiMiddleware';
+import { boardMemberRoleToFlags, allowIsBoardAdmin } from '/server/lib/utils';
+import EmailLocalization from '/server/lib/emailLocalization';
+import { ensureIndex } from '/server/lib/mongoStartup';
+import { BOARD_COLORS } from '/models/metadata/colors';
+import { isValidCustomColors } from '/models/lib/themeCategories';
+import { isKnownFont, isKnownFontSize, isHexColor6 } from '/models/lib/uiFonts';
+import { DDPRateLimiter } from 'meteor/ddp-rate-limiter';
+import { publicErrorData } from '/server/lib/apiResponseHelpers';
+import escapeForRegex from 'escape-string-regexp';
+import { deliverBoardInviteToTray } from '/server/lib/boardInviteTray';
+import { providerOfUser, onCreateProviderUser } from '/server/lib/oauthProviders';
+const { recordAuthRateLimitDenial } = require('/server/lib/authRateLimitDecision');
+const { decideAnonymize, buildAnonymizeUpdate } = require('/models/lib/userAnonymization');
+
+// Security (reported by meifukun): defence-in-depth throttle on account creation
+// so invitation-code sign-up (and any other registration) attempts cannot be
+// hammered. The invitation code itself is now a 128-bit CSPRNG value (see
+// server/models/settings.js generateInvitationCode) so it is not brute-forceable;
+// this rule additionally bounds abuse — at most 10 createUser attempts per 60s per
+// client address.
+if (Meteor.isServer) {
+  DDPRateLimiter.addRule(
+    {
+      type: 'method',
+      name: 'createUser',
+      clientAddress() {
+        return true;
+      },
+    },
+    10,
+    60 * 1000,
+  );
+  DDPRateLimiter.addRule(
+    { type: 'method', name: 'searchUsers' },
+    20,
+    10 * 1000,
+  );
+  const accountRecoveryRateLimitCallback = (result, input) =>
+    recordAuthRateLimitDenial(result, input, event =>
+      require('/server/lib/securityLog').record(event));
+  for (const [name, attempts] of [
+    ['forgotPassword', 5],
+    ['resetPassword', 5],
+    ['verifyEmail', 10],
+  ]) {
+    DDPRateLimiter.addRule(
+      { type: 'method', name, clientAddress() { return true; } },
+      attempts,
+      60 * 1000,
+      accountRecoveryRateLimitCallback,
+    );
+  }
+}
+
+// Security (reported by meifukun): profile.avatarUrl is rendered as an <img src>
+// and, once external, is fetched by the server for localization. Only accept an
+// http(s) URL, a data:image URI, an empty value (clearing), or a WeKan-local
+// relative path (e.g. /cdn/storage/avatars/…). Reject javascript:, data:text/html,
+// file:, protocol-relative //host and every other active/foreign scheme at write
+// time so a hostile scheme can never be stored.
+function assertSafeAvatarUrl(avatarUrl) {
+  if (avatarUrl === '') return;
+  if (avatarUrl.startsWith('/') && !avatarUrl.startsWith('//')) return;
+  const m = /^([a-z][a-z0-9+.\-]*):/i.exec(avatarUrl);
+  const scheme = m ? m[1].toLowerCase() : '';
+  if (scheme === 'http' || scheme === 'https') return;
+  if (scheme === 'data' && /^data:image\//i.test(avatarUrl)) return;
+  try {
+    require('/server/lib/securityLog').record({
+      key: 'file.avatar-url', action: 'blocked', source: 'setAvatarUrl',
+      detail: `rejected avatar url scheme "${scheme || '(none)'}"`,
+    });
+  } catch (e) { /* logging must never break the guard */ }
+  throw new Meteor.Error(
+    'invalid-avatar-url',
+    'Avatar URL must be an http(s) URL, a data:image URI, or a local path',
+  );
+}
+import ImpersonatedUsers from '/models/impersonatedUsers';
+import Avatars from '/models/avatars';
+import Boards from '/models/boards';
+import Cards from '/models/cards';
+const {
+  isStarrablePageUrl, toggleStarredPage, moveStarredPage,
+} = require('/models/lib/starredPages');
+import InvitationCodes from '/models/invitationCodes';
+import InviteToBoardRolesSettings from '/models/inviteToBoardRolesSettings';
+const { canInviteToBoard } = require('/models/lib/invitationBoardPermission');
+import AccountSettings from '/models/accountSettings';
+import Lists from '/models/lists';
+import Swimlanes from '/models/swimlanes';
+import Users, { allowedSortValues, allowedAllBoardsSortValues } from '/models/users';
+import {
+  expiredNotificationActivityIds,
+  cappedNotifications,
+  notificationCapFromEnv,
+} from '/models/lib/notificationCleanup';
+import { chooseInviteEmailLanguage } from '/models/lib/inviteEmailLanguage';
+import { paginateDomains } from '/models/lib/domainTablePage';
+import { orgsToAutoAddForEmail } from '/models/lib/orgAutoAddByDomain';
+const { grantOf, planGain, planLoss, updateFor, groupChanges } = require('/models/lib/groupBoardMembership');
+
+// #4593: when a team is assigned to a board (addBoardTeamPopup), every user in
+// the team at that moment is pushed into board.members as a normal member — but
+// a user added to the team afterwards never was, so they ended up with strictly
+// less authority than their teammates: the publications let them view the board
+// (teams.teamId match) while every interaction gate (board.hasMember,
+// allowIsBoardMember*, Attachments.protected, board.isVisibleBy for export)
+// only looks at board.members. This grants a user who just gained team(s) the
+// same normal membership on every board those teams are assigned to. Existing
+// member entries (even deactivated ones) are never touched, template boards are
+// skipped, and team REMOVAL intentionally does not remove board members (a
+// member may also have been invited individually; explicit cleanup remains the
+// board admin's removeBoardTeamPopup action). Failures are logged, never fatal
+// to the user update that triggered the sync.
+// #4178 (maintainer decision 2026-10-14): a team or organization that gives a
+// user board memberships also takes them away when the user leaves it - but
+// only the ones it gave. Each entry records where it came from (grantedBy,
+// models/lib/groupBoardMembership.js): a direct membership (an invitation, a
+// board admin's choice, every entry from before) is never touched, a board
+// admin is kept, and the user's last group leaving deactivates the entry the
+// way removing a member does. Template boards are skipped (#5850). Failures
+// are logged, never fatal to the user update that triggered the sync.
+//
+// Teams give memberships on every board they are assigned to (#4593); an
+// organization only where it propagates its members to boards
+// (orgPropagateMembersToBoards, server/propagateOrgTeamMembers.js).
+const syncUserGroupBoards = async (userId, kind, oldList, newList) => {
+  const idField = kind === 'org' ? 'orgId' : 'teamId';
+  const field = kind === 'org' ? 'orgs' : 'teams';
+  try {
+    const { gained, lost } = groupChanges(oldList, newList, idField);
+    for (const groupId of gained) {
+      if (kind === 'org') {
+        const org = await ReactiveCache.getOrg(groupId);
+        if (!org || org.orgPropagateMembersToBoards !== true) continue;
+      }
+      const grant = grantOf(kind, groupId);
+      const boards = await Boards.find(
+        { [field]: { $elemMatch: { [idField]: groupId, isActive: true } }, type: { $nin: ['template-board', 'template-container'] } },
+        { fields: { _id: 1, members: 1 } },
+      ).fetchAsync();
+      for (const board of boards) {
+        const plan = planGain(board.members, userId, grant);
+        const update = updateFor(plan, grant);
+        if (!update) continue;
+        // A push is guarded, so a member who arrived through another path
+        // between the read and this write is not added twice.
+        const selector = plan.action === 'push' ? { _id: board._id, 'members.userId': { $ne: userId } } : { _id: board._id };
+        await Boards.updateAsync(selector, update);
+      }
+    }
+    for (const groupId of lost) {
+      const grant = grantOf(kind, groupId);
+      const boards = await Boards.find(
+        { members: { $elemMatch: { userId, grantedBy: grant } } },
+        { fields: { _id: 1, members: 1 } },
+      ).fetchAsync();
+      for (const board of boards) {
+        const update = updateFor(planLoss(board.members, userId, grant), grant);
+        if (update) await Boards.updateAsync({ _id: board._id }, update);
+      }
+    }
+  } catch (error) {
+    console.error(`syncUserGroupBoards(${kind}) failed:`, error);
+  }
+};
+
+const addUserToTeamBoards = (userId, oldTeams, newTeams) => syncUserGroupBoards(userId, 'team', oldTeams, newTeams);
+const syncUserOrgBoards = (userId, oldOrgs, newOrgs) => syncUserGroupBoards(userId, 'org', oldOrgs, newOrgs);
+// The LDAP group sync (server/ldapGroupSync.js) imports it; the wekan-oidc
+// package cannot import app code and reaches it through this global, the way
+// it reaches authEnv (#4178: users added to a team by a login provider were
+// never made members of the team's boards).
+export { addUserToTeamBoards, syncUserOrgBoards, syncUserGroupBoards };
+globalThis.__wekanAddUserToTeamBoards = addUserToTeamBoards;
+
+const getTAPi18n = () => require('/imports/i18n').TAPi18n;
+const isSandstorm =
+  Meteor.settings && Meteor.settings.public && Meteor.settings.public.sandstorm;
+
+Meteor.methods({
+  // Profile preferences are server writes. Direct client Users.update calls are
+  // optimistic and Meteor rolls them back when the server rejects or cleans the
+  // modifier, which made language/fullname/initials appear to change and then
+  // immediately revert (#6655).
+  async setOwnProfile(fullname, initials) {
+    check(fullname, String);
+    check(initials, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    if (fullname.length > 256 || initials.length > 20) {
+      throw new Meteor.Error('invalid-profile', 'Profile fields are too long');
+    }
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.fullname': fullname, 'profile.initials': initials },
+    });
+  },
+
+  async setLanguage(language) {
+    check(language, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const TAPi18n = getTAPi18n();
+    if (!TAPi18n.isLanguageSupported(language)) {
+      throw new Meteor.Error('invalid-language', 'Language is not supported');
+    }
+    await Users.updateAsync(this.userId, { $set: { 'profile.language': language } });
+  },
+
+  // Lazily create the per-user templates-container board on first use (#2339,
+  // #5850). New users no longer get one auto-created at signup; this method is
+  // called right before a template is actually saved/copied. If the current
+  // user already has profile.templatesBoardId, it is returned unchanged.
+  // Otherwise the Templates board and its three swimlanes ('Card Templates',
+  // 'List Templates', 'Board Templates'), all of type 'template-container', are
+  // created exactly as the removed signup hook did, and the id is returned.
+  async ensureTemplatesBoard() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    return await ensureTemplatesBoardForUserId(this.userId);
+  },
+});
+
+// #2209: "Create template from element" — extracted from the ensureTemplatesBoard
+// Meteor method above so a plain server-side caller (saveCardAsTemplate in
+// /server/models/cards.js, the "Save as Template" card action) can reuse the
+// exact same lazy per-user Templates board without going through a nested
+// Meteor method call. Behaviour is unchanged: idempotent, returns the existing
+// board id when one already exists and its board was not deleted, otherwise
+// creates the Templates board and its three swimlanes exactly as before.
+export async function ensureTemplatesBoardForUserId(userId) {
+  if (!userId) throw new Meteor.Error('not-logged-in');
+
+  {
+    const existing = await Users.findOneAsync(userId, {
+      fields: { 'profile.templatesBoardId': 1 },
+    });
+    const existingId =
+      existing && existing.profile && existing.profile.templatesBoardId;
+    if (existingId) {
+      // Make sure the board still exists; if it was deleted, recreate below.
+      const board = await Boards.findOneAsync(existingId);
+      if (board) {
+        return existingId;
+      }
+    }
+  }
+
+  const fakeUser = {
+    extendAutoValueContext: {
+      userId,
+    },
+  };
+
+  let createdId;
+  await fakeUserId.withValue(userId, async () => {
+    const boardId = await Boards.insertAsync(
+      {
+        title:
+          getTAPi18n() && getTAPi18n().i18n
+            ? getTAPi18n().__('templates')
+            : 'Templates',
+        permission: 'private',
+        type: 'template-container',
+      },
+      fakeUser,
+    );
+
+    await Users.updateAsync(userId, {
+      $set: { 'profile.templatesBoardId': boardId },
+    });
+
+    const cardSwimlaneId = await Swimlanes.insertAsync(
+      {
+        title:
+          getTAPi18n() && getTAPi18n().i18n
+            ? getTAPi18n().__('card-templates-swimlane')
+            : 'Card Templates',
+        boardId,
+        sort: 1,
+        type: 'template-container',
+      },
+      fakeUser,
+    );
+    await Users.updateAsync(userId, {
+      $set: { 'profile.cardTemplatesSwimlaneId': cardSwimlaneId },
+    });
+
+    const listSwimlaneId = await Swimlanes.insertAsync(
+      {
+        title:
+          getTAPi18n() && getTAPi18n().i18n
+            ? getTAPi18n().__('list-templates-swimlane')
+            : 'List Templates',
+        boardId,
+        sort: 2,
+        type: 'template-container',
+      },
+      fakeUser,
+    );
+    await Users.updateAsync(userId, {
+      $set: { 'profile.listTemplatesSwimlaneId': listSwimlaneId },
+    });
+
+    const boardSwimlaneId = await Swimlanes.insertAsync(
+      {
+        title:
+          getTAPi18n() && getTAPi18n().i18n
+            ? getTAPi18n().__('board-templates-swimlane')
+            : 'Board Templates',
+        boardId,
+        sort: 3,
+        type: 'template-container',
+      },
+      fakeUser,
+    );
+    await Users.updateAsync(userId, {
+      $set: { 'profile.boardTemplatesSwimlaneId': boardSwimlaneId },
+    });
+
+    createdId = boardId;
+  });
+
+  return createdId;
+}
+
+Meteor.methods({
+  async deleteWorkspace(workspaceId) {
+    check(workspaceId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+
+    const user =
+      (await Users.findOneAsync(this.userId, {
+        fields: {
+          'profile.boardWorkspacesTree': 1,
+          'profile.boardWorkspaceAssignments': 1,
+        },
+      })) || {};
+
+    const tree =
+      user.profile && user.profile.boardWorkspacesTree
+        ? EJSON.clone(user.profile.boardWorkspacesTree)
+        : [];
+    const assignments = {
+      ...((user.profile && user.profile.boardWorkspaceAssignments) || {}),
+    };
+    const removedWorkspaceIds = [];
+
+    const collectWorkspaceIds = node => {
+      removedWorkspaceIds.push(node.id);
+      if (node.children && node.children.length) {
+        node.children.forEach(collectWorkspaceIds);
+      }
+    };
+
+    const removeWorkspaceFromTree = nodes => {
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].id === workspaceId) {
+          collectWorkspaceIds(nodes[i]);
+          nodes.splice(i, 1);
+          return true;
+        }
+        if (nodes[i].children && nodes[i].children.length) {
+          if (removeWorkspaceFromTree(nodes[i].children)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    removeWorkspaceFromTree(tree);
+
+    Object.keys(assignments).forEach(boardId => {
+      if (removedWorkspaceIds.includes(assignments[boardId])) {
+        delete assignments[boardId];
+      }
+    });
+
+    await Users.updateAsync(this.userId, {
+      $set: {
+        'profile.boardWorkspacesTree': tree,
+        'profile.boardWorkspaceAssignments': assignments,
+      },
+    });
+
+    return true;
+  },
+
+  async removeUser(targetUserId) {
+    check(targetUserId, String);
+
+    const currentUserId = this.userId;
+    if (!currentUserId) {
+      throw new Meteor.Error('not-authorized', 'User must be logged in');
+    }
+
+    const currentUser = await ReactiveCache.getUser(currentUserId);
+    if (!currentUser) {
+      throw new Meteor.Error('not-authorized', 'Current user not found');
+    }
+
+    const targetUser = await ReactiveCache.getUser(targetUserId);
+    if (!targetUser) {
+      throw new Meteor.Error('user-not-found', 'Target user not found');
+    }
+
+    if (currentUserId === targetUserId) {
+      await Users.removeAsync(targetUserId);
+      return { success: true, message: 'User deleted successfully' };
+    }
+
+    if (!currentUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Only administrators can delete other users');
+    }
+
+    const adminsNumber = (await ReactiveCache.getUsers({ isAdmin: true })).length;
+    if (adminsNumber === 1 && targetUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Cannot delete the last administrator');
+    }
+
+    await Users.removeAsync(targetUserId);
+    return { success: true, message: 'User deleted successfully' };
+  },
+
+  // #2731: GDPR-friendlier alternative to removeUser. removeUser (above) prunes
+  // the user's references off every board/card/comment and hard-deletes the
+  // Users document, which loses attribution/history entirely. anonymizeUser
+  // instead overwrites the directly-identifying profile fields in place with a
+  // placeholder and disables login (`loginDisabled: true`, the same flag
+  // server/authentication.js's validateLoginAttempt already gates on, and the
+  // same field editUser above already lets an admin toggle) - it does NOT touch
+  // any board/card/comment/activity reference, which keeps pointing at the same
+  // userId and now simply displays the anonymized name. Callable both by the
+  // account owner on themselves and by an admin on any other user, mirroring
+  // removeUser's self/admin split below.
+  //
+  // No Admin Panel -> Problems entry: that log is for ATTEMPTS an attacker
+  // controls (see CLAUDE.md's security-logging discipline), and there is no
+  // attacker here - this is a privileged admin action an admin takes on
+  // purpose, or a member acting on their own account. WeKan has no general
+  // admin-action audit log to hook into (server/lib/recoveryAudit.js is
+  // board-deletion-specific, keyed to RecoveryEvents/boardIds); the audit trail
+  // for this action is the anonymized/anonymizedAt fields persisted on the
+  // Users document itself and visible in Admin Panel -> People.
+  async anonymizeUser(targetUserId) {
+    check(targetUserId, String);
+
+    const currentUserId = this.userId;
+    const currentUser = currentUserId ? await ReactiveCache.getUser(currentUserId) : null;
+    const targetUser = await ReactiveCache.getUser(targetUserId);
+    const adminsCount = currentUser && currentUser.isAdmin
+      ? (await ReactiveCache.getUsers({ isAdmin: true })).length
+      : undefined;
+
+    const decision = decideAnonymize({
+      currentUserId,
+      currentUser,
+      targetUserId,
+      targetUser,
+      adminsCount,
+    });
+    if (!decision.allowed) {
+      throw new Meteor.Error(decision.error, decision.reason);
+    }
+
+    const placeholder = `deleted-user-${Random.id(8).toLowerCase()}`;
+    await Users.updateAsync(targetUserId, buildAnonymizeUpdate(placeholder));
+
+    return { success: true, message: 'User anonymized successfully' };
+  },
+
+  async editUser(targetUserId, updateData) {
+    check(targetUserId, String);
+    check(updateData, Object);
+
+    const currentUserId = this.userId;
+    if (!currentUserId) {
+      throw new Meteor.Error('not-authorized', 'User must be logged in');
+    }
+
+    const currentUser = await ReactiveCache.getUser(currentUserId);
+    if (!currentUser || !currentUser.isAdmin || currentUser.loginDisabled) {
+      throw new Meteor.Error('not-authorized', 'Only administrators can edit other users');
+    }
+
+    const targetUser = await ReactiveCache.getUser(targetUserId);
+    if (!targetUser) {
+      throw new Meteor.Error('user-not-found', 'Target user not found');
+    }
+
+    const updateObject = {};
+    if (updateData.fullname !== undefined) updateObject['profile.fullname'] = updateData.fullname;
+    if (updateData.initials !== undefined) updateObject['profile.initials'] = updateData.initials;
+    if (updateData.isAdmin !== undefined) {
+      check(updateData.isAdmin, Boolean);
+      updateObject.isAdmin = updateData.isAdmin;
+    }
+    if (updateData.loginDisabled !== undefined) {
+      check(updateData.loginDisabled, Boolean);
+      updateObject.loginDisabled = updateData.loginDisabled;
+    }
+    if (updateData.authenticationMethod !== undefined) {
+      updateObject.authenticationMethod = updateData.authenticationMethod;
+    }
+    if (updateData.importUsernames !== undefined) updateObject.importUsernames = updateData.importUsernames;
+    if (updateData.teams !== undefined) updateObject.teams = updateData.teams;
+    if (updateData.orgs !== undefined) updateObject.orgs = updateData.orgs;
+
+    await Users.updateAsync(targetUserId, { $set: updateObject });
+
+    // #4593: a user who just gained team(s) must also gain membership of the
+    // boards those teams are assigned to, like the team's original members did.
+    if (updateData.teams !== undefined) {
+      await addUserToTeamBoards(targetUserId, targetUser.teams, updateData.teams);
+    }
+    // #4178: and an organization that propagates its members gives and takes
+    // its boards the same way.
+    if (updateData.orgs !== undefined) {
+      await syncUserOrgBoards(targetUserId, targetUser.orgs, updateData.orgs);
+    }
+  },
+
+  async setListSortBy(value) {
+    check(value, String);
+    (await ReactiveCache.getCurrentUser()).setListSortBy(value);
+  },
+
+  // #5799: persist the All Boards page sort mode for the current user.
+  async setAllBoardsSortBy(value) {
+    check(value, String);
+    if (!allowedAllBoardsSortValues.includes(value)) {
+      throw new Meteor.Error('invalid-sort', 'Invalid All Boards sort value');
+    }
+    await (await ReactiveCache.getCurrentUser()).setAllBoardsSortBy(value);
+  },
+
+  async setAvatarUrl(avatarUrl) {
+    check(avatarUrl, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    assertSafeAvatarUrl(avatarUrl);
+    await Users.updateAsync(this.userId, { $set: { 'profile.avatarUrl': avatarUrl } });
+  },
+
+  async adminSetAvatarUrl(targetUserId, avatarUrl) {
+    check(targetUserId, String);
+    check(avatarUrl, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const currentUser = await Users.findOneAsync(this.userId);
+    if (!currentUser || !currentUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Only admins can change user avatars');
+    }
+    const targetUser = await Users.findOneAsync(targetUserId);
+    if (!targetUser) throw new Meteor.Error('user-not-found', 'Target user not found');
+    assertSafeAvatarUrl(avatarUrl);
+    await Users.updateAsync(targetUserId, { $set: { 'profile.avatarUrl': avatarUrl } });
+  },
+
+  async toggleBoardStar(boardId) {
+    check(boardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const starredBoards = (user.profile && user.profile.starredBoards) || [];
+    const isStarred = starredBoards.includes(boardId);
+    const updateObject = isStarred
+      ? { $pull: { 'profile.starredBoards': boardId } }
+      : { $addToSet: { 'profile.starredBoards': boardId } };
+
+    await Users.updateAsync(this.userId, updateObject);
+  },
+
+  // #1172: same toggle pattern as toggleBoardStar, generalized to swimlanes,
+  // lists and cards - each its own per-user id-array field on the profile.
+  async toggleSwimlaneStar(swimlaneId) {
+    check(swimlaneId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const starredSwimlanes = (user.profile && user.profile.starredSwimlanes) || [];
+    const isStarred = starredSwimlanes.includes(swimlaneId);
+    const updateObject = isStarred
+      ? { $pull: { 'profile.starredSwimlanes': swimlaneId } }
+      : { $addToSet: { 'profile.starredSwimlanes': swimlaneId } };
+
+    await Users.updateAsync(this.userId, updateObject);
+  },
+
+  async toggleListStar(listId) {
+    check(listId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const starredLists = (user.profile && user.profile.starredLists) || [];
+    const isStarred = starredLists.includes(listId);
+    const updateObject = isStarred
+      ? { $pull: { 'profile.starredLists': listId } }
+      : { $addToSet: { 'profile.starredLists': listId } };
+
+    await Users.updateAsync(this.userId, updateObject);
+  },
+
+  async toggleCardStar(cardId) {
+    check(cardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const starredCards = (user.profile && user.profile.starredCards) || [];
+    const isStarred = starredCards.includes(cardId);
+    const updateObject = isStarred
+      ? { $pull: { 'profile.starredCards': cardId } }
+      : { $addToSet: { 'profile.starredCards': cardId } };
+
+    await Users.updateAsync(this.userId, updateObject);
+  },
+
+  // #2220: toggle the board that opens after login (the user's "home" board).
+  async toggleDefaultBoard(boardId) {
+    check(boardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const isDefault = (user.profile && user.profile.defaultBoardId) === boardId;
+    const updateObject = isDefault
+      ? { $unset: { 'profile.defaultBoardId': '' } }
+      : { $set: { 'profile.defaultBoardId': boardId } };
+
+    await Users.updateAsync(this.userId, updateObject);
+  },
+
+  // #4205: toggle a "Board Templates" swimlane card (cardType-linkedBoard) as
+  // this user's default board template. Marking a default lets plain "type a
+  // name and click Create" board creation apply it automatically instead of
+  // starting blank; clicking the current default clears it. Only a card the
+  // caller can actually apply (their own templates board, still a live linked
+  // board card) may be set, so a stale/foreign id can never be stored.
+  async toggleDefaultBoardTemplate(cardId) {
+    check(cardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const isDefault = (user.profile && user.profile.defaultBoardTemplateId) === cardId;
+    if (isDefault) {
+      await Users.updateAsync(this.userId, {
+        $unset: {
+          'profile.defaultBoardTemplateId': '',
+          'profile.defaultBoardTemplateBoardId': '',
+        },
+      });
+      return;
+    }
+
+    const templatesBoardId = user.profile && user.profile.templatesBoardId;
+    const card = await Cards.findOneAsync({
+      _id: cardId,
+      type: 'cardType-linkedBoard',
+      boardId: templatesBoardId,
+      archived: false,
+    });
+    if (!card || !card.linkedId) {
+      throw new Meteor.Error('not-found', 'Board template not found');
+    }
+
+    await Users.updateAsync(this.userId, {
+      $set: {
+        'profile.defaultBoardTemplateId': cardId,
+        'profile.defaultBoardTemplateBoardId': card.linkedId,
+      },
+    });
+  },
+
+  // Star the page the caller is on, or unstar it if it is already starred.
+  //
+  // The URL and the title come from the client because only the client knows
+  // what page it is looking at - but neither is trusted: the URL is refused
+  // unless it is a RELATIVE path (an absolute or protocol-relative one would
+  // put another site behind a row in this user's own dropdown), and the title
+  // is stored as text and drawn as text. docs/Features/Pages/Starred.md
+  async toggleStarredPage(url, title) {
+    check(url, String);
+    check(title, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    if (!isStarrablePageUrl(url)) {
+      throw new Meteor.Error('invalid-page-url', 'Only a relative page URL can be starred');
+    }
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const next = toggleStarredPage(
+      (user.profile && user.profile.starredPages) || [], url, title,
+    );
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.starredPages': next },
+    });
+  },
+
+  // Move a bookmark so it sits where another one is.
+  //
+  // The order is the reader's, and it is ONE order: the tiles in All Boards /
+  // Starred and the rows of the header dropdown are two views of the same
+  // array. docs/Features/Pages/Starred.md
+  async moveStarredPage(url, beforeUrl) {
+    check(url, String);
+    check(beforeUrl, Match.OneOf(String, null));
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const next = moveStarredPage(
+      (user.profile && user.profile.starredPages) || [], url, beforeUrl,
+    );
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.starredPages': next },
+    });
+  },
+
+  // Set this board as the Home board, whatever was there before. Dropping a
+  // board on the Home row REPLACES - Home holds one board, and a drop that
+  // sometimes set and sometimes cleared (which is what toggleDefaultBoard would
+  // do here) would depend on state the reader cannot see while dragging.
+  // docs/Features/All-Boards/Home.md
+  async setDefaultBoard(boardId) {
+    check(boardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    // A board this user cannot open is not a board they can start in: the
+    // after-login redirect would land on a board that refuses to draw. The
+    // membership test is the same one the board publication applies.
+    const board = await Boards.findOneAsync({
+      _id: boardId,
+      archived: false,
+      'members.userId': this.userId,
+    });
+    if (!board) throw new Meteor.Error('board-not-found', 'Board not found');
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.defaultBoardId': boardId },
+    });
+  },
+
+  // Take this board off Home - and only if it IS Home, so dragging some other
+  // board out of a list cannot clear somebody's Home board as a side effect.
+  async clearDefaultBoard(boardId) {
+    check(boardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    await Users.updateAsync(
+      { _id: this.userId, 'profile.defaultBoardId': boardId },
+      { $unset: { 'profile.defaultBoardId': '' } },
+    );
+  },
+
+
+  // #5778: set (or clear, when null/'') the caller's global theme color override.
+  // Validated against the known board colors so a client cannot inject an arbitrary
+  // CSS class name. Optional customColors (docs/Theme/Theme.md) are accepted only for
+  // flat/clear themes and only as #rrggbb hex — validated via isValidCustomColors so
+  // there is no CSS-injection surface.
+  async setGlobalThemeColor(color, customColors) {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    check(color, Match.OneOf(String, null, undefined));
+    check(customColors, Match.OneOf([String], null, undefined));
+
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    if (color) {
+      if (!BOARD_COLORS.includes(color)) {
+        throw new Meteor.Error('invalid-color', 'Unknown theme color');
+      }
+      const modifier = { $set: { 'profile.globalThemeColor': color } };
+      if (customColors && customColors.length && isValidCustomColors(color, customColors)) {
+        modifier.$set['profile.globalThemeCustomColors'] = customColors;
+      } else {
+        modifier.$unset = { 'profile.globalThemeCustomColors': '' };
+      }
+      await Users.updateAsync(this.userId, modifier);
+      return color;
+    }
+    await Users.updateAsync(this.userId, {
+      $unset: { 'profile.globalThemeColor': '', 'profile.globalThemeCustomColors': '' },
+    });
+    return null;
+  },
+
+  // #4759: set (or clear, when null/'') the caller's UI font. Validated against the
+  // curated whitelist (models/lib/uiFonts.js) so no arbitrary string can reach a CSS
+  // font-family — the value is only ever a known, safe font name.
+  async setUiFont(font) {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    check(font, Match.OneOf(String, null, undefined));
+
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    if (font) {
+      if (!isKnownFont(font)) {
+        throw new Meteor.Error('invalid-font', 'Unknown font');
+      }
+      await Users.updateAsync(this.userId, { $set: { 'profile.uiFont': font } });
+      return font;
+    }
+    await Users.updateAsync(this.userId, { $unset: { 'profile.uiFont': '' } });
+    return null;
+  },
+
+  // #4759: set (or clear) the caller's UI font-size preset. Validated against the
+  // named presets (no free numbers); 'default'/null/'' unsets (stock size).
+  async setUiFontSize(size) {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    check(size, Match.OneOf(String, null, undefined));
+
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    if (size && size !== 'default') {
+      if (!isKnownFontSize(size)) {
+        throw new Meteor.Error('invalid-font-size', 'Unknown font size');
+      }
+      await Users.updateAsync(this.userId, { $set: { 'profile.uiFontSize': size } });
+      return size;
+    }
+    await Users.updateAsync(this.userId, { $unset: { 'profile.uiFontSize': '' } });
+    return null;
+  },
+
+  // #4759: set (or clear) the caller's custom UI text color. Validated as
+  // #rrggbb hex; a null/empty/invalid value unsets it (back to default). Only
+  // strict hex ever reaches a CSS value.
+  //
+  // `bgColor` was the "text background color", which is REMOVED - no choice of
+  // elements to paint it on looked good. The parameter is still accepted, so an
+  // older client calling this cannot fail, and it is IGNORED: the field is
+  // unset on every call whatever is passed, so a colour stored before the
+  // removal is cleared the next time somebody touches this popup rather than
+  // sitting in the profile for ever.
+  async setUiColors(textColor, bgColor) {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    check(textColor, Match.OneOf(String, null, undefined));
+    check(bgColor, Match.OneOf(String, null, undefined));
+
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+
+    const $set = {};
+    const $unset = {};
+    if (isHexColor6(textColor)) $set['profile.uiTextColor'] = textColor;
+    else $unset['profile.uiTextColor'] = '';
+    $unset['profile.uiTextBgColor'] = '';
+
+    const modifier = {};
+    if (Object.keys($set).length) modifier.$set = $set;
+    if (Object.keys($unset).length) modifier.$unset = $unset;
+    await Users.updateAsync(this.userId, modifier);
+    return {
+      textColor: $set['profile.uiTextColor'] || null,
+      bgColor: null,
+    };
+  },
+
+  // `show` is the EXPLICIT new state the client computed from what is actually on
+  // screen. It must be stored as a real boolean, including `false`: the client
+  // tells "never chosen" (undefined) apart from "deliberately off" (false), and
+  // only the second one may hide the handles on a touch screen, where they are
+  // the default. Called with no argument by older clients, which keeps the old
+  // flip-the-stored-value behaviour.
+  // Collapse or expand the left menu. One setting for both pages: All Boards
+  // and the Admin Panel draw one menu, and a reader who folds it away on one of
+  // them has said what they want on the other.
+  // docs/Features/All-Boards/Left-Menu.md
+  async setLeftMenuCollapsed(collapsed) {
+    check(collapsed, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.leftMenuCollapsed': collapsed },
+    });
+  },
+
+  // Fold or unfold one workspace of the All Boards left menu. Only the folded
+  // ones are stored, so unfolding REMOVES the key rather than writing false: a
+  // reader who folds two workspaces out of fifty has two keys, and a workspace
+  // that is deleted takes its key with it the next time it is unfolded.
+  // docs/Features/All-Boards/Workspaces.md
+  async setWorkspaceCollapsed(workspaceId, collapsed) {
+    check(workspaceId, String);
+    check(collapsed, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    // The id becomes part of a DOTTED field path, and the tree it comes from is
+    // written by the client - so an id carrying a `.` or a `$` would address a
+    // different field, or a nested one, instead of a key in this map.
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(workspaceId)) {
+      throw new Meteor.Error('invalid-workspace', 'Not a workspace id');
+    }
+    const field = `profile.collapsedWorkspaces.${workspaceId}`;
+    await Users.updateAsync(this.userId, collapsed
+      ? { $set: { [field]: true } }
+      : { $unset: { [field]: '' } });
+  },
+
+  // How wide that menu was dragged to. The client already clamps the drag, but
+  // a method is reachable without the drag: the width is clamped again here, so
+  // a call with 20000 - or with NaN, which passes `check(width, Number)` and
+  // would store a width no page could recover from - cannot leave a user with a
+  // menu that fills the window and no way to get at what it covers.
+  // docs/Features/All-Boards/Left-Menu.md
+  async setLeftMenuWidth(width) {
+    check(width, Number);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    if (!Number.isFinite(width)) {
+      throw new Meteor.Error('invalid-width', 'Left menu width must be a finite number');
+    }
+    const clamped = Math.round(Math.min(Math.max(width, 120), 1200));
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.leftMenuWidth': clamped },
+    });
+  },
+
+  async toggleDesktopDragHandles(show) {
+    check(show, Match.OneOf(Boolean, null, undefined));
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await ReactiveCache.getCurrentUser();
+    const next = typeof show === 'boolean'
+      ? show
+      : !user.hasShowDesktopDragHandles();
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.showDesktopDragHandles': next },
+    });
+  },
+
+  // Per-user "submit editors on plain Enter" preference (Member Settings).
+  // Off by default; when on, plain Enter submits and Shift+Enter is a newline.
+  // #5847: Member Settings / Log out everywhere - every login token of the
+  // caller goes, so Meteor ends every one of their sessions, this one too.
+  // Only their own; nothing else of the account changes.
+  async logoutEverywhere() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    await Users.updateAsync(this.userId, { $set: { 'services.resume.loginTokens': [] } });
+    return true;
+  },
+
+  // #2111 / #1604: mark cards changed since the member last opened them.
+  // Turning it on records when, so cards never opened are not all marked.
+  async toggleUnreadChanges() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    if ((user.profile || {}).unreadChangesSince) {
+      await Users.updateAsync(this.userId, { $unset: { 'profile.unreadChangesSince': '' } });
+    } else {
+      await Users.updateAsync(this.userId, { $set: { 'profile.unreadChangesSince': new Date() } });
+    }
+  },
+
+  // #1273: keep the #label / @member text in a new card's title (Member
+  // Settings; off by default).
+  async toggleKeepTitleTags() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    await Users.updateAsync(this.userId, { $set: { 'profile.keepTitleTags': !((user.profile || {}).keepTitleTags) } });
+  },
+
+  async toggleSubmitOnEnter() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = !!((user.profile || {}).submitOnEnter);
+    await Users.updateAsync(this.userId, { $set: { 'profile.submitOnEnter': !current } });
+  },
+
+  // #5427: "play a ding when a checklist item is checked off" - a per-user
+  // preference, off by default.
+  async toggleChecklistDingSound() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = !!((user.profile || {}).checklistDingSound);
+    await Users.updateAsync(this.userId, { $set: { 'profile.checklistDingSound': !current } });
+  },
+
+  // #6531: "Open many cards at once" - a per-user preference, off by default.
+  async toggleOpenManyCardsAtOnce() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = !!((user.profile || {}).openManyCardsAtOnce);
+    await Users.updateAsync(this.userId, { $set: { 'profile.openManyCardsAtOnce': !current } });
+  },
+
+  // Member Settings / Change color, beside "Default (no override)": paint the All
+  // Boards tiles in the theme's lighter colour rather than each board's own. A
+  // per-user preference, off by default, and a toggle for the same reason
+  // toggleOpenManyCardsAtOnce is one - the row it sits in has no Save button.
+  async toggleAllBoardsThemeTiles() {
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = !!((user.profile || {}).allBoardsThemeTiles);
+    await Users.updateAsync(this.userId, { $set: { 'profile.allBoardsThemeTiles': !current } });
+    return !current;
+  },
+
+  async createWorkspace(params) {
+    check(params, Object);
+    const { parentId = null, name } = params;
+    check(parentId, Match.OneOf(String, null));
+    check(name, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    const user = (await Users.findOneAsync(this.userId)) || {};
+    const tree =
+      user.profile && user.profile.boardWorkspacesTree
+        ? EJSON.clone(user.profile.boardWorkspacesTree)
+        : [];
+
+    const newNode = { id: Random.id(), name, children: [] };
+
+    if (!parentId) {
+      tree.push(newNode);
+    } else {
+      const insertInto = nodes => {
+        for (const n of nodes) {
+          if (n.id === parentId) {
+            n.children = n.children || [];
+            n.children.push(newNode);
+            return true;
+          }
+          if (n.children && n.children.length && insertInto(n.children)) {
+            return true;
+          }
+        }
+        return false;
+      };
+      insertInto(tree);
+    }
+
+    await Users.updateAsync(this.userId, { $set: { 'profile.boardWorkspacesTree': tree } });
+    return newNode;
+  },
+
+  // Board View / Chat: the member's pane widths and folds. Cleaned to the
+  // known keys and clamped widths (models/lib/chatView.js).
+  async setChatViewLayout(layout) {
+    check(layout, Object);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    const { cleanChatLayout } = require('/models/lib/chatView');
+    const clean = cleanChatLayout(layout);
+    await Users.updateAsync(this.userId, { $set: { 'profile.chatViewLayout': clean } });
+    return clean;
+  },
+
+  async setWorkspacesTree(newTree) {
+    check(newTree, Array);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    await Users.updateAsync(this.userId, { $set: { 'profile.boardWorkspacesTree': newTree } });
+    return true;
+  },
+
+  async assignBoardToWorkspace(boardId, spaceId) {
+    assertSafeMapKey(boardId);
+    check(boardId, String);
+    check(spaceId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+
+    const user = await Users.findOneAsync(this.userId, { fields: { 'profile.boardWorkspaceAssignments': 1 } });
+    const assignments = user.profile?.boardWorkspaceAssignments || {};
+    assignments[boardId] = spaceId;
+
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.boardWorkspaceAssignments': assignments },
+    });
+    return true;
+  },
+
+  async unassignBoardFromWorkspace(boardId) {
+    check(boardId, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+
+    const user = await Users.findOneAsync(this.userId, { fields: { 'profile.boardWorkspaceAssignments': 1 } });
+    const assignments = user.profile?.boardWorkspaceAssignments || {};
+    delete assignments[boardId];
+
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.boardWorkspaceAssignments': assignments },
+    });
+    return true;
+  },
+
+  async toggleHideCheckedItems() {
+    if (!this.userId) return;
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    user.toggleHideCheckedItems();
+  },
+
+  async toggleCustomFieldsGrid() {
+    if (!this.userId) return;
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    user.toggleFieldsGrid(user.hasCustomFieldsGrid());
+  },
+
+  async toggleCardMaximized() {
+    if (!this.userId) return;
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    user.toggleCardMaximized(user.hasCardMaximized());
+  },
+
+  // #6802: the Drawing popup's custom colors, kept with the account. Only
+  // #rrggbb codes are stored, at most MAX_CUSTOM_COLORS, each once.
+  async setDrawingColors(colors) {
+    check(colors, [String]);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    const { addCustomColor } = require('/models/lib/cardDrawing');
+    const clean = colors.slice(0, 64).reduce((list, c) => addCustomColor(list, c), []);
+    await Users.updateAsync(this.userId, { $set: { 'profile.drawingColors': clean } });
+    return clean;
+  },
+
+  async setCardCollapsed(value) {
+    check(value, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    await Users.updateAsync(this.userId, { $set: { 'profile.cardCollapsed': value } });
+  },
+
+  async setMapProvider(provider) {
+    check(provider, String);
+    if (!this.userId) throw new Meteor.Error('not-logged-in');
+    if (
+      ![
+        // USA
+        'google',
+        'bing',
+        'apple',
+        'waze',
+        // Europe
+        'openstreetmap',
+        'here',
+        'yandex',
+        'mapy',
+        '2gis',
+        // Asia
+        'baidu',
+        'amap',
+      ].includes(provider)
+    ) {
+      throw new Meteor.Error('invalid-map-provider');
+    }
+    await Users.updateAsync(this.userId, { $set: { 'profile.mapProvider': provider } });
+  },
+
+  async toggleMinicardLabelText() {
+    if (!this.userId) return;
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    user.toggleLabelText(user.hasHiddenMinicardLabelText());
+  },
+
+  // #4256: the per-user override of the board's "show label text on
+  // minicards" setting - null/undefined to follow the board's own setting,
+  // or an explicit true/false to always show/hide regardless of the board.
+  // Mirrors the global theme override (profile.globalThemeColor).
+  async setShowLabelTextOverride(value) {
+    if (!this.userId) return;
+    check(value, Match.OneOf(Boolean, null, undefined));
+    if (value === null || value === undefined) {
+      await Users.updateAsync(this.userId, {
+        $unset: { 'profile.showLabelTextOverride': '' },
+      });
+      return;
+    }
+    await Users.updateAsync(this.userId, {
+      $set: { 'profile.showLabelTextOverride': value },
+    });
+  },
+
+  async toggleRescueCardDescription() {
+    if (!this.userId) return;
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    user.toggleRescueCardDescription(user.hasRescuedCardDescription());
+  },
+
+  async changeLimitToShowCardsCount(limit) {
+    check(limit, Number);
+    (await ReactiveCache.getCurrentUser()).setShowCardsCountAt(limit);
+  },
+
+  async changeStartDayOfWeek(startDay) {
+    check(startDay, Number);
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) throw new Meteor.Error('not-authorized');
+    return await user.setStartDayOfWeek(startDay);
+  },
+
+  async changeDateFormat(dateFormat, override = true) {
+    check(override, Boolean);
+    check(dateFormat, String);
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) throw new Meteor.Error('not-authorized');
+    return await user.setDateFormat(dateFormat, override);
+  },
+
+  // #4335: per-user, display-only Jalali (Persian/Solar Hijri) calendar
+  // toggle for rendered dates. Storage stays Gregorian.
+  async changeCalendarSystem(calendarSystem) {
+    check(calendarSystem, String);
+    if (!CALENDAR_SYSTEM_IDS.includes(calendarSystem)) {
+      throw new Meteor.Error('invalid-calendar-system');
+    }
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    return await user.setCalendarSystem(calendarSystem);
+  },
+
+  async applyListWidth(boardId, listId, width, constraint) {
+    check(boardId, String);
+    check(listId, String);
+    check(width, Number);
+    check(constraint, Number);
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    // list.width/constraint are per-board fields shared with all users, so
+    // only board members may change them, and only on the list's own board.
+    // board.members, not the board: instance editing (#4575) lets a non-member
+    // edit cards, never the board's own settings.
+    const board = await ReactiveCache.getBoard(boardId);
+    // MutationBleed sibling (2026-10-02): a shared board setting needs write
+    // access, not just membership. Not recorded as an attempt: the menus may
+    // still offer it to a read-only member.
+    if (!board || !memberCan(board.members, this.userId, 'write')) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    const list = await ReactiveCache.getList(listId);
+    if (!list || list.boardId !== boardId) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    try {
+      // #6409: only the shared per-board width is stored on the list. The old
+      // `constraint` (max-width) is no longer used; the param is kept for
+      // backwards compatibility with existing callers but ignored.
+      await Lists.updateAsync(listId, { $set: { width: width } });
+      return true;
+    } catch (error) {
+      console.error('Error updating list width:', error);
+      throw new Meteor.Error('update-failed', error.message);
+    }
+  },
+
+  async setBoardAutoWidth(boardId, autoWidth) {
+    check(boardId, String);
+    check(autoWidth, Boolean);
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    // Shared (per-board) auto-width affects everyone, so only board members may
+    // change it (parity with applyListWidth). See #6409.
+    const board = await ReactiveCache.getBoard(boardId);
+    // MutationBleed sibling (2026-10-02): a shared board setting needs write
+    // access, not just membership. Not recorded as an attempt: the menus may
+    // still offer it to a read-only member.
+    if (!board || !memberCan(board.members, this.userId, 'write')) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    await Boards.updateAsync(boardId, { $set: { autoWidth: !!autoWidth } });
+    return true;
+  },
+
+  // #3847: board-wide "sticky list headers" toggle, offered from the List
+  // hamburger/action menu (client/components/lists/listHeader.jade) even
+  // though it affects every list on the board - see models/boards.js.
+  async setStickyListHeaders(boardId, stickyListHeaders) {
+    check(boardId, String);
+    check(stickyListHeaders, Boolean);
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    const board = await ReactiveCache.getBoard(boardId);
+    // MutationBleed sibling (2026-10-02): a shared board setting needs write
+    // access, not just membership. Not recorded as an attempt: the menus may
+    // still offer it to a read-only member.
+    if (!board || !memberCan(board.members, this.userId, 'write')) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    await Boards.updateAsync(boardId, {
+      $set: { stickyListHeaders: !!stickyListHeaders },
+    });
+    return true;
+  },
+
+  async setListCollapsedState(boardId, listId, collapsed) {
+    assertSafeMapKey(boardId, listId);
+    check(boardId, String);
+    check(listId, String);
+    check(collapsed, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = (user.profile && user.profile.collapsedLists) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][listId] = !!collapsed;
+    await Users.updateAsync(this.userId, { $set: { 'profile.collapsedLists': current } });
+  },
+
+  // #1591: the same shape as setListCollapsedState above, for the whole
+  // minicard fold. See client/lib/utils.js's Utils.setCardCollapseState for
+  // why there is no anonymous/public fallback here.
+  async setCardCollapsedState(boardId, cardId, collapsed) {
+    assertSafeMapKey(boardId, cardId);
+    check(boardId, String);
+    check(cardId, String);
+    check(collapsed, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = (user.profile && user.profile.collapsedCards) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][cardId] = !!collapsed;
+    await Users.updateAsync(this.userId, { $set: { 'profile.collapsedCards': current } });
+  },
+
+  async applySwimlaneHeight(boardId, swimlaneId, height) {
+    check(boardId, String);
+    check(swimlaneId, String);
+    check(height, Number);
+    const user = await ReactiveCache.getCurrentUser();
+    user.setSwimlaneHeight(boardId, swimlaneId, height);
+  },
+
+  async setSwimlaneCollapsedState(boardId, swimlaneId, collapsed) {
+    assertSafeMapKey(boardId, swimlaneId);
+    check(boardId, String);
+    check(swimlaneId, String);
+    check(collapsed, Boolean);
+    if (!this.userId) throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    const user = await Users.findOneAsync(this.userId);
+    if (!user) throw new Meteor.Error('user-not-found', 'User not found');
+    const current = (user.profile && user.profile.collapsedSwimlanes) || {};
+    if (!current[boardId]) current[boardId] = {};
+    current[boardId][swimlaneId] = !!collapsed;
+    await Users.updateAsync(this.userId, { $set: { 'profile.collapsedSwimlanes': current } });
+  },
+
+  async applySwimlaneHeightToStorage(boardId, swimlaneId, height) {
+    check(boardId, String);
+    check(swimlaneId, String);
+    check(height, Number);
+    const user = await ReactiveCache.getCurrentUser();
+    if (user) {
+      user.setSwimlaneHeightToStorage(boardId, swimlaneId, height);
+    }
+  },
+
+  async applyListWidthToStorage(boardId, listId, width, constraint) {
+    check(boardId, String);
+    check(listId, String);
+    check(width, Number);
+    check(constraint, Number);
+    const user = await ReactiveCache.getCurrentUser();
+    if (user) {
+      user.setListWidthToStorage(boardId, listId, width);
+      user.setListConstraintToStorage(boardId, listId, constraint);
+    }
+  },
+
+  // Persist the right board sidebar width (px) for a logged-in user. Anonymous
+  // users on public boards keep it in localStorage on the client instead.
+  async setSidebarWidth(width) {
+    check(width, Number);
+    const user = await ReactiveCache.getCurrentUser();
+    if (user) {
+      await user.setSidebarWidth(width);
+    }
+  },
+
+  // #5729 Enable/disable the per-user "same width for all lists" mode for a
+  // board. This is a personal viewer setting (like personal list widths), so any
+  // logged-in user may toggle it for any board they can view.
+  async setFixedListWidthEnabled(boardId, enabled) {
+    check(boardId, String);
+    check(enabled, Boolean);
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    await user.setFixedListWidthEnabled(boardId, enabled);
+    return true;
+  },
+
+  // #5729 Set the single width applied to every list when fixed width mode is on.
+  async setFixedListWidth(boardId, width) {
+    check(boardId, String);
+    check(width, Number);
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    // #6465: keep in sync with MIN_LIST_WIDTH in models/lib/listWidth.js (200).
+    if (width < 200) {
+      throw new Meteor.Error('invalid-width', 'Width must be >= 200');
+    }
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) return;
+    await user.setFixedListWidth(boardId, width);
+    return true;
+  },
+
+  async setMobileMode(enabled) {
+    check(enabled, Boolean);
+    const user = await ReactiveCache.getCurrentUser();
+    user.setMobileMode(enabled);
+  },
+
+  async setBoardView(view, boardId) {
+    check(view, String);
+    check(boardId, Match.Optional(Match.Maybe(String)));
+    const user = await ReactiveCache.getCurrentUser();
+    if (!user) throw new Meteor.Error('not-authorized', 'Must be logged in');
+    // Must be awaited: the helper returns Users.updateAsync(...), so without await the
+    // method resolves (and the client reloads) before profile.boardView is written —
+    // and a rejected schema/write never surfaces. This made switching the board view
+    // (e.g. to the new Statistics view) unreliable.
+    await user.setBoardView(view, boardId || undefined);
+  },
+
+  async setCreateUser(
+    fullname,
+    username,
+    initials,
+    password,
+    isAdmin,
+    isActive,
+    email,
+    importUsernames,
+    userOrgsArray,
+    userTeamsArray,
+  ) {
+    check(fullname, String);
+    check(username, String);
+    check(initials, String);
+    check(password, String);
+    check(isAdmin, String);
+    check(isActive, String);
+    check(email, String);
+    check(importUsernames, Array);
+    check(userOrgsArray, Array);
+    check(userTeamsArray, Array);
+    if (
+      fullname.includes('/') ||
+      username.includes('/') ||
+      email.includes('/') ||
+      initials.includes('/')
+    ) {
+      return false;
+    }
+    const creator = await ReactiveCache.getCurrentUser();
+    if (!creator?.isAdmin || creator.loginDisabled) {
+      throw new Meteor.Error('not-authorized', 'Only administrators can create users');
+    }
+    const nUsersWithUsername = (await ReactiveCache.getUsers({ username })).length;
+    const nUsersWithEmail = (await ReactiveCache.getUsers({ 'emails.address': email.toLowerCase() })).length;
+    if (nUsersWithUsername > 0) {
+      throw new Meteor.Error('username-already-taken');
+    } else if (nUsersWithEmail > 0) {
+      throw new Meteor.Error('email-already-taken');
+    } else {
+      if (!['true', 'false'].includes(isAdmin) || !['true', 'false'].includes(isActive)) {
+        throw new Meteor.Error('invalid-parameters');
+      }
+      // The form's Active select uses true for No (loginDisabled).
+      const id = await adminCreation.withValue({
+        isAdmin: isAdmin === 'true', loginDisabled: isActive === 'true',
+        fullname, initials, importUsernames, orgs: userOrgsArray, teams: userTeamsArray,
+      }, () => Accounts.createUserAsync({ username, password, email: email.toLowerCase(), from: 'admin' }));
+      await addUserToTeamBoards(id, [], userTeamsArray);
+      return id;
+    }
+  },
+
+  async setUsername(username, userId) {
+    check(username, String);
+    check(userId, String);
+    if (username.includes('/') || userId.includes('/')) {
+      return false;
+    }
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      const nUsersWithUsername = (await ReactiveCache.getUsers({ username })).length;
+      if (nUsersWithUsername > 0) {
+        throw new Meteor.Error('username-already-taken');
+      } else {
+        await Users.updateAsync(userId, { $set: { username } });
+      }
+    }
+  },
+
+  async setEmail(email, userId) {
+    check(email, String);
+    check(userId, String);
+    if (userId.includes('/') || email.includes('/')) {
+      return false;
+    }
+    const currentUser = await ReactiveCache.getCurrentUser();
+    const allowSelfChange =
+      this.userId === userId &&
+      (await AccountSettings.findOneAsync('accounts-allowEmailChange'))
+        ?.booleanValue;
+    if (!currentUser?.isAdmin && !allowSelfChange) {
+      throw new Meteor.Error('not-authorized');
+    }
+    // #2460 SQRL hardlock: the member asked that the account not be
+    // recovered any other way, and a new e-mail address is the way to a
+    // password reset. An admin can still change it - the last resort.
+    if (!currentUser?.isAdmin && (await require('/server/sqrl').sqrlHardlocked(userId))) {
+      throw new Meteor.Error('sqrl-hardlock');
+    }
+    if (Array.isArray(email)) {
+      email = email.shift();
+    }
+    const existingUser = await ReactiveCache.getUser(
+      { 'emails.address': email },
+      { fields: { _id: 1 } },
+    );
+    if (existingUser) {
+      throw new Meteor.Error('email-already-taken');
+    } else {
+      await Users.updateAsync(userId, {
+        $set: {
+          emails: [{ address: email, verified: false }],
+        },
+      });
+    }
+  },
+
+  async setUsernameAndEmail(username, email, userId) {
+    check(username, String);
+    check(email, String);
+    check(userId, String);
+    if (username.includes('/') || email.includes('/') || userId.includes('/')) {
+      return false;
+    }
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      if (Array.isArray(email)) {
+        email = email.shift();
+      }
+      await Meteor.callAsync('setUsername', username, userId);
+      await Meteor.callAsync('setEmail', email, userId);
+    }
+  },
+
+  async setPassword(newPassword, userId) {
+    check(userId, String);
+    check(newPassword, String);
+    if (!this.userId) {
+      throw new Meteor.Error('not-authorized');
+    }
+
+    const currentUser = await Users.findOneAsync(this.userId, { fields: { isAdmin: 1 } });
+    if (!currentUser?.isAdmin) {
+      throw new Meteor.Error('not-authorized');
+    }
+
+    if (typeof Accounts.setPasswordAsync === 'function') {
+      await Accounts.setPasswordAsync(userId, newPassword);
+    } else if (typeof Accounts.setPassword === 'function') {
+      Accounts.setPassword(userId, newPassword);
+    } else {
+      throw new Meteor.Error('set-password-unavailable', 'Accounts password API is not available');
+    }
+  },
+
+  async setEmailVerified(email, verified, userId) {
+    check(email, String);
+    check(verified, Boolean);
+    check(userId, String);
+    if (email.includes('/') || userId.includes('/')) {
+      return false;
+    }
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      await Users.updateAsync(userId, {
+        $set: {
+          emails: [{ address: email, verified }],
+        },
+      });
+    }
+  },
+
+  async setInitials(initials, userId) {
+    check(initials, String);
+    check(userId, String);
+    if (initials.includes('/') || userId.includes('/')) {
+      return false;
+    }
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      await Users.updateAsync(userId, { $set: { 'profile.initials': initials } });
+    }
+  },
+
+  async inviteUserToBoard(username, boardId) {
+    check(username, String);
+    check(boardId, String);
+    if (username.includes('/') || boardId.includes('/')) {
+      return false;
+    }
+    const inviter = await ReactiveCache.getCurrentUser();
+    const board = await ReactiveCache.getBoard(boardId);
+
+    // Global site admins (Admin Panel users) always have all rights and bypass
+    // both the board-membership and the configurable per-role check below.
+    if (!inviter.isAdmin) {
+      const member = board.members.find(memberItem => memberItem.userId === inviter._id);
+      if (!member || !member.isActive) throw new Meteor.Error('error-board-notAMember');
+      // Enforce the Admin Panel / People / Roles policy: only the configured
+      // board roles are allowed to invite users to a board.
+      const allowedRoles = await InviteToBoardRolesSettings.allowedRoles();
+      if (!require('/models/lib/invitationBoardPermission').roleMayInvite(board.memberRole(inviter._id), allowedRoles)) {
+        throw new Meteor.Error('error-notAllowed');
+      }
+    }
+
+    this.unblock();
+
+    const posAt = username.indexOf('@');
+    let user = null;
+    // #5664: existing invitee => their own language; new invitee => inviter's.
+    let isNewUser = false;
+    if (posAt >= 0) {
+      // Email addresses are case-insensitive, and LDAP/OIDC store them as the
+      // directory spells them ("Jan.Jansen@Example.com"). An exact match missed
+      // an existing colleague typed in lower case, so WeKan tried to create a
+      // new account for them: refused with "This user is not created" when
+      // registration is disabled, else a raw 403 "Email already exists"
+      // (Accounts.createUser compares case-insensitively).
+      user = await ReactiveCache.getUser({
+        emails: { $elemMatch: {
+          address: new RegExp(`^${escapeForRegex(username.trim())}$`, 'i'),
+        } },
+      });
+    } else {
+      user =
+        (await ReactiveCache.getUser(username)) ||
+        (await ReactiveCache.getUser({ username }));
+    }
+    if (user) {
+      if (user._id === inviter._id) throw new Meteor.Error('error-user-notAllowSelf');
+      // #1894: do not add a deactivated account to a board.
+      if (user.loginDisabled) throw new Meteor.Error('error-user-disabled');
+    } else {
+      if (posAt <= 0) throw new Meteor.Error('error-user-doesNotExist');
+      if ((await ReactiveCache.getCurrentSetting()).disableRegistration) {
+        throw new Meteor.Error('error-user-notCreated');
+      }
+      const email = username.toLowerCase();
+      // #619: the invitee's username is derived from the email local part; a
+      // collision with an existing user (e.g. cats@foo.com then
+      // cats@facebook.com) made Accounts.createUser throw a raw
+      // "403 Username already exists". Probe cats, cats1, cats2, ... instead.
+      const { deriveUniqueInviteeUsername } = require('/models/lib/inviteeUsername');
+      username = await deriveUniqueInviteeUsername(
+        email,
+        async candidate => !!(await ReactiveCache.getUser({ username: candidate })),
+      );
+      if (username === null) throw new Meteor.Error('error-username-taken');
+      if (username.includes('/') || email.includes('/')) {
+        return false;
+      }
+      const newUserId = Accounts.createUser({ username, email });
+      if (!newUserId) throw new Meteor.Error('error-user-notCreated');
+      if (inviter.profile && inviter.profile.language) {
+        await Users.updateAsync(newUserId, { $set: { 'profile.language': inviter.profile.language } });
+      }
+      Accounts.sendEnrollmentEmail(newUserId);
+      user = await ReactiveCache.getUser(newUserId);
+      isNewUser = true;
+    }
+
+    // #6116: when either restriction is on, only allow adding a user who shares an
+    // enabled kind with the inviter (or with any active board member) - an
+    // Organization when "only from the same Organization" is on, a Team when "only
+    // from the same Team" is. Site admins always bypass this.
+    if (!inviter.isAdmin) {
+      const restriction = boardMemberRestriction(await ReactiveCache.getCurrentSetting());
+      if (restriction.org || restriction.team) {
+        let shares = inviter.sharesRestrictedOrgOrTeamWith(user, restriction);
+        if (!shares) {
+          // Fall back to any active board member sharing one, so an inviter without
+          // orgs/teams set can still add users from the board's own org/team.
+          for (const m of board.members) {
+            if (!m.isActive || m.userId === inviter._id) continue;
+            const existingMember = await ReactiveCache.getUser(m.userId);
+            if (existingMember
+              && existingMember.sharesRestrictedOrgOrTeamWith(user, restriction)) {
+              shares = true;
+              break;
+            }
+          }
+        }
+        if (!shares) {
+          throw new Meteor.Error('error-user-notSameOrgOrTeam');
+        }
+      }
+    }
+
+    const invitedAt = new Date();
+    const memberIndex = board.members.findIndex(m => m.userId === user._id);
+    if (memberIndex >= 0) {
+      await Boards.updateAsync(boardId, {
+        $set: { [`members.${memberIndex}.isActive`]: true, modifiedAt: new Date() },
+      });
+    } else {
+      await Boards.updateAsync(boardId, {
+        $push: {
+          members: {
+            userId: user._id,
+            isAdmin: false,
+            isActive: true,
+            isNoComments: false,
+            isCommentOnly: false,
+            isWorker: false,
+            isNormalAssignedOnly: false,
+            isCommentAssignedOnly: false,
+            isReadOnly: false,
+            isReadAssignedOnly: false,
+          },
+        },
+        $set: { modifiedAt: new Date() },
+      });
+    }
+    await Users.updateAsync(user._id, { $push: { 'profile.invitedBoards': boardId } });
+
+    if (board.subtasksDefaultBoardId) {
+      const subBoard = await ReactiveCache.getBoard(board.subtasksDefaultBoardId);
+      // SubtaskDepositBleed: the deposit board is another board. The invitee is
+      // added to it - or reactivated there - only when the inviter may invite
+      // to THAT board too; otherwise a writer could point their own board's
+      // deposit at any board and invite anyone into it.
+      const depositInvite = subBoard && subBoard._id !== board._id &&
+        canInviteToBoard(inviter, subBoard, await InviteToBoardRolesSettings.allowedRoles());
+      // Not recorded: an inviter without invite rights on the deposit board is
+      // also an ordinary configuration, so skipping it is not an attempt.
+      if (depositInvite) {
+        const subMemberIndex = subBoard.members.findIndex(m => m.userId === user._id);
+        if (subMemberIndex >= 0) {
+          await Boards.updateAsync(board.subtasksDefaultBoardId, {
+            $set: { [`members.${subMemberIndex}.isActive`]: true, modifiedAt: new Date() },
+          });
+        } else {
+          await Boards.updateAsync(board.subtasksDefaultBoardId, {
+            $push: {
+              members: {
+                userId: user._id,
+                isAdmin: false,
+                isActive: true,
+                isNoComments: false,
+                isCommentOnly: false,
+                isWorker: false,
+                isNormalAssignedOnly: false,
+                isCommentAssignedOnly: false,
+                isReadOnly: false,
+                isReadAssignedOnly: false,
+              },
+            },
+            $set: { modifiedAt: new Date() },
+          });
+        }
+        await Users.updateAsync(user._id, { $push: { 'profile.invitedBoards': subBoard._id } });
+      }
+    }
+
+    try {
+      const fullName =
+        inviter.profile !== undefined && inviter.profile.fullname !== undefined
+          ? inviter.profile.fullname
+          : '';
+      const userFullName =
+        user.profile !== undefined && user.profile.fullname !== undefined
+          ? user.profile.fullname
+          : '';
+      const params = {
+        user: userFullName !== '' ? `${userFullName} (${user.username} )` : user.username,
+        inviter: fullName !== '' ? `${fullName} (${inviter.username} )` : inviter.username,
+        board: board.title,
+        url: board.absoluteUrl(),
+      };
+      // #5664: pick the invite email's language — the existing recipient's own
+      // profile language, or (for a newly created invitee) the inviter's.
+      const lang = chooseInviteEmailLanguage({
+        isNewUser,
+        inviterLanguage: inviter.getLanguage(),
+        recipientLanguage: user.getLanguage(),
+      });
+
+      if (typeof EmailLocalization !== 'undefined') {
+        await EmailLocalization.sendEmail({
+          to: user.emails[0].address,
+          from: Accounts.emailTemplates.from,
+          subject: 'email-invite-subject',
+          text: 'email-invite-text',
+          params,
+          language: lang,
+          userId: user._id,
+        });
+      } else {
+        await Email.sendAsync({
+          to: user.emails[0].address,
+          from: Accounts.emailTemplates.from,
+          subject: getTAPi18n().__('email-invite-subject', params, lang),
+          text: getTAPi18n().__('email-invite-text', params, lang),
+        });
+      }
+    } catch (e) {
+      throw new Meteor.Error('email-fail', e.message);
+    }
+
+    // #3136: also tell an existing invitee in the in-app notification bell
+    // (see server/lib/boardInviteTray.js for why this delivers the
+    // membership's activity rather than calling Notifications.notify()). A
+    // brand-new invitee has no account to sign in to yet, so they stay
+    // email-only (isNewUser is true only when no matching account existed).
+    if (!isNewUser) {
+      try {
+        await deliverBoardInviteToTray({
+          user, boardId, inviterId: inviter._id, since: invitedAt,
+          reactivated: memberIndex >= 0 && board.members[memberIndex].isActive !== true,
+        });
+      } catch (e) {
+        // Logging must never break the invite itself.
+        console.error('Error sending board invite notification:', e);
+      }
+    }
+
+    return {
+      username: user.username,
+      email: user.emails[0].address,
+    };
+  },
+
+  async impersonate(userId) {
+    // Match.Any first, then a real check: this app runs with
+    // audit-argument-checks, which fails a method that returns without having
+    // check()ed every argument - and a bare `check(userId, String)` answers a
+    // missing id with "Match failed", which says nothing about what was being
+    // done or what was missing (#6536).
+    check(userId, Match.Any);
+
+    if (!Match.test(userId, String) || !userId) {
+      throw new Meteor.Error(400, 'impersonate: a user id is required');
+    }
+
+    if (!(await ReactiveCache.getUser(userId))) {
+      throw new Meteor.Error(404, 'User not found');
+    }
+    if (!(await ReactiveCache.getCurrentUser()).isAdmin) {
+      throw new Meteor.Error(403, 'Permission denied');
+    }
+
+    await ImpersonatedUsers.insertAsync({
+      adminId: (await ReactiveCache.getCurrentUser())._id,
+      userId,
+      reason: 'clickedImpersonate',
+    });
+    // Meteor 3 restarts subscriptions asynchronously. Finish that transition
+    // before the client switches its identity and subscribes again (#6691).
+    await this.setUserId(userId);
+  },
+
+  async isImpersonated(userId) {
+    check(userId, Match.Any);
+
+    if (!Match.test(userId, String) || !userId) return false;
+    // Whether an account is being impersonated is the account's own business,
+    // or an admin's - it answered anybody, signed in or not (2026-10-02).
+    if (!this.userId) return false;
+    if (userId !== this.userId && !(await ReactiveCache.getUser({ _id: this.userId, isAdmin: true }))) return false;
+
+    return await ReactiveCache.getImpersonatedUser({ userId });
+  },
+
+  async setUsersTeamsTeamDisplayName(teamId, teamDisplayName) {
+    check(teamId, String);
+    check(teamDisplayName, String);
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      for (const user of await ReactiveCache.getUsers({
+        teams: { $elemMatch: { teamId } },
+      })) {
+        await Users.updateAsync(
+          { _id: user._id, teams: { $elemMatch: { teamId } } },
+          { $set: { 'teams.$.teamDisplayName': teamDisplayName } },
+        );
+      }
+    }
+  },
+
+  async setUsersOrgsOrgDisplayName(orgId, orgDisplayName) {
+    check(orgId, String);
+    check(orgDisplayName, String);
+    if ((await ReactiveCache.getCurrentUser())?.isAdmin) {
+      for (const user of await ReactiveCache.getUsers({
+        orgs: { $elemMatch: { orgId } },
+      })) {
+        await Users.updateAsync(
+          { _id: user._id, orgs: { $elemMatch: { orgId } } },
+          { $set: { 'orgs.$.orgDisplayName': orgDisplayName } },
+        );
+      }
+    }
+  },
+});
+
+// #5351: honour the Organization setting "Automatically add users with the
+// domain name". Each org may store a domain in `orgAutoAddUsersWithDomainName`;
+// when a new user signs up, every org whose configured domain matches the
+// domain part of the user's email(s) must gain that user as a member. The
+// membership shape is the same `{ orgId, orgDisplayName }` used everywhere else
+// (see editUser / admin People UI). This mutates `user.orgs` in place BEFORE the
+// document is inserted, so the membership is stored atomically with the user and
+// existing entries are never duplicated. Failures are logged, never fatal to
+// sign-up.
+// #5339: OAUTH2_DEFAULT_ORGANIZATION (or Admin Panel / People / OAuth2) names
+// an EXISTING organization - by short name, display name or id - that every
+// account created by an OAuth2/OIDC login joins. Users of one identity
+// provider (a Nextcloud, say) often share no email domain, so the domain rule
+// above cannot group them. An organization that does not exist is not created:
+// the login goes on without it and the log says why.
+const addDefaultOauthOrganization = async user => {
+  try {
+    const name = String(authEnv('OAUTH2_DEFAULT_ORGANIZATION') || '').trim();
+    if (!name) return;
+    const org = (await ReactiveCache.getOrgs({ $or: [{ orgShortName: name }, { orgDisplayName: name }, { _id: name }] }))[0];
+    if (!org) {
+      console.warn(`OAUTH2_DEFAULT_ORGANIZATION: no organization "${name}"; the new user joins none.`);
+      return;
+    }
+    if ((user.orgs || []).some(o => o && o.orgId === org._id)) return;
+    user.orgs = (user.orgs || []).concat({ orgId: org._id, orgDisplayName: org.orgDisplayName || org.orgShortName || org._id });
+  } catch (error) {
+    console.error('addDefaultOauthOrganization failed:', error);
+  }
+};
+
+const autoAddOrgsByDomain = async user => {
+  try {
+    const emails = Array.isArray(user.emails) ? user.emails : [];
+    if (!emails.length) return;
+
+    const orgs = await ReactiveCache.getOrgs({
+      orgAutoAddUsersWithDomainName: { $exists: true, $nin: [null, ''] },
+    });
+    if (!orgs || !orgs.length) return;
+
+    const seen = new Set(
+      (user.orgs || []).map(o => o && o.orgId).filter(Boolean),
+    );
+    const toAdd = [];
+    emails.forEach(e => {
+      orgsToAutoAddForEmail(e && e.address, orgs).forEach(orgId => {
+        if (seen.has(orgId)) return;
+        seen.add(orgId);
+        const org = orgs.find(o => o._id === orgId);
+        toAdd.push({
+          orgId,
+          orgDisplayName:
+            (org && (org.orgDisplayName || org.orgShortName)) || orgId,
+        });
+      });
+    });
+
+    if (toAdd.length) {
+      user.orgs = (user.orgs || []).concat(toAdd);
+    }
+  } catch (error) {
+    console.error('autoAddOrgsByDomain failed:', error);
+  }
+};
+
+Accounts.onCreateUser(async (options, user) => {
+  // Only existence matters: the very first account becomes administrator.
+  // Counting every user made sign-up decode the entire users collection on
+  // FerretDB; a restored 14k-user instance took almost a minute, so the client
+  // timed out and showed failure although the account was eventually created.
+  const existingUser = await ReactiveCache.getUser(
+    {},
+    { fields: { _id: 1 } },
+  );
+  user.isAdmin = !existingUser;
+  // ExApp identities receive only explicitly configured admin privileges.
+  if (process.env.NEXTCLOUD_EXAPP === 'true' && user.services?.nextcloud) {
+    user.isAdmin = require('/server/lib/nextcloudIdentity').nextcloudAdmin(user.services.nextcloud.id);
+  }
+  const creation = adminCreation.get();
+  if (creation) {
+    user.isAdmin = creation.isAdmin;
+    user.loginDisabled = creation.loginDisabled;
+    user.profile = { ...user.profile, fullname: creation.fullname, initials: creation.initials };
+    user.importUsernames = creation.importUsernames;
+    user.orgs = creation.orgs;
+    user.teams = creation.teams;
+  }
+
+  // A custom login handler is allowed to supply a valid user document without
+  // a `services` object. WeKan's CAS handler does exactly that: its verified
+  // username, email, profile and authenticationMethod are top-level fields.
+  // Only enter the OIDC normalization path when OIDC service data exists.
+  // #3204
+  //
+  // A login through one of Meteor's own accounts packages (Google, GitHub,
+  // Facebook, Twitter/X, Meteor Developer, Weibo, Meetup) is normalised by
+  // server/lib/oauthProviders.js with the same fail-closed linking rule as
+  // OIDC below. An existing account comes back ready to return; a brand-new
+  // one falls through to the ordinary registration checks further down.
+  // Sandstorm supplies its trusted display name in options, like Meteor's
+  // social adapters. Our onCreateUser hook must copy it explicitly.
+  if (user.services?.sandstorm) {
+    user.profile = { ...(user.profile || {}), fullname: options.profile?.fullname || user.services.sandstorm.name };
+  }
+  const oauthProvider = providerOfUser(user);
+  if (oauthProvider) {
+    const created = await onCreateProviderUser(options, user, oauthProvider);
+    if (created.existing) return created.user;
+  } else if (options && options.passwordless === true && user.services && !Object.keys(user.services).length) {
+    // accounts-passwordless: the account is made by requestLoginTokenForUser
+    // before the first code is e-mailed, with no service data yet.
+    user.authenticationMethod = 'passwordless';
+  }
+
+  if (user.services?.oidc) {
+    let email = user.services.oidc.email;
+    if (Array.isArray(email)) {
+      email = email.shift();
+    }
+    email = (email || '').toLowerCase();
+    user.username = user.services.oidc.username || user.services.oidc.id || email.split('@')[0] || Random.id();
+    user.emails = [{ address: email, verified: true }];
+
+    if (user.username.includes('/') || email.includes('/')) {
+      return false;
+    }
+
+    const fullname = user.services.oidc.fullname || user.username;
+    const initials = fullname
+      .split(/\s+/)
+      .reduce((memo, word) => memo + word[0], '')
+      .toUpperCase();
+    user.profile = {
+      initials,
+      fullname,
+      boardView: 'board-view-swimlanes',
+    };
+    user.authenticationMethod = 'oauth2';
+
+    // #5876: optional OAUTH2_ADMIN_GROUPS (mirrors LDAP_SYNC_ADMIN_GROUPS).
+    // When the env var is set (comma- and/or whitespace-separated list of group
+    // names), make the new OIDC user a Wekan admin iff their OIDC `groups` claim
+    // intersects that list. The groups claim may be an array of strings OR an
+    // array of objects carrying a displayName (see wekan-oidc/oidc_server.js),
+    // so handle both forms. When OAUTH2_ADMIN_GROUPS is empty/unset (default),
+    // leave user.isAdmin untouched so existing behavior is unchanged.
+    const oauth2AdminGroups = (authEnv('OAUTH2_ADMIN_GROUPS') || '')
+      .split(/[\s,]+/)
+      .map(name => name.trim())
+      .filter(name => name.length > 0);
+    if (oauth2AdminGroups.length) {
+      const oidcGroups = Array.isArray(user.services.oidc.groups)
+        ? user.services.oidc.groups
+        : [];
+      const userGroupNames = oidcGroups
+        .map(group => {
+          if (typeof group === 'string') return group;
+          if (group && typeof group === 'object') return group.displayName || group.name || '';
+          return '';
+        })
+        .filter(name => name.length > 0);
+      user.isAdmin = userGroupNames.some(name => oauth2AdminGroups.includes(name));
+    }
+
+    // SECURITY (GHSA-mp7g-hj5q-gxhq): Do not silently take over an existing
+    // local account from an OIDC login.
+    //
+    // The previous code unconditionally merged the incoming OIDC identity into
+    // any existing account whose email OR username matched the (attacker
+    // controlled) OIDC claims, with no ownership check and no email
+    // verification. That allowed full account takeover: an attacker presenting
+    // a matching `email`/`username` claim inherited the victim's _id, boards,
+    // attachments, API tokens and admin status.
+    //
+    // Fail closed, mirroring LDAP_MERGE_EXISTING_USERS in wekan-ldap:
+    //   * Match an existing account by email only (never by username — a
+    //     username collision carries no proof of email ownership).
+    //   * Auto-linking is opt-in via OAUTH2_MERGE_EXISTING_USERS and is OFF by
+    //     default, so the default deployment never merges.
+    //   * Even when opted in, the OIDC provider must assert email_verified.
+    //   * Otherwise reject the login instead of creating/merging an account,
+    //     so no takeover and no confusing duplicate occurs.
+    const existingUser = await ReactiveCache.getUser({
+      'emails.address': email,
+    });
+
+    // #4736: optionally refuse to auto-create accounts for unknown OIDC logins.
+    // When OAUTH2_AUTO_REGISTRATION is 'false', a first-time OIDC login that does
+    // not already match a Wekan account (by verified email — the secure key the
+    // merge logic below also uses; never by username, to avoid the takeover /
+    // collision pitfalls documented above) is rejected instead of silently
+    // creating a new account. This lets an instance allow only already-
+    // provisioned users (e.g. synced from LDAP) to log in via OAuth2. Default
+    // keeps the previous behaviour (auto-create on first login).
+    const autoRegistrationDisabled =
+      authEnv('OAUTH2_AUTO_REGISTRATION') === 'false';
+    if (autoRegistrationDisabled && !existingUser) {
+      throw new Meteor.Error(
+        'oidc-registration-disabled',
+        'OIDC login succeeded, but automatic registration is disabled ' +
+          '(OAUTH2_AUTO_REGISTRATION=false) and no existing Wekan account has ' +
+          'this email. Ask an administrator to create the account first.',
+      );
+    }
+
+    if (!existingUser) {
+      await autoAddOrgsByDomain(user);
+      await addDefaultOauthOrganization(user);
+      return user;
+    }
+
+    const mergeExistingUsers =
+      authEnv('OAUTH2_MERGE_EXISTING_USERS') === 'true';
+    const emailVerified = user.services.oidc.email_verified === true;
+    if (!mergeExistingUsers || !emailVerified) {
+      throw new Meteor.Error(
+        'oidc-email-already-in-use',
+        'OIDC login succeeded, but there is already a Wekan account with this ' +
+          'email. Account linking is disabled; set OAUTH2_MERGE_EXISTING_USERS=true ' +
+          '(and ensure the provider sends email_verified) to allow it.',
+      );
+    }
+
+    const service = Object.keys(user.services)[0];
+    existingUser.services[service] = user.services[service];
+    existingUser.emails = user.emails;
+    existingUser.username = user.username;
+    // #4560 ("User Profile is reset when changing the authentication method
+    // from LDAP to OIDC"): merge the profile, do not replace it. The previous
+    // wholesale `existingUser.profile = user.profile` re-inserted the linked
+    // account with ONLY the freshly built OIDC profile (initials, fullname,
+    // boardView), wiping profile.avatarUrl, profile.templatesBoardId and the
+    // template swimlane ids, language, notification/preference fields, etc. —
+    // the reporter's "templates and avatars disappeared". Keep every existing
+    // profile field, fill gaps from the OIDC-derived profile, and take the
+    // provider's fullname/initials only when the provider actually asserted a
+    // fullname (otherwise user.profile.fullname is just a fallback to the
+    // username and must not overwrite a real stored name).
+    existingUser.profile = {
+      ...user.profile,
+      ...(existingUser.profile || {}),
+    };
+    if (user.services.oidc.fullname) {
+      existingUser.profile.fullname = user.profile.fullname;
+      existingUser.profile.initials = user.profile.initials;
+    }
+    existingUser.authenticationMethod = user.authenticationMethod;
+
+    // Meteor inserts the returned existingUser again, under the same _id. Remove
+    // it without the hooks: Users.after.remove is the account-deletion cleanup,
+    // and it would take this user off every board, card and team just before
+    // the account comes back, so a merged login lost all of its boards.
+    await Meteor.users.direct.removeAsync({ _id: user._id });
+    await Meteor.users.direct.removeAsync({ _id: existingUser._id });
+    return existingUser;
+  }
+
+  if (options.from === 'admin') {
+    user.createdThroughApi = true;
+    return user;
+  }
+
+  // #5351: auto-add this user to organizations whose configured domain matches
+  // their email domain. Applies to every non-admin sign-up path below (password
+  // registration, LDAP, invitation-code); admin-created users are handled above
+  // where the admin sets orgs explicitly.
+  await autoAddOrgsByDomain(user);
+
+  const disableRegistration = (await ReactiveCache.getCurrentSetting()).disableRegistration;
+  if (disableRegistration && options && options.ldap) {
+    user.authenticationMethod = 'ldap';
+    return user;
+  }
+
+  if (!disableRegistration) {
+    return user;
+  }
+
+  if (!options || !options.profile) {
+    throw new Meteor.Error('error-invitation-code-blank', 'The invitation code is required');
+  }
+  const invitationCode = await ReactiveCache.getInvitationCode({
+    code: options.profile.invitationcode,
+    email: options.email,
+    valid: true,
+  });
+  if (!invitationCode) {
+    // A wrong code is what guessing looks like (InviteBleed); a typo looks the
+    // same, so it is 'detected', and the fold shows a count, not a row each.
+    try {
+      require('/server/lib/securityLog').record({
+        key: 'brute.invite', action: 'detected', source: 'register:invitation-code',
+        detail: 'Sign-up with an invitation code that does not exist for that email.',
+      });
+    } catch (e) { /* logging must never break the guard */ }
+    throw new Meteor.Error('error-invitation-code-not-exist', "The invitation code doesn't exist");
+  }
+
+  user.profile = {
+    icode: options.profile.invitationcode,
+    boardView: 'board-view-swimlanes',
+  };
+
+  // #4043: do NOT delete the invitation code here — this hook runs BEFORE the
+  // account insert is committed, so a failed insert (duplicate username/email,
+  // validation error) used to destroy the code anyway and every retry got
+  // "The invitation code doesn't exist". Consumption is handled after a
+  // SUCCESSFUL insert by Users.after.insert, which marks the code used; and a
+  // re-invite now regenerates a stale code (models/lib/invitationCodeEmail.js).
+  return user;
+});
+
+let notificationCleanupIntervalId = null;
+
+const runNotificationCleanup = async function runNotificationCleanup() {
+  const envRemoveAge =
+    process.env.NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE;
+  const defaultRemoveAge = 2;
+  const removeAge = parseInt(envRemoveAge, 10) || defaultRemoveAge;
+  const now = new Date();
+
+  // #5685: only scan users that actually have notifications, and prune each
+  // user's stale notifications in a SINGLE awaited `$pull … $in` instead of one
+  // un-awaited `removeNotification()` per entry. That collapses K Users-collection
+  // writes (and the K publication observer re-runs they triggered — the churn
+  // behind the "Removed nonexistent document" crash) into one.
+  const users = await ReactiveCache.getUsers({
+    'profile.notifications': { $exists: true, $ne: [] },
+  });
+  // #6533: the cap is a BACKSTOP for the array the rule above cannot shrink.
+  // Only READ notifications are ever pruned, so a user who does not clear their
+  // tray grows `profile.notifications` without limit - and every new
+  // notification is an `$addToSet` that rewrites that whole array inside the user
+  // document. On FerretDB's SQLite backend, which has one writer, those rewrites
+  // queue and start failing with SQLITE_BUSY while FerretDB burns CPU scanning
+  // the array. See models/lib/notificationCleanup.js.
+  const maxPerUser = notificationCapFromEnv(process.env);
+  for (const user of users) {
+    const notifications = user.profile && user.profile.notifications;
+    const activityIds = expiredNotificationActivityIds(
+      notifications,
+      removeAge,
+      now,
+    );
+    // What the array would be after the $pull, so the cap is applied to the
+    // result rather than to a length that is about to shrink anyway.
+    const remaining = activityIds.length
+      ? (notifications || []).filter(n => !(n && activityIds.includes(n.activity)))
+      : notifications;
+    const kept = cappedNotifications(remaining, maxPerUser);
+    if (activityIds.length === 0 && kept === null) continue;
+    try {
+      // ONE write per user either way. When the cap applies, `$set` replaces the
+      // array outright - a `$pull` for the overflow would need the entries it is
+      // removing listed, and the point is that there are too many of them.
+      await Users.updateAsync(user._id, kept !== null
+        ? { $set: { 'profile.notifications': kept } }
+        : {
+            $pull: {
+              'profile.notifications': { activity: { $in: activityIds } },
+            },
+          });
+    } catch (error) {
+      console.error(
+        'Notification cleanup: failed to prune notifications for user',
+        user._id,
+        error,
+      );
+    }
+  }
+};
+
+const startNotificationCleanup = debounce(
+  function startNotificationCleanupDebounced() {
+    if (notificationCleanupIntervalId) {
+      return;
+    }
+
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    Meteor.defer(() => {
+      runNotificationCleanup().catch(error => {
+        console.error('Notification cleanup failed:', error);
+      });
+    });
+
+    notificationCleanupIntervalId = Meteor.setInterval(() => {
+      runNotificationCleanup().catch(error => {
+        console.error('Notification cleanup failed:', error);
+      });
+    }, oneDayMs);
+  },
+  500,
+);
+
+// Repair avatar URLs left pointing at a deleted legacy CollectionFS avatar after
+// a CFS -> Meteor-Files migration. The user's profile.avatarUrl is still the
+// legacy '/cfs/files/avatars/<oldId>' form, but that filerecord was deleted by
+// the migration and the avatar now lives in Meteor-Files under a new id, so the
+// avatar renders broken. Point profile.avatarUrl at the user's migrated
+// Meteor-Files avatar. Idempotent: once rewritten the URL no longer matches.
+async function repairLegacyAvatarUrls() {
+  try {
+    let repaired = 0;
+    const cursor = Users.find(
+      { 'profile.avatarUrl': { $regex: '/cfs/files/avatars/' } },
+      { fields: { _id: 1, 'profile.avatarUrl': 1 } },
+    );
+    await cursor.forEachAsync(async user => {
+      const url = (user.profile && user.profile.avatarUrl) || '';
+      const match = url.match(/\/avatars\/([^/?#-]+)/);
+      const oldId = match && match[1];
+
+      let avatar = null;
+      // 1) Precise: the migration stamped the source id it came from, so we can
+      //    repoint to the exact avatar that replaced this one.
+      if (oldId) {
+        avatar = await Avatars.collection.findOneAsync(
+          { 'meta.migratedFromId': oldId },
+          { fields: { _id: 1 } },
+        );
+      }
+      // 2) Best-effort for avatars migrated before that stamp existed: the user's
+      //    OWN migrated avatar (matched strictly by userId, newest first) — never
+      //    another user's avatar.
+      if (!avatar) {
+        avatar =
+          (await Avatars.collection.findOneAsync(
+            { userId: user._id, 'meta.source': 'storage-migrate' },
+            { sort: { uploadedAtOstrio: -1 }, fields: { _id: 1 } },
+          )) ||
+          (await Avatars.collection.findOneAsync(
+            { userId: user._id },
+            { sort: { uploadedAtOstrio: -1 }, fields: { _id: 1 } },
+          ));
+      }
+
+      if (avatar && avatar._id) {
+        await Users.updateAsync(user._id, {
+          $set: { 'profile.avatarUrl': `/cdn/storage/avatars/${avatar._id}` },
+        });
+        repaired += 1;
+      }
+    });
+    if (repaired > 0) {
+      console.log(`[users] Repaired ${repaired} legacy avatar URL(s) to migrated Meteor-Files avatars.`);
+    }
+  } catch (error) {
+    console.error('[users] Failed to repair legacy avatar URLs:', error);
+  }
+}
+
+Meteor.startup(async () => {
+  // #6794: the list sort options ('-modifiedAt', 'title', ...) need one
+  // single-field index per field. They were passed as the strings themselves,
+  // which indexed fields named "-modifiedAt", "-title" and "-sort" and
+  // re-created all six at every start (models/lib/indexKeys.cjs). Ensure the
+  // real ones, and drop those leftovers.
+  const { listSortIndexKeys, straySortIndexNames } = require('/models/lib/indexKeys.cjs');
+  for (const key of listSortIndexKeys(allowedSortValues)) {
+    await ensureIndex(Lists, key);
+  }
+  try {
+    const raw = Lists.rawCollection();
+    for (const name of straySortIndexNames(await raw.indexes(), allowedSortValues)) {
+      await raw.dropIndex(name);
+      console.log(`WeKan: dropped index "${name}" on lists: it indexed a field that does not exist`);
+    }
+  } catch (e) {
+    // No collection yet, or another WeKan process dropped it first: fine.
+    if (!/ns not found|index not found|NamespaceNotFound|IndexNotFound/i.test(String(e && (e.codeName || e.message)))) {
+      console.error('WeKan: could not drop the stray list sort indexes:', e && e.message);
+    }
+  }
+  await ensureIndex(Users, { modifiedAt: -1 });
+  // Admin Panel / People pages users newest-first and counts them with the same
+  // selector (server/publications/people.js, getUsersCollectionCount,
+  // getPeoplePageIds). Without these, every page of an instance with tens of
+  // thousands of users sorted the WHOLE collection in memory to hand back ten
+  // rows, and each filter counted by scanning it. The filters are compound with
+  // `createdAt` so one index serves both the count and the page it belongs to.
+  await ensureIndex(Users, { createdAt: -1 });
+  await ensureIndex(Users, { loginDisabled: 1, createdAt: -1 });
+  await ensureIndex(Users, { isAdmin: 1, createdAt: -1 });
+  await ensureIndex(Users, { 'orgs.orgId': 1, createdAt: -1 });
+  await ensureIndex(Users, { 'services.accounts-lockout.unlockTime': 1 });
+  Meteor.defer(() => {
+    repairLegacyAvatarUrls();
+  });
+  Meteor.defer(() => {
+    startNotificationCleanup();
+  });
+});
+
+Users.after.update(function(userId, user, fieldNames) {
+  if (!fieldNames.includes('profile')) return;
+
+  function getStarredBoardsIds(doc) {
+    const starredBoards = doc.profile && doc.profile.starredBoards;
+    return Array.isArray(starredBoards) ? starredBoards : [];
+  }
+
+  const oldIds = getStarredBoardsIds(this.previous);
+  const newIds = getStarredBoardsIds(user);
+
+  function incrementBoards(boardsIds, inc) {
+    boardsIds.forEach(boardId => {
+      Boards.updateAsync(boardId, { $inc: { stars: inc } }).catch(error => {
+        console.error('Failed to update board stars:', error);
+      });
+    });
+  }
+
+  incrementBoards(oldIds.filter(x => !newIds.includes(x)), -1);
+  incrementBoards(newIds.filter(x => !oldIds.includes(x)), +1);
+});
+
+const fakeUserId = new Meteor.EnvironmentVariable();
+const getUserId = CollectionHooks.getUserId;
+CollectionHooks.getUserId = () => {
+  return fakeUserId.get() || getUserId();
+};
+
+// NOTE: New users no longer get an auto-created "Templates" board at signup
+// (#2339, #5850). The templates-container board is now created lazily on first
+// use via the `ensureTemplatesBoard` Meteor method below, so accounts created
+// through any authentication method (password, LDAP, OAuth2) start clean and
+// the container is only materialized when a template is actually saved/copied.
+
+Users.after.insert(async (userId, doc) => {
+  doc = await ReactiveCache.getUser(doc._id);
+  if (doc.createdThroughApi) {
+    await Users.updateAsync(doc._id, { $set: { createdThroughApi: '' } });
+    return;
+  }
+
+  const disableRegistration = (await ReactiveCache.getCurrentSetting()).disableRegistration;
+  if (doc.authenticationMethod !== 'ldap' && disableRegistration) {
+    let invitationCode = null;
+    // #6620: authenticationMethod is only set for oauth2/ldap signups (see
+    // ATCreateUserServer/enrollOrLoginOidcUser above) - a normal
+    // password/invitation signup leaves it undefined, and calling
+    // .toLowerCase() on that crashed here as an unhandledRejection
+    // ("TypeError: string.toLowerCase is not a function") every time
+    // disableRegistration was on. Likewise doc.emails may be empty for an
+    // account created without an email. Both are guarded so a missing value
+    // just falls through to the invitation-code branch below instead of
+    // throwing.
+    if (
+      typeof doc.authenticationMethod === 'string' &&
+      doc.authenticationMethod.toLowerCase() === 'oauth2'
+    ) {
+      const oauthEmail = doc.emails && doc.emails[0] && doc.emails[0].address;
+      invitationCode = await ReactiveCache.getInvitationCode({
+        email: typeof oauthEmail === 'string' ? oauthEmail.toLowerCase() : '',
+        valid: true,
+      });
+    } else {
+      invitationCode = await ReactiveCache.getInvitationCode({
+        code: doc.profile.icode,
+        valid: true,
+      });
+    }
+    if (!invitationCode) {
+      throw new Meteor.Error('error-invitation-code-not-exist');
+    } else {
+      for (const boardId of invitationCode.boardsToBeInvited) {
+        const board = await ReactiveCache.getBoard(boardId);
+        const memberIndex = board.members.findIndex(m => m.userId === doc._id);
+        if (memberIndex >= 0) {
+          await Boards.updateAsync(boardId, { $set: { [`members.${memberIndex}.isActive`]: true } });
+        } else {
+          await Boards.updateAsync(boardId, {
+            $push: {
+              members: {
+                userId: doc._id,
+                isAdmin: false,
+                isActive: true,
+                isNoComments: false,
+                isCommentOnly: false,
+                isWorker: false,
+                isNormalAssignedOnly: false,
+                isCommentAssignedOnly: false,
+                isReadOnly: false,
+                isReadAssignedOnly: false,
+              },
+            },
+          });
+        }
+      }
+      if (!doc.profile) {
+        doc.profile = {};
+      }
+      doc.profile.invitedBoards = invitationCode.boardsToBeInvited;
+      await Users.updateAsync(doc._id, { $set: { profile: doc.profile } });
+      await InvitationCodes.updateAsync(invitationCode._id, { $set: { valid: false } });
+    }
+  }
+});
+
+WebApp.handlers.get('/api/user', async function(req, res) {
+  try {
+    Authentication.checkLoggedIn(req.userId);
+    const data = await ReactiveCache.getUser({ _id: req.userId });
+    delete data.services;
+
+    // StaleBleed sibling (2026-10-02): a dotted 'members.userId' match also
+    // finds boards the caller was REMOVED from (an inactive member entry), so
+    // a removed member's /api/user kept listing those board ids.
+    let boards = await ReactiveCache.getBoards(
+      { type: 'board', members: { $elemMatch: { userId: req.userId, isActive: true } } },
+      { fields: { _id: 1, members: 1 } },
+    );
+    boards = boards.map(b => {
+      const u = b.members.find(m => m.userId === req.userId);
+      delete u.userId;
+      u.boardId = b._id;
+      return u;
+    });
+
+    data.boards = boards;
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.get('/api/users', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const usersCursor = Meteor.users.find({}, { fields: { _id: 1, username: 1 } });
+    const users = typeof usersCursor.fetchAsync === 'function' ? await usersCursor.fetchAsync() : usersCursor.fetch();
+    sendJsonResult(res, {
+      code: 200,
+      data: users.map(doc => ({ _id: doc._id, username: doc.username })),
+    });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+// GHSA-6qpx-x7vr-p9w6: what an admin API answer may carry about a user.
+//
+// `GET /api/users/:userId` and `PUT /api/users/:userId` serialised the whole
+// Meteor user document, which means `services.password.bcrypt` - an offline
+// crackable password hash - and `services.resume.loginTokens`, the hashes of
+// every live session with the time each began. Both endpoints are admin-only
+// and that was never the problem: the payload was. Walking the ids that
+// `GET /api/users` returns handed an admin, or anyone holding an admin token,
+// the credential material of the whole instance.
+//
+// `GET /api/user` (the self view) has always done `delete data.services`; the
+// list endpoint has always projected down to `_id` and `username`. These two
+// were the inconsistency, so they strip the same subtree - and `sessionData`
+// with it, which is server-side state no API answer needs.
+function withoutSecrets(user) {
+  if (!user || typeof user !== 'object') return user;
+  delete user.services;
+  delete user.sessionData;
+  return user;
+}
+
+WebApp.handlers.get('/api/users/:userId', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    let id = req.params.userId;
+    let user = await ReactiveCache.getUser({ _id: id });
+    if (!user) {
+      user = await ReactiveCache.getUser({ username: id });
+      id = user._id;
+    }
+
+    let boards = await ReactiveCache.getBoards(
+      { type: 'board', 'members.userId': id },
+      { fields: { _id: 1, members: 1 } },
+    );
+    boards = boards.map(b => {
+      const u = b.members.find(m => m.userId === id);
+      delete u.userId;
+      u.boardId = b._id;
+      return u;
+    });
+
+    user.boards = boards;
+    sendJsonResult(res, { code: 200, data: withoutSecrets(user) });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.put('/api/users/:userId', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const id = req.params.userId;
+    const action = req.body.action;
+    let data = await ReactiveCache.getUser({ _id: id });
+    if (data !== undefined) {
+      if (action === 'takeOwnership') {
+        const boards = await ReactiveCache.getBoards(
+          { 'members.userId': id, 'members.isAdmin': true },
+          { sort: { sort: 1 } },
+        );
+        data = [];
+        for (const board of boards) {
+          if (board.hasMember(req.userId)) {
+            await board.removeMember(req.userId);
+          }
+          board.changeOwnership(id, req.userId);
+          data.push({ _id: board._id, title: board.title });
+        }
+      } else {
+        if (action === 'disableLogin' && id !== req.userId) {
+          await Users.updateAsync({ _id: id }, { $set: { loginDisabled: true, 'services.resume.loginTokens': [] } });
+        } else if (action === 'enableLogin') {
+          await Users.updateAsync({ _id: id }, { $set: { loginDisabled: false } });
+        }
+        data = withoutSecrets(await ReactiveCache.getUser(id));
+      }
+    }
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.post('/api/boards/:boardId/members/:userId/add', async function(req, res) {
+  try {
+    const userId = req.params.userId;
+    const boardId = req.params.boardId;
+    const action = req.body.action;
+    // Issue #5998: adding a board member requires board admin (or site admin).
+    // Awaited + explicit status: a denied caller gets a clean 401/403 instead of
+    // an un-awaited rejection that previously surfaced as an HTTP 503.
+    if (!req.userId) {
+      sendJsonResult(res, { code: 401, data: { error: 'Unauthorized' } });
+      return;
+    }
+    const authBoard = await ReactiveCache.getBoard(boardId);
+    const isBoardAdmin = allowIsBoardAdmin(req.userId, authBoard);
+    const isSiteAdmin = isBoardAdmin
+      ? true
+      : !!(await ReactiveCache.getUser({ _id: req.userId, isAdmin: true }));
+    if (!isBoardAdmin && !isSiteAdmin) {
+      sendJsonResult(res, { code: 403, data: { error: 'Only a board admin can add board members' } });
+      return;
+    }
+    // Issue #5998: accept a single named `role` (admin/commentOnly/...)
+    // as an alternative to the eight boolean flags. When `role` is present it
+    // wins; otherwise the individual flags are used as before.
+    let roleFlags = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'role')) {
+      roleFlags = boardMemberRoleToFlags(req.body.role);
+      if (roleFlags === null) {
+        sendJsonResult(res, { code: 400, data: { error: `invalid role: ${req.body.role}` } });
+        return;
+      }
+    }
+    const {
+      isAdmin,
+      isNoComments,
+      isCommentOnly,
+      isWorker,
+      isNormalAssignedOnly,
+      isCommentAssignedOnly,
+      isReadOnly,
+      isReadAssignedOnly,
+    } = roleFlags === null ? req.body : roleFlags;
+    // HashBleed sibling: with any other action, the user document read below
+    // was sent back whole - password hash and login-token hashes included - to
+    // anyone who is admin of some board, which is anyone who can create one.
+    // The user is read to decide, never to answer.
+    if (action !== 'add') {
+      sendJsonResult(res, { code: 400, data: { error: 'action must be "add"' } });
+      return;
+    }
+    const target = await ReactiveCache.getUser(userId);
+    let data;
+    // #1894: do not add a deactivated account to a board.
+    if (target !== undefined && action === 'add' && target.loginDisabled) {
+      sendJsonResult(res, { code: 400, data: { error: 'User is disabled' } });
+      return;
+    }
+    if (target !== undefined && action === 'add') {
+      const boards = await ReactiveCache.getBoards({ _id: boardId });
+      data = [];
+      for (const board of boards) {
+        const hasMember = board.members.some(m => m.userId === userId && m.isActive);
+        if (!hasMember) {
+          // Tolerate both real booleans (from a named `role`) and 'true'/'false'
+          // strings (from individual flag params).
+          const isTrue = value => value === true || String(value).toLowerCase() === 'true';
+          const memberFlags = {
+            isAdmin: isTrue(isAdmin),
+            isNoComments: isTrue(isNoComments),
+            isCommentOnly: isTrue(isCommentOnly),
+            isWorker: isTrue(isWorker),
+            isNormalAssignedOnly: isTrue(isNormalAssignedOnly),
+            isCommentAssignedOnly: isTrue(isCommentAssignedOnly),
+            isReadOnly: isTrue(isReadOnly),
+            isReadAssignedOnly: isTrue(isReadAssignedOnly),
+          };
+          const memberIndex = board.members.findIndex(m => m.userId === userId);
+          if (memberIndex >= 0) {
+            // Re-activate an existing (inactive) member and apply the new flags.
+            const flagSet = { [`members.${memberIndex}.isActive`]: true };
+            for (const [flag, value] of Object.entries(memberFlags)) {
+              flagSet[`members.${memberIndex}.${flag}`] = value;
+            }
+            await Boards.updateAsync(boardId, { $set: flagSet });
+          } else {
+            // Brand-new member: push the member document with its flags applied
+            // atomically. Computing the index after the push would read a stale
+            // in-memory `board.members`, so the flags must be part of the $push.
+            await Boards.updateAsync(boardId, {
+              $push: { members: { userId, isActive: true, ...memberFlags } },
+            });
+          }
+        }
+        data.push({ _id: board._id, title: board.title });
+      }
+    }
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.post('/api/boards/:boardId/members/:userId/remove', async function(req, res) {
+  try {
+    const userId = req.params.userId;
+    const boardId = req.params.boardId;
+    const action = req.body.action;
+    // Issue #5998: removing a board member requires board admin (or site admin).
+    if (!req.userId) {
+      sendJsonResult(res, { code: 401, data: { error: 'Unauthorized' } });
+      return;
+    }
+    const authBoard = await ReactiveCache.getBoard(boardId);
+    const isBoardAdmin = allowIsBoardAdmin(req.userId, authBoard);
+    const isSiteAdmin = isBoardAdmin
+      ? true
+      : !!(await ReactiveCache.getUser({ _id: req.userId, isAdmin: true }));
+    if (!isBoardAdmin && !isSiteAdmin) {
+      sendJsonResult(res, { code: 403, data: { error: 'Only a board admin can remove board members' } });
+      return;
+    }
+    // HashBleed sibling: with any other action, the user document read below
+    // was sent back whole - password hash and login-token hashes included - to
+    // anyone who is admin of some board, which is anyone who can create one.
+    // The user is read to decide, never to answer.
+    if (action !== 'remove') {
+      sendJsonResult(res, { code: 400, data: { error: 'action must be "remove"' } });
+      return;
+    }
+    const target = await ReactiveCache.getUser(userId);
+    let data;
+    if (target !== undefined && action === 'remove') {
+      const boards = await ReactiveCache.getBoards({ _id: boardId });
+      data = [];
+      for (const board of boards) {
+        const hasMember = board.members.some(m => m.userId === userId && m.isActive);
+        if (hasMember) {
+          const memberIndex = board.members.findIndex(m => m.userId === userId);
+          if (memberIndex >= 0) {
+            const member = board.members[memberIndex];
+            const activeAdmins = board.members.filter(m => m.isActive && m.isAdmin);
+            const allowRemove = !member.isAdmin || activeAdmins.length > 1;
+            if (!allowRemove) {
+              await Boards.updateAsync(boardId, { $set: { [`members.${memberIndex}.isActive`]: true } });
+            } else {
+              await Boards.updateAsync(boardId, {
+                $set: {
+                  [`members.${memberIndex}.isActive`]: false,
+                  [`members.${memberIndex}.isAdmin`]: false,
+                },
+              });
+            }
+          }
+        }
+        data.push({ _id: board._id, title: board.title });
+      }
+    }
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.post('/api/users/', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const id = await Accounts.createUser({
+      username: req.body.username,
+      email: req.body.email,
+      password: req.body.password,
+      from: 'admin',
+    });
+    sendJsonResult(res, { code: 200, data: { _id: id } });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+/**
+ * @operation delete_user
+ * @summary Delete a user and confirm that one account was removed
+ *
+ * @description Global administrators receive the deleted id; a missing id
+ * returns HTTP 404 without reporting a deletion.
+ *
+ * @param {string} userId the id of the user to delete
+ * @return_type {_id: string}
+ * @response 404 {error: string} No user matched the requested id.
+ */
+WebApp.handlers.delete('/api/users/:userId', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const id = req.params.userId;
+    const removed = await Meteor.users.removeAsync({ _id: id });
+    if (removed === 0) {
+      sendJsonResult(res, { code: 404, data: { error: 'User not found' } });
+      return;
+    }
+    if (removed !== 1) {
+      throw new Error(`Unexpected user deletion count: ${removed}`);
+    }
+    sendJsonResult(res, { code: 200, data: { _id: id } });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.post('/api/createtoken/:userId', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const id = req.params.userId;
+    check(id, String);
+    const reason = req.body && typeof req.body.reason === 'string'
+      ? req.body.reason.trim()
+      : '';
+    if (!reason) {
+      sendJsonResult(res, {
+        code: 400,
+        data: { error: 'A reason is required when creating a token for another user' },
+      });
+      return;
+    }
+    if (!(await ReactiveCache.getUser(id))) {
+      sendJsonResult(res, { code: 404, data: { error: 'User not found' } });
+      return;
+    }
+    const token = Accounts._generateStampedLoginToken();
+    await ImpersonatedUsers.insertAsync({
+      adminId: req.userId,
+      userId: id,
+      reason: `restCreateToken: ${reason.slice(0, 500)}`,
+    });
+    await require('/server/lib/activeUser').insertActiveLoginToken(id, token);
+
+    sendJsonResult(res, {
+      code: 200,
+      data: {
+        _id: id,
+        authToken: token.token,
+      },
+    });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+WebApp.handlers.post('/api/deletetoken', async function(req, res) {
+  try {
+    const { userId, token } = req.body;
+    await Authentication.checkUserId(req.userId);
+
+    let data = {
+      message: 'Expected a userId to be set but received none.',
+    };
+
+    if (token && userId) {
+      Accounts.destroyToken(userId, token);
+      data.message = `Delete token: [${token}] from user: ${userId}`;
+    } else if (userId) {
+      check(userId, String);
+      await Users.updateAsync(
+        { _id: userId },
+        { $set: { 'services.resume.loginTokens': [] } },
+      );
+      data.message = `Delete all token from user: ${userId}`;
+    }
+
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+const sanitizeUserForSearch = userData => {
+  const safeFields = {
+    _id: 1,
+    username: 1,
+    'profile.fullname': 1,
+    'profile.avatarUrl': 1,
+    'profile.initials': 1,
+    'emails.address': 1,
+    'emails.verified': 1,
+    authenticationMethod: 1,
+    isAdmin: 1,
+    loginDisabled: 1,
+    teams: 1,
+    orgs: 1,
+  };
+
+  // safeFields lists Mongo-style paths, so 'profile.fullname' has to be read as a NESTED
+  // value: a flat userData['profile.fullname'] lookup is always undefined on a real
+  // document, so `profile` was silently dropped from every search result and the
+  // add-member typeahead (and the #6519 map-to-existing-user picker) showed a blank name
+  // with only the username in brackets. Copy dotted paths into the same nested shape,
+  // still allowlisting exactly the listed leaves and nothing else.
+  const sanitized = {};
+  for (const field of Object.keys(safeFields)) {
+    if (!field.includes('.')) {
+      if (userData[field] !== undefined) {
+        sanitized[field] = userData[field];
+      }
+      continue;
+    }
+    const [parent, leaf] = field.split('.');
+    const parentValue = userData[parent];
+    if (parentValue === undefined || parentValue === null) continue;
+    if (Array.isArray(parentValue)) {
+      // e.g. 'emails.address' and 'emails.verified' -> keep those leaves of every entry.
+      // Indexes are preserved so a second listed leaf merges into the same entry.
+      const existing = Array.isArray(sanitized[parent]) ? sanitized[parent] : [];
+      sanitized[parent] = parentValue.map((entry, i) => {
+        const out = { ...(existing[i] || {}) };
+        if (entry && entry[leaf] !== undefined) out[leaf] = entry[leaf];
+        return out;
+      });
+      continue;
+    }
+    if (parentValue[leaf] === undefined) continue;
+    sanitized[parent] = { ...(sanitized[parent] || {}), [leaf]: parentValue[leaf] };
+  }
+
+  delete sanitized.services;
+  delete sanitized.resume;
+  delete sanitized.email;
+  delete sanitized.createdAt;
+  delete sanitized.modifiedAt;
+  delete sanitized.sessionData;
+  delete sanitized.importUsernames;
+
+  if (process.env.DEBUG === 'true') {
+    console.log('Sanitized user data for search:', Object.keys(sanitized));
+  }
+
+  return sanitized;
+};
+
+Meteor.methods({
+  sanitizeUserForSearch(userData) {
+    check(userData, Object);
+    return sanitizeUserForSearch(userData);
+  },
+
+  async getUsersCollectionCount(query = {}) {
+    check(query, Match.OneOf(Object, null, undefined));
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+
+    // Multitenancy option D (docs/Design/Multitenancy/Multitenancy.md, D.7): the
+    // count has to be scoped the same way the `people` publication is, or a
+    // per-tenant Global Admin would page through their own org's members against
+    // the whole instance's total.
+    const currentUser = await ReactiveCache.getUser(
+      { _id: this.userId },
+      { fields: { isAdmin: 1, orgs: 1 } },
+    );
+
+    if (!tenantAdmin.canOpenAdminPanel(currentUser)) {
+      throw new Meteor.Error('not-authorized', 'Admin access required');
+    }
+
+    const cursor = await ReactiveCache.getUsers(
+      tenantAdmin.peopleScopeSelector(currentUser, safeSelector(query || {}, 'getUsersCollectionCount')), {}, true);
+    return typeof cursor.countAsync === 'function' ? await cursor.countAsync() : cursor.count();
+  },
+
+  // WHICH users are on one page of Admin Panel > People > People, in order.
+  //
+  // The `people` publication sends exactly one page, but the browser holds more
+  // user documents than that page: the logged-in user's own record is always in
+  // minimongo (accounts publishes it), and so is anyone another subscription has
+  // pulled in. The table read the page back with a plain `Users.find(query)`, which
+  // cannot tell those apart from the page - so the admin looking at the list
+  // appeared on EVERY page of it, and each person could be listed more than once.
+  //
+  // The ids are the missing piece: with them the client can render the page the
+  // server actually sent, in the server's order, and nothing else. Only ids are
+  // returned - the documents themselves still arrive through the publication, with
+  // its field list - and the scoping is the same rule module the publication and
+  // the count use, so a per-tenant Global Admin gets their own org's page here too.
+  async getPeoplePageIds(query = {}, limit = 25, skip = 0) {
+    check(query, Match.OneOf(Object, null, undefined));
+    check(limit, Number);
+    check(skip, Match.OneOf(Number, null, undefined));
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+
+    const currentUser = await ReactiveCache.getUser(
+      { _id: this.userId },
+      { fields: { isAdmin: 1, orgs: 1 } },
+    );
+
+    if (!tenantAdmin.canOpenAdminPanel(currentUser)) {
+      throw new Meteor.Error('not-authorized', 'Admin access required');
+    }
+
+    // The same selector, the same sort and the same window as the publication -
+    // anything else would name a different page than the one that was sent.
+    const cursor = await ReactiveCache.getUsers(
+      tenantAdmin.peopleScopeSelector(currentUser, safeSelector(query || {}, 'getPeoplePageIds')),
+      {
+        limit,
+        skip: skip || 0,
+        sort: { createdAt: -1 },
+        fields: { _id: 1 },
+      },
+      true,
+    );
+    const docs = typeof cursor.fetchAsync === 'function'
+      ? await cursor.fetchAsync()
+      : cursor.fetch();
+    return docs.map(doc => doc._id);
+  },
+
+  // #5850: Admin Panel > People > Domains. Returns the list of email-address
+  // domains across all users and the count of users per domain (each user
+  // counted once by their primary email's domain), sorted by count desc then
+  // domain. Admin-only.
+  async getDomainsWithUserCounts() {
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    const currentUser = await ReactiveCache.getUser(
+      { _id: this.userId },
+      { fields: { isAdmin: 1 } },
+    );
+    if (!currentUser || !currentUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Admin access required');
+    }
+
+    const users = await Users.find({}, { fields: { emails: 1 } }).fetchAsync();
+    const counts = {};
+    for (const u of users) {
+      const addr = (u.emails && u.emails[0] && u.emails[0].address) || '';
+      const at = addr.lastIndexOf('@');
+      if (at === -1) continue;
+      const domain = addr.slice(at + 1).toLowerCase().trim();
+      if (!domain) continue;
+      counts[domain] = (counts[domain] || 0) + 1;
+    }
+    return Object.keys(counts)
+      .map(domain => ({ domain, count: counts[domain] }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+  },
+
+  // Paginated / searchable / column-sortable variant of getDomainsWithUserCounts
+  // for the Admin Panel Domains table. The aggregation still scans all users on
+  // the SERVER, but only one small page of rows is returned to the browser
+  // (matching the Board Table view). `paginateDomains` (pure, unit-tested) does
+  // the search + sort + slice; this method only does the auth check and the
+  // domain/count aggregation.
+  async getDomainsWithUserCountsPage(params = {}) {
+    check(params, Match.ObjectIncluding({
+      search: Match.Optional(String),
+      page: Match.Optional(Number),
+      perPage: Match.Optional(Number),
+    }));
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+    const currentUser = await ReactiveCache.getUser(
+      { _id: this.userId },
+      { fields: { isAdmin: 1 } },
+    );
+    if (!currentUser || !currentUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Admin access required');
+    }
+
+    const users = await Users.find({}, { fields: { emails: 1 } }).fetchAsync();
+    const counts = {};
+    for (const u of users) {
+      const addr = (u.emails && u.emails[0] && u.emails[0].address) || '';
+      const at = addr.lastIndexOf('@');
+      if (at === -1) continue;
+      const domain = addr.slice(at + 1).toLowerCase().trim();
+      if (!domain) continue;
+      counts[domain] = (counts[domain] || 0) + 1;
+    }
+    const rows = Object.keys(counts).map(domain => ({
+      domain,
+      count: counts[domain],
+    }));
+
+    // Fixed order (domain ascending) — column-header sorting was removed.
+    return paginateDomains(rows, {
+      search: params.search,
+      page: params.page,
+      perPage: params.perPage,
+    });
+  },
+
+  // Feature #3313 "Shared templates": admin-only.
+  // For every user whose Templates board is NON-EMPTY (contains at least one
+  // shared template board), return the data the Admin Panel needs to group the
+  // users by Organization / Team / email Domain and to list & link their
+  // shared template boards.
+  //
+  // A user's template boards are stored as cards of type 'cardType-linkedBoard'
+  // inside the "Board Templates" swimlane of their Templates container board
+  // (profile.templatesBoardId / profile.boardTemplatesSwimlaneId). Each such
+  // card's `linkedId` points at the actual template board (type 'template-board')
+  // we link to. See server/models/users.js Users.after.insert and
+  // client/components/lists/listBody.js for how these are created.
+  async adminSharedTemplates() {
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+
+    const currentUser = await ReactiveCache.getUser(
+      { _id: this.userId },
+      { fields: { isAdmin: 1 } },
+    );
+    if (!currentUser || !currentUser.isAdmin) {
+      throw new Meteor.Error('not-authorized', 'Admin access required');
+    }
+
+    const users = await ReactiveCache.getUsers(
+      { 'profile.templatesBoardId': { $exists: true, $nin: [null, ''] } },
+      {
+        fields: {
+          username: 1,
+          'profile.fullname': 1,
+          'profile.templatesBoardId': 1,
+          'profile.boardTemplatesSwimlaneId': 1,
+          orgs: 1,
+          teams: 1,
+          emails: 1,
+        },
+      },
+    );
+
+    const result = [];
+    for (const user of users) {
+      const profile = user.profile || {};
+      const templatesBoardId = profile.templatesBoardId;
+      if (!templatesBoardId) continue;
+
+      // Enumerate the user's shared template boards: linked-board cards in the
+      // Board Templates swimlane of their Templates container board.
+      const cardQuery = {
+        boardId: templatesBoardId,
+        type: 'cardType-linkedBoard',
+        archived: false,
+      };
+      if (profile.boardTemplatesSwimlaneId) {
+        cardQuery.swimlaneId = profile.boardTemplatesSwimlaneId;
+      }
+      const cards = await ReactiveCache.getCards(cardQuery, {
+        fields: { title: 1, linkedId: 1, sort: 1 },
+        sort: { sort: 1 },
+      });
+
+      if (!cards || cards.length === 0) continue; // empty Templates board -> exclude
+
+      const templateBoards = [];
+      for (const card of cards) {
+        let slug = '';
+        if (card.linkedId) {
+          const board = await ReactiveCache.getBoard(card.linkedId);
+          if (board) slug = board.slug || '';
+        }
+        templateBoards.push({
+          cardId: card._id,
+          title: card.title || '',
+          boardId: card.linkedId || '',
+          slug,
+        });
+      }
+
+      const emails = (user.emails || []).map(e => e.address).filter(Boolean);
+      const domains = [
+        ...new Set(
+          emails
+            .map(addr => (addr.indexOf('@') >= 0 ? addr.split('@')[1].toLowerCase() : ''))
+            .filter(Boolean),
+        ),
+      ];
+
+      result.push({
+        userId: user._id,
+        username: user.username || '',
+        fullname: (profile.fullname) || '',
+        orgs: (user.orgs || []).map(o => ({
+          orgId: o.orgId,
+          orgDisplayName: o.orgDisplayName,
+        })),
+        teams: (user.teams || []).map(t => ({
+          teamId: t.teamId,
+          teamDisplayName: t.teamDisplayName,
+        })),
+        domains,
+        templateBoards,
+      });
+    }
+
+    return result;
+  },
+
+  async searchUsers(query, boardId) {
+    check(query, String);
+    check(boardId, String);
+
+    if (!this.userId) {
+      throw new Meteor.Error('not-logged-in', 'User must be logged in');
+    }
+
+    const currentUser = await ReactiveCache.getCurrentUser();
+    const board = await ReactiveCache.getBoard(boardId);
+    // Global site admins bypass the board-membership check, mirroring
+    // inviteUserToBoard.
+    if (!currentUser.isAdmin) {
+      const member = board.members.find(memberItem => memberItem.userId === currentUser._id);
+      if (!member || !member.isActive) {
+        throw new Meteor.Error('not-authorized', 'User is not a member of this board');
+      }
+    }
+
+    if (query.length < 2) {
+      return [];
+    }
+
+    const searchRegex = new RegExp(escapeForRegex(query), 'i');
+    const users = await ReactiveCache.getUsers(
+      {
+        $or: [
+          { username: searchRegex },
+          { 'profile.fullname': searchRegex },
+          { 'emails.address': searchRegex },
+        ],
+      },
+      {
+        fields: {
+          _id: 1,
+          username: 1,
+          'profile.fullname': 1,
+          'profile.avatarUrl': 1,
+          'profile.initials': 1,
+          'emails.address': 1,
+          // #6116: needed for the same-org/same-team typeahead filter below.
+          orgs: 1,
+          teams: 1,
+          loginDisabled: 1,
+        },
+        // Filtered below (disabled accounts, #6116 org/team restriction), so
+        // read more than are shown: with `limit: 5` here, five non-matching
+        // users ahead of the colleague hid them from the list entirely.
+        limit: 50,
+      },
+    );
+
+    // #6116: when the global admin setting is enabled, restrict the typeahead to
+    // users sharing an Organization or Team with the caller (or an active board
+    // member). Site admins are not filtered. Mirrors inviteUserToBoard so the UI
+    // never offers a candidate the server would later reject.
+    // #1894: inviteUserToBoard refuses a disabled account; do not offer one.
+    let filteredUsers = users.filter(candidate => candidate.loginDisabled !== true);
+    if (!currentUser.isAdmin) {
+      const restriction = boardMemberRestriction(await ReactiveCache.getCurrentSetting());
+      if (restriction.org || restriction.team) {
+        const activeMemberUsers = [];
+        for (const m of board.members) {
+          if (!m.isActive) continue;
+          const memberUser =
+            m.userId === currentUser._id
+              ? currentUser
+              : await ReactiveCache.getUser(m.userId);
+          if (memberUser) activeMemberUsers.push(memberUser);
+        }
+        filteredUsers = filteredUsers.filter(candidate =>
+          activeMemberUsers.some(memberUser =>
+            memberUser.sharesRestrictedOrgOrTeamWith(candidate, restriction),
+          ),
+        );
+      }
+    }
+
+    return filteredUsers.slice(0, 5).map(user => sanitizeUserForSearch(user));
+  },
+});
+
+/**
+ * @operation get_admin_domains
+ * @tag Users
+ *
+ * @summary List email domains with their user counts (GlobalAdmin)
+ *
+ * @description Only the global admin can call this. Counts every user by the
+ * domain part of their primary email address (the first address in `emails`),
+ * mirroring the Admin Panel > People domain grouping. Domains are returned
+ * sorted by descending count, then alphabetically.
+ *
+ * @return_type [{domain: string, count: number}]
+ */
+WebApp.handlers.get('/api/admin/domains', async function(req, res) {
+  try {
+    await Authentication.checkUserId(req.userId);
+    const users = await Users.find({}, { fields: { emails: 1 } }).fetchAsync();
+    const counts = {};
+    for (const u of users) {
+      const addr = (u.emails && u.emails[0] && u.emails[0].address) || '';
+      const at = addr.lastIndexOf('@');
+      if (at === -1) continue;
+      const domain = addr.slice(at + 1).toLowerCase().trim();
+      if (!domain) continue;
+      counts[domain] = (counts[domain] || 0) + 1;
+    }
+    const data = Object.keys(counts)
+      .map(domain => ({ domain, count: counts[domain] }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+    sendJsonResult(res, { code: 200, data });
+  } catch (error) {
+    sendJsonResult(res, publicErrorData(error));
+  }
+});
+
+// Atomically invalidate tokens on application updates; Accounts observes their
+// removal and closes existing DDP connections. The observer also repairs old
+// disabled accounts and catches direct database writes or racing DDP logins.
+Users.before.update(function(userId, doc, fields, modifier) {
+  require('/server/lib/activeUser').revokeDisabledTokensModifier(modifier);
+  // USERS_DISABLE_INACTIVE_AFTER_DAYS (models/lib/inactiveUsers.js): enabling
+  // an account - by an admin, the REST API or LDAP sync - forgets why it was
+  // disabled and restarts its inactivity clock, so it is not disabled again by
+  // the next nightly run before its owner has had a chance to log in.
+  if (modifier.$set && modifier.$set.loginDisabled === false && doc.loginDisabled === true) {
+    modifier.$set.inactivityClockStart = new Date();
+    if (!('loginDisabledReason' in modifier.$set)) {
+      modifier.$unset = { ...(modifier.$unset || {}), loginDisabledReason: '' };
+    }
+  }
+});
+Meteor.startup(async () => {
+  const revoke = id => require('/server/lib/activeUser').revokeDisabledTokens(id)
+    .catch(error => console.error('Could not revoke disabled account tokens:', error.message));
+  await Users.find({ loginDisabled: true, 'services.resume.loginTokens.0': { $exists: true } },
+    { fields: { _id: 1 } }).observeChangesAsync({ added: revoke });
+});

@@ -1,0 +1,7 @@
+template(name='inlinedForm')
+  .js-inlined-form-wrapper(style='display: contents;' data-position=position)
+    if isOpen.get
+      form.inlined-form.js-inlined-form(id=id class=classNames)
+        +Template.contentBlock
+    else
+      +Template.elseBlock

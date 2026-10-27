@@ -1,0 +1,140 @@
+template(name="archivesSidebar")
+  if isArchiveReady.get
+    .basicTabs-container
+      ul.tabs-list(role="tablist")
+        each tabs
+          li.tab-item(
+            id="archive-tab-{{slug}}"
+            class="{{isArchiveTabActive slug}} {{class}}"
+            data-tab="{{slug}}"
+            role="tab"
+            tabindex="{{#if isArchiveTabActive slug}}0{{else}}-1{{/if}}"
+            aria-selected="{{#if isArchiveTabActive slug}}true{{else}}false{{/if}}"
+            aria-controls="archive-panel-{{slug}}") {{name}}
+      .tabs-content-container
+        section.tabs-content#archive-panel-cards(class="{{isArchiveTabActive 'cards'}}" data-tab="cards" role="tabpanel" aria-labelledby="archive-tab-cards" tabindex="0")
+          if currentUser
+            unless isWorker
+              unless currentUser.isReadOnly
+                unless currentUser.isReadAssignedOnly
+                  p.quiet
+                    a.js-restore-all-cards {{_ 'restore-all'}}
+                    if currentUser.isBoardAdmin
+                      | -
+                      a.js-delete-all-cards {{_ 'delete-all'}}
+          each archivedCards
+            //- #3199: keep each archived card and ITS Restore/Delete links in
+            //- one wrapper so the links visually group with the card above
+            //- them instead of floating ambiguously between two cards.
+            .archived-card-item
+              .minicard-wrapper.js-minicard
+                +minicard(this)
+              if currentUser.isBoardMember
+                unless isWorker
+                  unless currentUser.isReadOnly
+                    unless currentUser.isReadAssignedOnly
+                      p.quiet
+                        if this.archivedAt
+                          | {{_ 'archived-at' }}
+                          |  | {{ displayDate this.archivedAt 'LLL' }}
+                          br
+                        a.js-restore-card {{_ 'restore'}}
+                        if currentUser.isBoardAdmin
+                          | -
+                          a.js-delete-card {{_ 'delete'}}
+                if cardIsInArchivedList
+                  p.quiet.small ({{_ 'warn-list-archived'}})
+          else
+            p.no-items-message {{_ 'no-archived-cards'}}
+
+        section.tabs-content#archive-panel-lists(class="{{isArchiveTabActive 'lists'}}" data-tab="lists" role="tabpanel" aria-labelledby="archive-tab-lists" tabindex="0")
+          if currentUser
+            unless isWorker
+              unless currentUser.isReadOnly
+                unless currentUser.isReadAssignedOnly
+                  p.quiet
+                    a.js-restore-all-lists {{_ 'restore-all'}}
+                    if currentUser.isBoardAdmin
+                      | -
+                      a.js-delete-all-lists {{_ 'delete-all'}}
+          ul.archived-lists
+            each archivedLists
+              li.archived-lists-item
+                span.archived-item-title {{title}}
+                if currentUser.isBoardMember
+                  unless isWorker
+                    unless currentUser.isReadOnly
+                      unless currentUser.isReadAssignedOnly
+                        p.quiet
+                          if this.archivedAt
+                            | {{_ 'archived-at' }}
+                            |  | {{ displayDate this.archivedAt 'LLL' }}
+                            br
+                          a.js-restore-list {{_ 'restore'}}
+                          if currentUser.isBoardAdmin
+                            | -
+                            a.js-delete-list {{_ 'delete'}}
+            else
+              li.no-items-message {{_ 'no-archived-lists'}}
+
+        section.tabs-content#archive-panel-swimlanes(class="{{isArchiveTabActive 'swimlanes'}}" data-tab="swimlanes" role="tabpanel" aria-labelledby="archive-tab-swimlanes" tabindex="0")
+          if currentUser
+            unless isWorker
+              unless currentUser.isReadOnly
+                unless currentUser.isReadAssignedOnly
+                  p.quiet
+                    a.js-restore-all-swimlanes {{_ 'restore-all'}}
+                    if currentUser.isBoardAdmin
+                      | -
+                      a.js-delete-all-swimlanes {{_ 'delete-all'}}
+          ul.archived-lists
+            each archivedSwimlanes
+              li.archived-lists-item
+                span.archived-item-title {{title}}
+                if currentUser.isBoardMember
+                  unless isWorker
+                    unless currentUser.isReadOnly
+                      unless currentUser.isReadAssignedOnly
+                        p.quiet
+                          if this.archivedAt
+                            | {{_ 'archived-at' }}
+                            |  | {{ displayDate this.archivedAt 'LLL' }}
+                            br
+                          a.js-restore-swimlane {{_ 'restore'}}
+                          if currentUser.isBoardAdmin
+                            | -
+                            a.js-delete-swimlane {{_ 'delete'}}
+            else
+              li.no-items-message {{_ 'no-archived-swimlanes'}}
+  else
+    +spinner
+
+//- Restore an archived card into a list: its own list is gone, or (#6772)
+  its own list has reached a hard WIP limit. Only lists with room are offered.
+template(name="restoreArchivedCardToListPopup")
+  if wipLimitReached
+    p.js-restore-wip-reached {{_ 'restore-card-wip-limit-reached' list=currentListTitle}}
+  else
+    p {{_ 'error-list-doesNotExist'}}, {{_ 'list'}}:
+  if availableLists.length
+    select.js-select-restore-target-list(autofocus)
+      each availableLists
+        option(value="{{_id}}" selected="{{#if isSelectedList _id}}selected{{/if}}") {{add @index 1}}. {{title}}
+
+    .edit-controls.clearfix
+      button.primary.confirm.js-restore-card-to-list {{_ 'restore'}}
+  else
+    p.js-restore-no-list-with-room {{_ 'restore-card-no-list-with-room'}}
+
+//- #6772: Restore all left out the cards whose lists are full.
+template(name="restoreAllSkippedPopup")
+  p.js-restore-all-skipped {{_ 'restore-all-skipped-wip-limit' count=count}}
+
+template(name="restoreArchivedListToSwimlanePopup")
+  p {{_ 'no-results'}}, {{_ 'wip-limit-group-select-swimlane'}}:
+  select.js-select-restore-target-swimlane(autofocus)
+    each availableSwimlanes
+      option(value="{{_id}}" selected="{{#if isSelectedSwimlane _id}}selected{{/if}}") {{add @index 1}}. {{isTitleDefault title}}
+
+  .edit-controls.clearfix
+    button.primary.confirm.js-restore-list-to-swimlane {{_ 'restore'}}

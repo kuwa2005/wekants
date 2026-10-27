@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euxo pipefail
+
+# This file will store the config env variables needed by the app
+readonly CONF=/build/env.config
+
+# EMAIL_URL can also be set here by injecting another env variable in the template
+# ROOT_URL can also be set at runtime, by querying AWS api or by using ingress annotations in the template for k8s.
+
+cat >"${CONF}" <<'EOF'
+export MONGO_URL=mongodb://{{DATABASE_USER}}:{{DATABASE_PASSWORD}}@{{DATABASE_HOST}}:{{DATABASE_PORT}}/{{DATABASE_NAME}}
+export ROOT_URL=http://localhost
+export PORT=3000
+
+# Docker Compose Secrets Support
+# If secret files exist, read passwords from them instead of environment variables
+if [ -f "/run/secrets/mongo_password" ]; then
+    export MONGO_PASSWORD=$(cat /run/secrets/mongo_password)
+    export MONGO_URL=mongodb://{{DATABASE_USER}}:${MONGO_PASSWORD}@{{DATABASE_HOST}}:{{DATABASE_PORT}}/{{DATABASE_NAME}}
+fi
+
+if [ -f "/run/secrets/ldap_auth_password" ]; then
+    export LDAP_AUTHENTIFICATION_PASSWORD=$(cat /run/secrets/ldap_auth_password)
+fi
+
+if [ -f "/run/secrets/oauth2_secret" ]; then
+    export OAUTH2_SECRET=$(cat /run/secrets/oauth2_secret)
+fi
+
+if [ -f "/run/secrets/oauth_google_secret" ]; then
+    export OAUTH_GOOGLE_SECRET=$(cat /run/secrets/oauth_google_secret)
+fi
+
+if [ -f "/run/secrets/oauth_github_secret" ]; then
+    export OAUTH_GITHUB_SECRET=$(cat /run/secrets/oauth_github_secret)
+fi
+
+if [ -f "/run/secrets/oauth_facebook_secret" ]; then
+    export OAUTH_FACEBOOK_SECRET=$(cat /run/secrets/oauth_facebook_secret)
+fi
+
+if [ -f "/run/secrets/oauth_twitter_secret" ]; then
+    export OAUTH_TWITTER_SECRET=$(cat /run/secrets/oauth_twitter_secret)
+fi
+
+if [ -f "/run/secrets/oauth_meteor_developer_secret" ]; then
+    export OAUTH_METEOR_DEVELOPER_SECRET=$(cat /run/secrets/oauth_meteor_developer_secret)
+fi
+
+if [ -f "/run/secrets/oauth_weibo_secret" ]; then
+    export OAUTH_WEIBO_SECRET=$(cat /run/secrets/oauth_weibo_secret)
+fi
+
+if [ -f "/run/secrets/oauth_meetup_secret" ]; then
+    export OAUTH_MEETUP_SECRET=$(cat /run/secrets/oauth_meetup_secret)
+fi
+
+if [ -f "/run/secrets/mail_service_password" ]; then
+    export MAIL_SERVICE_PASSWORD=$(cat /run/secrets/mail_service_password)
+fi
+
+if [ -f "/run/secrets/s3_secret" ]; then
+    export S3_SECRET=$(cat /run/secrets/s3_secret)
+fi
+EOF
+
+sed -i -e "s/{{DATABASE_USER}}/${DATABASE_USER}/" "${CONF}"
+sed -i -e "s/{{DATABASE_PASSWORD}}/${DATABASE_PASSWORD}/" "${CONF}"
+sed -i -e "s/{{DATABASE_HOST}}/${DATABASE_HOST}/" "${CONF}"
+sed -i -e "s/{{DATABASE_PORT}}/${DATABASE_PORT}/" "${CONF}"
+sed -i -e "s/{{DATABASE_NAME}}/${DATABASE_NAME}/" "${CONF}"
+

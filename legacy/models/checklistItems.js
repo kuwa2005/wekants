@@ -1,0 +1,309 @@
+import { Meteor } from 'meteor/meteor';
+import { Mongo } from 'meteor/mongo';
+import { ReactiveCache } from '/imports/reactiveCache';
+import Activities from '/models/activities';
+const { SimpleSchema } = require('/imports/simpleSchema');
+
+const ChecklistItems = new Mongo.Collection('checklistItems');
+
+/**
+ * An item in a checklist
+ */
+ChecklistItems.attachSchema(
+  new SimpleSchema({
+    title: {
+      /**
+       * the text of the item
+       */
+      type: String,
+    },
+    sort: {
+      /**
+       * the sorting field of the item
+       */
+      type: Number,
+    },
+    isFinished: {
+      /**
+       * Is the item checked?
+       */
+      type: Boolean,
+      defaultValue: false,
+    },
+    dueAt: {
+      /**
+       * Date the checklist item is due
+       */
+      type: Date,
+      optional: true,
+    },
+    assigneeId: {
+      /**
+       * #1618: the board member responsible for this item (models/lib/
+       * checklistItemSchedule.js); unset is nobody.
+       */
+      type: String,
+      optional: true,
+    },
+    checklistId: {
+      /**
+       * the checklist ID the item is attached to
+       */
+      type: String,
+    },
+    cardId: {
+      /**
+       * the card ID the item is attached to
+       */
+      type: String,
+    },
+    boardId: {
+      /**
+       * The ID of the board the item's card is on. Denormalized from the card
+       * so the board publication can publish checklist items with a single
+       * reactive cursor filtered by boardId. Kept in sync on insert, on the
+       * item / its checklist moving to another card, and when the card moves to
+       * another board.
+       */
+      type: String,
+      optional: true,
+    },
+    linkedCardId: {
+      /**
+       * #2422: the _id of the subtask card created from this checklist item
+       * via "Convert to subtask" (checklists.js's
+       * 'click .js-convert-checklist-item-to-subtask' handler), if any. This
+       * is a one-way, set-once reference recorded at conversion time - it is
+       * NOT kept in sync with the subtask afterwards (no bidirectional status
+       * sync), and it is unrelated to the pre-existing "Convert to card"
+       * action (convertChecklistItemToCardPopup) or the #3294 drag-to-card
+       * gesture (buildCardFromChecklistItem), neither of which sets this
+       * field: both of those create a plain, unlinked, non-subtask card.
+       */
+      type: String,
+      optional: true,
+    },
+    createdAt: {
+      type: Date,
+      optional: true,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert) {
+          return new Date();
+        } else if (this.isUpsert) {
+          return { $setOnInsert: new Date() };
+        } else {
+          this.unset();
+        }
+      },
+    },
+    modifiedAt: {
+      type: Date,
+      // eslint-disable-next-line consistent-return
+      autoValue() {
+        if (this.isInsert || this.isUpsert || this.isUpdate) {
+          return new Date();
+        } else {
+          this.unset();
+        }
+      },
+    },
+  }),
+);
+
+ChecklistItems.before.insert((userId, doc) => {
+  if (!doc.userId) {
+    doc.userId = userId;
+  }
+});
+
+ChecklistItems.helpers({
+  async setTitle(title) {
+    return await ChecklistItems.updateAsync(this._id, { $set: { title } });
+  },
+  async check() {
+    return await ChecklistItems.updateAsync(this._id, { $set: { isFinished: true } });
+  },
+  async uncheck() {
+    return await ChecklistItems.updateAsync(this._id, { $set: { isFinished: false } });
+  },
+  async toggleItem() {
+    return await ChecklistItems.updateAsync(this._id, { $set: { isFinished: !this.isFinished } });
+  },
+  async move(checklistId, sortIndex) {
+    const checklist = await ReactiveCache.getChecklist(checklistId);
+    const cardId = checklist.cardId;
+    return await ChecklistItems.updateAsync(this._id, {
+      $set: { cardId, checklistId, sort: sortIndex },
+    });
+  },
+  // getDue/setDue/unsetDue mirror models/cards.js's own due-date methods
+  // (#4755) - a checklist item never links to another card/board, so unlike
+  // Cards.getDue()/setDue() there is no linked-card/board indirection to
+  // resolve.
+  getDue() {
+    return this.dueAt;
+  },
+  // #1618: '' or null is nobody.
+  async setAssignee(assigneeId) {
+    return assigneeId
+      ? await ChecklistItems.updateAsync(this._id, { $set: { assigneeId } })
+      : await ChecklistItems.updateAsync(this._id, { $unset: { assigneeId: '' } });
+  },
+  async setDue(dueAt) {
+    return await ChecklistItems.updateAsync(this._id, { $set: { dueAt } });
+  },
+  async unsetDue() {
+    return await ChecklistItems.updateAsync(this._id, { $unset: { dueAt: '' } });
+  },
+  // #2422: record the _id of the subtask card created from this item via
+  // "Convert to subtask". A one-way, set-once reference - see the schema
+  // comment on linkedCardId above for why it is not kept in sync afterwards.
+  async setLinkedCardId(cardId) {
+    return await ChecklistItems.updateAsync(this._id, { $set: { linkedCardId: cardId } });
+  },
+  getLinkedCard() {
+    return this.linkedCardId ? ReactiveCache.getCard(this.linkedCardId) : undefined;
+  },
+});
+
+// Activities helper
+export async function itemCreation(userId, doc) {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[itemCreation] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  const boardId = card.boardId;
+  await Activities.insertAsync({
+    userId,
+    activityType: 'addChecklistItem',
+    cardId: doc.cardId,
+    boardId,
+    checklistId: doc.checklistId,
+    checklistItemId: doc._id,
+    checklistItemName: doc.title,
+    listId: card.listId,
+    swimlaneId: card.swimlaneId,
+  });
+}
+
+export async function itemRemover(userId, doc) {
+  // #1598: retain checked/unchecked activity with its stored item title.
+  // Universal History records the item removal separately.
+  return undefined;
+}
+
+export async function publishCheckActivity(userId, doc) {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[publishCheckActivity] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  const boardId = card.boardId;
+  let activityType;
+  if (doc.isFinished) {
+    activityType = 'checkedItem';
+  } else {
+    activityType = 'uncheckedItem';
+  }
+  const act = {
+    userId,
+    activityType,
+    cardId: doc.cardId,
+    boardId,
+    checklistId: doc.checklistId,
+    checklistItemId: doc._id,
+    checklistItemName: doc.title,
+    listId: card.listId,
+    swimlaneId: card.swimlaneId,
+  };
+  await Activities.insertAsync(act);
+}
+
+export async function publishChekListCompleted(userId, doc) {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[publishChekListCompleted] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  const boardId = card.boardId;
+  const checklistId = doc.checklistId;
+  const checkList = await ReactiveCache.getChecklist(checklistId);
+  if (!checkList) {
+    console.warn('[publishChekListCompleted] Checklist not found for checklistId:', checklistId, '— skipping activity insert.');
+    return;
+  }
+  const checklistItems = await ReactiveCache.getChecklistItems({ checklistId });
+  const isChecklistFinished = checkList.hideAllChecklistItems ||
+    (checklistItems.length > 0 && checklistItems.length === checklistItems.filter(i => i.isFinished).length);
+  if (isChecklistFinished) {
+    const act = {
+      userId,
+      activityType: 'completeChecklist',
+      cardId: doc.cardId,
+      boardId,
+      checklistId: doc.checklistId,
+      checklistName: checkList.title,
+      listId: card.listId,
+      swimlaneId: card.swimlaneId,
+    };
+    await Activities.insertAsync(act);
+  }
+}
+
+export async function publishChekListUncompleted(userId, doc) {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[publishChekListUncompleted] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  const boardId = card.boardId;
+  const checklistId = doc.checklistId;
+  const checkList = await ReactiveCache.getChecklist(checklistId);
+  if (!checkList) {
+    console.warn('[publishChekListUncompleted] Checklist not found for checklistId:', checklistId, '— skipping activity insert.');
+    return;
+  }
+  // BUGS in IFTTT Rules: https://github.com/wekan/wekan/issues/1972
+  //       Currently in checklist all are set as uncompleted/not checked,
+  //       IFTTT Rule does not move card to other list.
+  //       If following line is negated/changed to:
+  //         if(!isChecklistFinished){
+  //       then unchecking of any checkbox will move card to other list,
+  //       even when all checkboxes are not yet unchecked.
+  //       What is correct code for only moving when all in list is unchecked?
+  // TIPS: Finding  files, ignoring some directories with grep -v:
+  //         cd wekan
+  //         find . | xargs grep 'count' -sl | grep -v .meteor | grep -v node_modules | grep -v .build
+  //       Maybe something related here?
+  //         wekan/client/components/rules/triggers/checklistTriggers.js
+  const uncheckItems = await ReactiveCache.getChecklistItems({ checklistId });
+  const isChecklistFinished = checkList.hideAllChecklistItems ||
+    (uncheckItems.length > 0 && uncheckItems.length === uncheckItems.filter(i => i.isFinished).length);
+  if (isChecklistFinished) {
+    const act = {
+      userId,
+      activityType: 'uncompleteChecklist',
+      cardId: doc.cardId,
+      boardId,
+      checklistId: doc.checklistId,
+      checklistName: checkList.title,
+      listId: card.listId,
+      swimlaneId: card.swimlaneId,
+    };
+    await Activities.insertAsync(act);
+  }
+}
+
+if (Meteor.isServer) {
+  // The items of one checklist in their order, and the per-card queries the
+  // minicard's checklist badge and the card's own list make.
+  const { ensureIndex } = require('/server/lib/mongoStartup');
+  Meteor.startup(async () => {
+    await ensureIndex(ChecklistItems, { checklistId: 1, sort: 1 });
+    await ensureIndex(ChecklistItems, { cardId: 1 });
+  });
+}
+
+export default ChecklistItems;

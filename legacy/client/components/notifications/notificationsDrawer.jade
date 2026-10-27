@@ -1,0 +1,69 @@
+template(name='notificationsDrawer')
+  section#notifications-drawer(class="{{#if $.Session.get 'showReadNotifications'}}show-read{{/if}}")
+    .header
+      a.notification-menu-toggle(title="{{_ 'menu'}}")
+        i.fa.fa-bars
+      .notification-menu(class="{{#if $.Session.get 'showNotificationMenu'}}is-open{{/if}}")
+        .menu-section
+          a.menu-item(class="{{#unless $.Session.get 'showReadNotifications'}}selected{{/unless}}")
+            span.check-icon
+              if $not $.Session.get 'showReadNotifications'
+                i.fa.fa-check
+            span.menu-icon
+              i.fa.fa-envelope-open
+            span {{_ 'filter-by-unread'}}
+          a.menu-item(class="{{#if $.Session.get 'showReadNotifications'}}selected{{/if}}")
+            span.check-icon
+              if $.Session.get 'showReadNotifications'
+                i.fa.fa-check
+            span.menu-icon
+              i.fa.fa-copy
+            span {{_ 'view-all'}}
+        .menu-divider
+        .menu-section
+          if($gt unreadNotifications 0)
+            a.menu-item.mark-all-read
+              span.check-icon
+              span.menu-icon
+                i.fa.fa-check
+              span {{_ 'mark-all-as-read'}}
+          if ($and ($.Session.get 'showReadNotifications') ($gt readNotifications 0))
+            a.menu-item.mark-all-unread
+              span.check-icon
+              span.menu-icon
+                i.fa.fa-envelope-open
+              span {{_ 'mark-all-as-unread'}}
+          if ($and ($.Session.get 'showReadNotifications') ($gt readNotifications 0))
+            a.menu-item.delete-read
+              span.check-icon
+              span.menu-icon
+                i.fa.fa-trash
+              span {{_ 'remove-all-read'}}
+          a.menu-item.delete-all
+            span.check-icon
+            span.menu-icon
+              i.fa.fa-trash
+            span {{_ 'delete-all-notifications'}}
+      h5 {{_ 'notifications'}}
+        if($gt unreadNotifications 0)
+          |(#{unreadNotifications})
+      a.close(title="{{_ 'close'}}")
+        i.fa.fa-times-thin
+    //- #5171: entries of one card or board collapse into one row when the
+      tray grouping says so (models/lib/notificationDelivery.js).
+    ul.notifications
+      each notificationGroups
+        if isCollapsible
+          li.notification-group(data-key=key)
+            a.js-toggle-notification-group(data-key=key aria-expanded="{{#if expanded}}true{{else}}false{{/if}}")
+              i.fa(class="{{#if expanded}}fa-caret-down{{else}}fa-caret-right{{/if}}")
+              |  {{groupLabel}}
+          if expanded
+            each entries
+              +notification(activityData=activityObj index=dbIndex read=read)
+          else
+            with firstEntry
+              +notification(activityData=activityObj index=dbIndex read=read)
+        else
+          each entries
+            +notification(activityData=activityObj index=dbIndex read=read)

@@ -1,0 +1,9 @@
+template(name="minilist")
+  .minicard(
+    class="minicard-{{colorClass}}")
+    .minicard-title
+      .handle
+        span.drag-handle(title="{{_ 'moveListPopup-title'}}")
+          i.fa.fa-arrows
+      +viewer
+        = title

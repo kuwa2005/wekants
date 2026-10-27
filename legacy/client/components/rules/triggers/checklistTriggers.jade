@@ -1,0 +1,137 @@
+template(name="checklistTriggers")
+  div.trigger-item
+    div.trigger-content
+      div.trigger-text
+        | {{_'r-when-a-checklist'}}
+      div.trigger-dropdown
+        select(id="gen-check-action")
+          option(value="created") {{_'r-added-to'}}
+          option(value="removed") {{_'r-removed-from'}}
+      div.trigger-text
+        | {{_'r-a-card'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-gen-check-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      unless ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-checklist'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="check-name",placeholder="{{_'r-name'}}")
+      if ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-checklist'}}
+      div.trigger-text
+        | {{ruleTriggerCopula}}
+      div.trigger-dropdown
+        select(id="spec-check-action")
+          option(value="created") {{_'r-added-to'}}
+          option(value="removed") {{_'r-removed-from'}}
+      div.trigger-text
+        | {{_'r-a-card'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-spec-check-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item
+    div.trigger-content
+      div.trigger-text
+        | {{_'r-when-a-checklist'}}
+      div.trigger-dropdown
+        select(id="gen-comp-check-action")
+          option(value="completed") {{_'r-completed'}}
+          option(value="uncompleted") {{_'r-made-incomplete'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-gen-comp-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      unless ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-checklist'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="spec-comp-check-name",placeholder="{{_'r-name'}}")
+      if ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-checklist'}}
+      div.trigger-text
+        | {{ruleTriggerCopula}}
+      div.trigger-dropdown
+        select(id="spec-comp-check-action")
+          option(value="completed") {{_'r-completed'}}
+          option(value="uncompleted") {{_'r-made-incomplete'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-spec-comp-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item
+    div.trigger-content
+      div.trigger-text
+        | {{_'r-when-a-item'}}
+      div.trigger-dropdown
+        select(id="check-item-gen-action")
+          option(value="checked") {{_'r-checked'}}
+          option(value="unchecked") {{_'r-unchecked'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-gen-check-item-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      unless ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-item'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="check-item-name",placeholder="{{_'r-name'}}")
+      if ruleNameBeforeSubject
+        div.trigger-text
+          | {{_'r-when-the-item'}}
+      div.trigger-text
+        | {{ruleTriggerCopula}}
+      div.trigger-dropdown
+        select(id="check-item-spec-action")
+          option(value="checked") {{_'r-checked'}}
+          option(value="unchecked") {{_'r-unchecked'}}
+      button.trigger-button.trigger-button-person.js-show-user-field(type="button" aria-label="{{_ 'username'}}")
+        i.fa.fa-user(aria-hidden="true")
+      div.user-details.hide-element
+        div.trigger-text
+          | {{_'r-by'}}
+        div.trigger-dropdown
+          input(class="user-name",type=text,placeholder="{{_'username'}}")
+    button.trigger-button.js-add-spec-check-item-trigger.js-goto-action(type="button" aria-label="{{_ 'r-add-trigger'}}")
+      i.fa.fa-plus(aria-hidden="true")

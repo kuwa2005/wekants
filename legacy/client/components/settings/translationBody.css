@@ -1,0 +1,53 @@
+/* The pane's own Search button is gone: Translation renders through the shared
+   table page (docs/Features/General/Table-Page.md), where you type in the search field and
+   press Enter, like every other table page. Its themed-button rules went with it.
+
+   Scrollbar styles are handled by settingBody.css for all admin pages.
+
+   These three rules have no page in their selector - this stylesheet is bundled for
+   the whole app, so a bare `table` rule hits EVERY table in WeKan. The shared table
+   page is excluded: it brings its own cell padding and borders, and `color: #000`
+   would pin its text to black on a dark theme. */
+table:not(.table-page-table) {
+  color: #000;
+}
+table:not(.table-page-table) td,
+table:not(.table-page-table) th {
+  border: 1px solid #d2d0d0;
+  text-align: start;
+  padding: 8px;
+}
+table:not(.table-page-table) tr:nth-child(even) {
+  background-color: #ddd;
+}
+/* Same stray rule as in peopleBody.css: `.content-wrapper` belongs to the popup
+   template only, so an unscoped `margin-top: 10px` here pushed the content of every
+   popup in WeKan down by 10px. Removed. */
+.buttonsContainer {
+  display: flex;
+}
+.buttonsContainer input {
+  margin: 0;
+}
+.buttonsContainer div {
+  margin: auto;
+}
+.more-settings-translation {
+  margin-inline-start: 10px;
+}
+#cancelBtn {
+  margin-inline-start: 5% !important;
+  background: #ffa500;
+  color: #fff;
+}
+#deleteAction {
+  margin-inline-start: 5% !important;
+}
+p.js-translation-language {
+  font-weight: bold;
+  color: #000;
+}
+p.js-translation-text {
+  font-weight: bold;
+  color: #000;
+}

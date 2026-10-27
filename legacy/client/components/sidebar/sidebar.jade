@@ -1,0 +1,1228 @@
+template(name="sidebar")
+  .board-sidebar.sidebar(class="{{#if isOpen}}is-open{{/if}} {{#unless isVerticalScrollbars}}no-scrollbars{{/unless}}")
+    //- Drag the sidebar's LEFT edge to resize its width (desktop only; hidden on
+      mobile where the sidebar is full width). Saved to the user profile (or
+      localStorage for anonymous users on a public board).
+    .sidebar-resize-handle.js-sidebar-resize-handle.nodragscroll(title="{{_ 'drag-to-resize-sidebar'}}")
+    //a.sidebar-tongue.js-toggle-sidebar(
+    //
+      class="{{#if isTongueHidden}}is-hidden{{/if}}",
+    //
+      title="{{showTongueTitle}}")
+    //
+      i.fa.fa-navicon
+    .sidebar-actions
+      .sidebar-shortcuts
+        a.sidebar-btn.js-shortcuts(title="{{_ 'keyboard-shortcuts' }}")
+          i.fa.fa-keyboard-o
+          span {{_ 'keyboard-shortcuts' }}
+        a.sidebar-btn.js-keyboard-shortcuts-toggle(
+          title="{{#if isKeyboardShortcuts}}{{_ 'keyboard-shortcuts-enabled'}}{{else}}{{_ 'keyboard-shortcuts-disabled'}}{{/if}}")
+          i.fa(class="{{#if isKeyboardShortcuts}}fa-check{{else}}fa-ban{{/if}}")
+      if isAccessibilityEnabled
+        a.sidebar-accessibility
+          i.fa.fa-universal-access
+          span {{_ 'accessibility'}}
+      a.sidebar-xmark.js-close-sidebar(aria-label="{{_ 'close'}}") &#10005;
+    .sidebar-content.js-board-sidebar-content
+      //a.hide-btn.js-hide-sidebar
+      //
+        i.fa.fa-navicon
+      unless isDefaultView
+        h2
+          a.fa.fa-arrow-left.js-back-home(aria-label="{{_ 'go-back'}}")
+          = getViewTitle
+      if isOpen
+        +Template.dynamic(template=getViewTemplate)
+
+template(name='homeSidebar')
+  +membersWidget
+  hr
+  +labelsWidget
+  hr
+  //- "Hide minicard label text" was here, under the People/Organizations tabs.
+    It is one row of the board's Card Settings table now: Board Settings /
+    Card ("Labels text"). See boardCardSettingsPopup below.
+  if currentUser
+    ul#cards.vertical-scrollbars-toggle
+      a.flex.js-vertical-scrollbars-toggle(title="{{_ 'enable-vertical-scrollbars'}}")
+        i.fa(class="{{#if isVerticalScrollbars}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'enable-vertical-scrollbars'}}
+  hr
+  if currentUser.isBoardAdmin
+    //- A caret in front of the heading, like every collapsible section of an
+      opened card: clicking the heading shows the activities under it, clicking
+      it again hides them. The eye and the words "Show activities" beside it
+      said the same thing a second time, which is one control too many for one
+      setting. client/lib/sectionCaret.js
+    h3.activity-title.js-toggle-show-activities(role="button" tabindex="0" title="{{_ 'activities'}}")
+      i.fa(class="{{activitiesCaret}}")
+      i.fa.fa-comment-o
+      | {{_ 'activities'}}
+    +activities(mode="board")
+
+template(name="membersWidget")
+  unless currentUser.isCommentOnly
+    unless currentUser.isWorker
+      h3
+        a.board-header-btn.js-open-board-menu(title="{{_ 'boardMenuPopup-title'}}")
+          i.fa.fa-cog
+          | {{_ 'boardMenuPopup-title'}}
+  hr
+  //- The heading is the button, with a caret in front of it, like every
+    collapsible section of an opened card: folding Members hides the People /
+    Organizations / Teams / Domains tabs and the avatars in them.
+    client/lib/foldState.js
+  h3.js-toggle-fold(data-fold="members" role="button" tabindex="0")
+    i.fa(class="{{foldCaret 'members'}}")
+    i.fa.fa-users
+    | {{_ 'members'}}
+  if isFoldOpen 'members'
+    +basicTabs(tabs=tabs)
+      +tabContent(slug="people")
+        unless currentUser.isWorker
+          p.quiet
+        .board-widget-content
+          if currentBoard.isAnyTemplateBoard
+            +userAvatar(userId=currentBoard.userId showStatus=true)
+            .clearfix
+          else
+            each currentBoard.membersForSidebar
+              +userAvatar(userId=this.userId showStatus=true)
+            //- Sandstorm grains can contain multiple boards. Users who have already
+              visited this grain are found by WeKan's normal, permission-checked
+              board-member picker. The Powerbox button beside it picks a person
+              through Sandstorm instead, and adds them to THIS board through the
+              same inviteUserToBoard checks (#2405 removed it while the claimed
+              identity was never attached to a board).
+            if currentUser.canInviteToBoard
+              a.member.add-member.js-manage-board-members(title="{{_ 'add-members'}}")
+                i.fa.fa-plus
+              if isSandstorm
+                a.member.add-member.sandstorm-powerbox-request-identity(title="{{_ 'invite-people'}}")
+                  i.fa.fa-user-plus
+            .clearfix
+            if isInvited
+              hr
+              p
+                i.fa.fa-exclamation-triangle
+                | {{_ 'just-invited'}}
+              button.js-member-invite-accept.primary {{_ 'accept'}}
+              button.js-member-invite-decline {{_ 'decline'}}
+      +tabContent(slug='organizations')
+        unless currentUser.isWorker
+          p.quiet
+        .board-widget-content
+          +boardOrgGeneral
+          .clearfix
+      +tabContent(slug="teams")
+        unless currentUser.isWorker
+          p.quiet
+        .board-widget-content
+          +boardTeamGeneral
+          .clearfix
+      +tabContent(slug="domains")
+        unless currentUser.isWorker
+          p.quiet
+        .board-widget-content
+          +boardDomainGeneral
+          .clearfix
+
+template(name="boardOrgGeneral")
+  each org in currentBoard.activeOrgs
+    +boardOrgRow(orgId=org.orgId)
+  if currentUser.isBoardAdmin
+    a.member.orgOrTeamMember.add-member.js-manage-board-addOrg(title="{{_ 'add-members'}}")
+      i.fa.fa-plus
+
+template(name="boardTeamGeneral")
+  each currentBoard.activeTeams
+    +boardTeamRow(teamId=this.teamId)
+  if currentUser.isBoardAdmin
+    a.member.orgOrTeamMember.add-member.js-manage-board-addTeam(title="{{_ 'add-members'}}")
+      i.fa.fa-plus
+
+template(name="boardDomainGeneral")
+  each currentBoard.activeDomains
+    +boardDomainRow(domain=this.domain)
+  if currentUser.isBoardAdmin
+    a.member.orgOrTeamMember.add-member.js-manage-board-addDomain(title="{{_ 'add-domain'}}")
+      i.fa.fa-plus
+
+template(name="boardDomainRow")
+  a.member.orgOrTeamMember.js-manage-board-removeDomain(title="{{domain}}" data-domain="{{domain}}")
+    svg.avatar.avatar-initials(viewBox="0 0 {{domainViewPortWidth}} 15")
+      text(x="50%" y="11" text-anchor="middle" dominant-baseline="middle" font-size="16")= domain
+
+template(name="boardChangeColorPopup")
+  //- docs/Theme/Theme.md: category + theme dropdowns with custom color wheels for
+    the flat/clear categories, shared with Member Settings / Change Color.
+  +themeColorPicker(scope="board")
+
+//- Uploading a background image. It is its own template because it belongs
+  with the URL field rather than with the list of images already uploaded:
+  both put a picture behind the board, one from the web and one from this
+  machine, so they are the two halves of one question and are read together.
+  The grid below is what you have; this is how you add to it.
+template(name="boardBackgroundUpload")
+  .board-background-upload
+    input.js-bg-upload-input.hide(type="file" name="file" accept="image/*")
+    a.primary.wide.js-bg-upload-button
+      i.fa.fa-plus
+      = ' '
+      | {{_ 'upload-background'}}
+    if uploading.get
+      +spinner
+    if error.get
+      .warning {{_ error.get}}
+
+//- The pictures uploaded to this board, with their NAMES: an upload that shows
+  nothing afterwards is indistinguishable from one that failed, which is what
+  uploading looked like while this list lived behind a menu entry of its own.
+  It is drawn inside Change Background Image, under the upload that adds to it,
+  and that entry - "Board backgrounds" - is gone with the popup it opened.
+template(name="boardBackgroundList")
+  .board-backgrounds-manage
+    .board-backgrounds-grid.clearfix
+      each backgrounds
+        //- The PICTURE is the button: clicking a thumbnail, or its name, puts
+          that one behind the board. It used to be a small check icon in the row
+          below, which is a 14px target beside an 80px picture of the thing it
+          applies - so the obvious click did nothing. The row keeps what the
+          picture cannot say: download it, or delete it.
+        .board-bg-item(class="{{#if isActiveBackground}}is-active{{/if}}")
+          .board-bg-thumb.js-set-board-background(style="background-image: url('{{link}}');" title="{{_ 'set-as-active'}}")
+            if isActiveBackground
+              i.fa.fa-check.board-bg-active-check
+          .board-bg-name.js-set-board-background(title="{{_ 'set-as-active'}}") {{cleanFilename name}}
+          .board-bg-actions
+            a.js-download-board-background(href="{{link}}?download=true" download="{{downloadFilename name}}" title="{{_ 'download'}}")
+              i.fa.fa-arrow-down
+            a.js-delete-board-background(title="{{_ 'delete'}}")
+              i.fa.fa-trash-o
+
+template(name="deleteBoardBackgroundPopup")
+  p {{_ 'board-background-delete-pop'}}
+  button.js-confirm.negate.full(type="submit")
+    i.fa.fa-trash-o
+    | {{_ 'delete'}}
+
+template(name="boardChangeBackgroundImagePopup")
+  form
+    label
+      | {{_ 'board-background-image-url'}}
+      input.js-board-background-image-url(type="text" value="{{backgroundImageURL}}" autofocus)
+    //- Save and Unset side by side, in that order: they are the two things to
+      do with the address above them, and Unset was five blank lines below the
+      Save it belongs beside.
+    .buttonsContainer.board-background-image-buttons
+      input.primary(type="submit" value="{{_ 'save'}}")
+      button.js-remove-background-image.negate.card-details-red(type="button") {{_ 'remove-background-image'}}
+    hr
+    //- ...and the same question answered from this machine instead of from a
+      URL, with what has been uploaded to this board under it - so an upload is
+      seen to have arrived, and can be applied, without going to another popup
+      to find out.
+    +boardBackgroundUpload
+  +boardBackgroundList
+
+template(name="boardInfoOnMyBoardsPopup")
+  form.board-info-on-my-boards
+    h3 {{_ 'show-at-all-boards-page'}}
+    unless currentSetting.hideCardCounterList
+      div.check-div
+        a.flex.js-field-has-cardcounterlist(class="{{#if allowsCardCounterList}}is-checked{{/if}}")
+          i.fa(class="{{#if allowsCardCounterList}}fa-check{{else}}fa-square-o{{/if}}")
+          span
+            i.fa.fa-sign-in
+            | {{_ 'show-card-counter-per-list'}}
+    div.check-div
+      a.flex.js-field-has-cardaging(class="{{#if cardAging}}is-checked{{/if}}")
+        i.fa(class="{{#if cardAging}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-clock-o
+          | {{_ 'card-aging'}}
+      if cardAging
+        div.card-aging-days
+          span {{_ 'card-aging-days'}}
+          input.js-card-aging-days(type="number" min="1" value="{{cardAgingDays1}}" title="{{_ 'card-aging-tier1'}}")
+          input.js-card-aging-days(type="number" min="1" value="{{cardAgingDays2}}" title="{{_ 'card-aging-tier2'}}")
+          input.js-card-aging-days(type="number" min="1" value="{{cardAgingDays3}}" title="{{_ 'card-aging-tier3'}}")
+    //- Nextcloud Deck-style auto-archive: empty = off.
+    div.check-div.auto-archive-setting
+      label(for="auto-archive-days")
+        i.fa.fa-archive
+        | {{_ 'auto-archive-days'}}
+      input#auto-archive-days.js-auto-archive-days(type="number" min="1" max="3650" placeholder="{{_ 'auto-archive-off'}}" value="{{autoArchiveInactiveDays}}")
+      p.quiet {{_ 'auto-archive-hint'}}
+    unless currentSetting.hideBoardMemberList
+      div.check-div
+        a.flex.js-field-has-boardmemberlist(class="{{#if allowsBoardMemberList}}is-checked{{/if}}")
+          i.fa(class="{{#if allowsBoardMemberList}}fa-check{{else}}fa-square-o{{/if}}")
+          span
+            i.fa.fa-hourglass
+            | {{_ 'show-board_members-avatar'}}
+    div.check-div
+      a.flex.js-field-has-personal-list-width(title="{{_ 'personal-list-width-description'}}" class="{{#if allowsPersonalListWidth}}is-checked{{/if}}")
+        i.fa(class="{{#if allowsPersonalListWidth}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-arrows-h
+          | {{_ 'personal-list-width'}}
+
+//- Board Settings / Card - what the opened card and the minicard show, and
+  in what order. Opened from the board's cog menu (boardMenuPopup above); it
+  used to be split across the CARD's own menu ("Show on Card", side="card")
+  and the MINICARD's own menu ("Show on Minicard", side="minicard"), and
+  settingsSideClass() still hides one column when a side is passed.
+  "Labels text" - the one PERSONAL setting here - stays reachable by a
+  non-admin, who is passed `personalOnly=true` so every board-wide,
+  admin-only row is hidden and only that one shows. client/lib/minicardLabelText.js
+//- ONE heading, "Card field order", over TWO lists: "Show on Minicard" in
+  the board's minicard order and "Show on Card" in its card order. The lists
+  are independent because the orders are: a field can sit third on the
+  minicard and last on the card. Every row of either list is
+  `[checkbox] [up] [down] icon label` - the checkbox is whether that side
+  shows the field, the arrows move it on THAT side only, and the icon and
+  label are the field's own (models/lib/cardSettingsRows.js). The rows are
+  not written out here: the two `each` loops draw them from that table in
+  the order models/lib/cardFieldOrder.js resolves for the board, the SAME
+  source cardDetails.jade and minicard.jade render from, so what the popup
+  lists top to bottom is what the card and the minicard draw top to bottom.
+  A row whose arrows would do nothing (the card's title bar and its
+  galleries, a minicard row that modifies another element rather than being
+  one) keeps them, disabled, so every row reads the same.
+  Up/down buttons rather than a drag library: no sortable-based reorder of a
+  plain settings LIST exists elsewhere in this codebase to reuse, so buttons
+  are the simpler, safer mechanism. Keyboard-reachable: `href="#"` and
+  `role="button"`, titled with the existing move-up/move-down keys.
+  client/components/sidebar/sidebar.js, tests/cardSettingsCoverage.test.cjs
+template(name="boardCardSettingsPopup")
+  //- Board Settings / Card, and the opened card's "+ Add": ONE popup, the Admin
+    Panel's left menu and right pane (docs/Features/Cards/Card-Fields.md). The
+    menu lists the sections (models/lib/cardSettingsSections.js); the pane the
+    open section's rows, each with its "Show on Minicard" and "Show on Card"
+    cell - a checkbox and the order arrows of that side - and, opened from a
+    card, whether THIS card shows the field. A side cell is the
+    `.js-card-field-order-row` the handlers read data-key and data-side from.
+  form.board-card-settings.card-settings-sections(class=settingsSideClass)
+    .setting-content
+      .content-body
+        +leftMenu(settingsMenuItems)
+        .main-body
+          +paneTitle(settingsPaneTitle)
+          //- The first entry, Card: what is not a field, then its rows.
+          if openSettingsSectionIsGeneral
+            //- Every card shows all its fields, the empty ones too; the Show
+              empty column is then set aside, its ticks kept.
+            div.check-div.card-settings-show-empty-fields
+              a.flex.card-show-empty-fields(class="{{#if canModifyBoard}}js-show-empty-card-fields{{else}}is-disabled{{/if}} {{#if isAnimating 'showEmptyCardFields'}}is-animating{{/if}}" role="checkbox" aria-checked="{{#if showEmptyCardFields}}true{{else}}false{{/if}}")
+                .materialCheckBox(class="{{#if showEmptyCardFields}}is-checked{{/if}}")
+                span {{_ 'card-settings-show-empty-fields'}}
+            div.check-div
+              a.flex.js-ask-move-reason(class="{{#if askForMoveReason}}is-checked{{/if}}")
+                i.fa(class="{{#if askForMoveReason}}fa-check{{else}}fa-square-o{{/if}}")
+                span {{_ 'ask-move-reason'}}
+            //- No select-all of Show on Minicard / Show on Card here: their
+              checkboxes are in the sections, not under it.
+            +boardDragSettings(section="card")
+          .card-settings-pane
+            //- Under the title: everything in the hamburger of this section on
+              the opened card - Filter: Subtasks, Edit voting, Card kind, the
+              section's settings ... (docs/Features/Cards/Card-Fields.md). The
+              card's own actions only when opened from a card.
+            if sectionCardActions.length
+              ul.pop-over-list.card-settings-card-actions
+                each action in sectionCardActions
+                  li
+                    //- An inline action is its form, right here (Edit voting,
+                      Change spent time, Card kind, ...); the others open
+                      their popup.
+                    if action.inline
+                      .card-settings-inline-action
+                        h4
+                          i.fa(class=action.icon aria-hidden="true")
+                          | {{action.title}}
+                        +Template.dynamic(template=action.inline data=action.inlineData)
+                    else
+                      a.js-card-settings-action(data-action="{{action.id}}")
+                        i.fa(class=action.icon aria-hidden="true")
+                        | {{action.title}}
+            //- Reading order: On this card (opened from a card), Show on
+              Minicard, Show on Card, then the field - mirrored in a
+              right-to-left language by the grid itself.
+            //- Under each heading, Select all / Select none for that column's
+              rows of this section - for who may change what it sets.
+            .card-settings-pane-head
+              if settingsCardId
+                span.card-settings-side-head.card-settings-side-head-this
+                  span {{_ 'card-settings-this-card'}}
+                  +cardSettingsSelectButtons(column="this")
+              span.card-settings-side-head.card-settings-side-head-minicard
+                span {{_ 'show-on-minicard'}}
+                if canModifyBoard
+                  +cardSettingsSelectButtons(column="minicard")
+              span.card-settings-side-head.card-settings-side-head-card
+                span {{_ 'show-on-card'}}
+                if canModifyBoard
+                  +cardSettingsSelectButtons(column="card")
+              span.card-settings-side-head.card-settings-side-head-always
+                span {{_ 'card-settings-show-empty'}}
+                if canModifyBoard
+                  +cardSettingsSelectButtons(column="always")
+              span.card-settings-pane-head-label {{_ 'card-field-order'}}
+            each row in sectionSettingsRows
+              .card-settings-line(class="{{#if row.personal}}card-settings-row-personal{{/if}}" data-key="{{row.key}}")
+                //- Opened from a card: whether this card shows the field -
+                  the field with data is shown, an empty one when ticked here
+                  (models/lib/cardShownFields.js).
+                if settingsCardId
+                  if row.perCard
+                    span.card-settings-side.card-settings-side-this
+                      a.flex.card-add-field.js-card-add-field(data-key="{{row.key}}" role="checkbox" aria-checked="{{#if row.shownOnThisCard}}true{{else}}false{{/if}}" class="{{#if isAnimating row.key}}is-animating{{/if}}" title="{{_ 'card-settings-this-card'}}")
+                        .materialCheckBox(class="{{#if row.shownOnThisCard}}is-checked{{/if}}")
+                  else
+                    span.card-settings-side.card-settings-side-this.card-settings-side-empty
+                each cell in row.sides
+                  if cell.present
+                    span.card-settings-side.js-card-field-order-row(class="card-settings-side-{{cell.side}} {{#if cell.personal}}card-settings-row-personal{{/if}}" data-key="{{row.key}}" data-side="{{cell.side}}")
+                      //- The same animated checkbox as On this card; only the
+                        one just clicked animates.
+                      a.flex.card-field-order-toggle(class="{{#if cell.writable}}{{cell.toggle}}{{else}}is-disabled{{/if}} {{#if cell.checked}}is-checked{{/if}} {{#if cell.animating}}is-animating{{/if}}" title="{{row.title}}" role="checkbox" aria-checked="{{#if cell.checked}}true{{else}}false{{/if}}")
+                        .materialCheckBox(class="{{#if cell.checked}}is-checked{{/if}}")
+                      //- The order of this side: up and down, as the Up and
+                        Down keys do on a focused arrow. A row that only
+                        modifies another (`after`) has no place of its own.
+                      if canModifyBoard
+                        if cell.positioned
+                          span.card-settings-position {{cell.position}}
+                          a.card-field-order-move.js-card-field-order-up(href="#" role="button" title="{{_ 'card-field-order-move-up'}}" aria-label="{{_ 'card-field-order-move-up'}}")
+                            i.fa.fa-arrow-up
+                          a.card-field-order-move.js-card-field-order-down(href="#" role="button" title="{{_ 'card-field-order-move-down'}}" aria-label="{{_ 'card-field-order-move-down'}}")
+                            i.fa.fa-arrow-down
+                  else
+                    span.card-settings-side.card-settings-side-empty(class="card-settings-side-{{cell.side}}")
+                //- #6806: Show empty - every card of the board shows the
+                  field, empty or not - by default the description,
+                  attachments and comments; "On this card" still hides it
+                  from one card. Hidden while Show empty fields is on.
+                if row.alwaysShowable
+                  span.card-settings-side.card-settings-side-always
+                    a.flex.card-always-show(class="{{#if canModifyBoard}}js-card-always-show{{else}}is-disabled{{/if}} {{#if row.animatingAlways}}is-animating{{/if}}" data-key="{{row.key}}" role="checkbox" aria-checked="{{#if row.alwaysShown}}true{{else}}false{{/if}}" title="{{_ 'card-settings-show-empty'}}")
+                      .materialCheckBox(class="{{#if row.alwaysShown}}is-checked{{/if}}")
+                else
+                  span.card-settings-side.card-settings-side-always.card-settings-side-empty
+                span.card-settings-line-label
+                  each icon in row.icons
+                    i.fa(class=icon aria-hidden="true")
+                  | {{row.title}}
+                  //- The user's own override of the board's "Labels text"
+                    default, tri-state: following the board or overriding it,
+                    with a way back to following it.
+                  if row.labelTextOverride
+                    if row.labelTextOverridden
+                      | &nbsp;
+                      a(class=row.labelTextResetClass title="{{_ 'label-text-use-board-default'}}")
+                        | ({{_ 'label-text-overridden'}})
+                    else
+                      | &nbsp;({{_ 'label-text-follows-board'}})
+
+
+//- Select all / Select none of one column of Card Settings' pane
+  (boardCardSettingsPopup's 'click .js-card-settings-select').
+template(name="cardSettingsSelectButtons")
+  span.card-settings-select
+    a.card-settings-select-button.js-card-settings-select(data-column="{{column}}" data-value="all" role="button" tabindex="0") {{_ 'select-all'}}
+    a.card-settings-select-button.js-card-settings-select(data-column="{{column}}" data-value="none" role="button" tabindex="0") {{_ 'select-none'}}
+
+
+//- The board's Subtasks Settings. Its own template, because the same settings
+  are read from two places: Board Settings, and the menu of a subtask on an
+  opened card - which is where somebody looking at a subtask is when they want
+  to change what subtasks do. One list, one set of handlers.
+  client/components/cards/subtasks.jade
+template(name="boardSubtaskSettingsBody")
+  form.board-subtask-settings
+    h3 {{_ 'show-parent-in-minicard'}}
+      a#prefix-with-full-path.flex.js-field-show-parent-in-minicard(title="{{_ 'prefix-with-full-path'}}" class="{{#if $eq presentParentTask 'prefix-with-full-path'}}is-checked{{/if}}")
+        i.fa(class="{{#if $eq presentParentTask 'prefix-with-full-path'}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'prefix-with-full-path'}}
+      a#prefix-with-parent.flex.js-field-show-parent-in-minicard(title="{{_ 'prefix-with-parent'}}" class="{{#if $eq presentParentTask 'prefix-with-parent'}}is-checked{{/if}}")
+        i.fa(class="{{#if $eq presentParentTask 'prefix-with-parent'}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'prefix-with-parent'}}
+      a#subtext-with-full-path.flex.js-field-show-parent-in-minicard(title="{{_ 'subtext-with-full-path'}}" class="{{#if $eq presentParentTask 'subtext-with-full-path'}}is-checked{{/if}}")
+        i.fa(class="{{#if $eq presentParentTask 'subtext-with-full-path'}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'subtext-with-full-path'}}
+      a#subtext-with-parent.flex.js-field-show-parent-in-minicard(title="{{_ 'subtext-with-parent'}}" class="{{#if $eq presentParentTask 'subtext-with-parent'}}is-checked{{/if}}")
+        i.fa(class="{{#if $eq presentParentTask 'subtext-with-parent'}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'subtext-with-parent'}}
+      a#no-parent.flex.js-field-show-parent-in-minicard(title="{{_ 'no-parent'}}" class="{{#if $eq presentParentTask 'no-parent'}}is-checked{{/if}}")
+        i.fa(class="{{#if $eq presentParentTask 'no-parent'}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'no-parent'}}
+    div
+      hr
+
+    div.check-div
+      a.flex.js-field-has-subtasks(title="{{_ 'show-subtasks-field'}}" class="{{#if allowsSubtasks}}is-checked{{/if}}")
+        i.fa(class="{{#if allowsSubtasks}}fa-check{{else}}fa-square-o{{/if}}")
+        span {{_ 'show-subtasks-field'}}
+
+    label
+      | {{_ 'deposit-subtasks-board'}}
+      select.js-field-deposit-board(disabled="{{#unless allowsSubtasks}}disabled{{/unless}}")
+          each boards
+            if isBoardSelected
+              option(value=_id selected="selected") {{title}}
+            else
+              option(value=_id) {{title}}
+          if isNullBoardSelected
+            option(value='null' selected="selected") {{_ 'custom-field-dropdown-none'}}
+          else
+            option(value='null') {{_ 'custom-field-dropdown-none'}}
+    div
+      hr
+
+    label
+      | {{_ 'deposit-subtasks-list'}}
+      select.js-field-deposit-list(disabled="{{#unless hasLists}}disabled{{/unless}}")
+          each lists
+            if isListSelected
+              option(value=_id selected="selected") {{title}}
+            else
+              option(value=_id) {{title}}
+
+    //- #1953: the swimlane new subtasks land in on the deposit board.
+    label
+      | {{_ 'deposit-subtasks-swimlane'}}
+      select.js-field-deposit-swimlane(disabled="{{#unless allowsSubtasks}}disabled{{/unless}}")
+          if isNullSwimlaneSelected
+            option(value='null' selected="selected") {{_ 'deposit-subtasks-swimlane-auto'}}
+          else
+            option(value='null') {{_ 'deposit-subtasks-swimlane-auto'}}
+          each depositSwimlanes
+            if isSwimlaneSelected
+              option(value=_id selected="selected") {{title}}
+            else
+              option(value=_id) {{title}}
+
+template(name="boardSubtaskSettingsPopup")
+  +boardSubtaskSettingsBody
+
+//- #1173: the fourteen per-source links that were here are the import PAGE now
+  - one full-width page that lists every source, offers the same "what to
+  include" checkboxes every export offers, and keeps its own address per source
+  so the old links still work. What is left in the popup is the one import that
+  is not a board: card dependencies.
+template(name="chooseBoardSourcePopup")
+  ul.pop-over-list
+    li
+      //- "Import board", and nothing else. It used to read "Import board
+        (Trello, Jira, WeKan export, CSV, Excel, ...)" - the whole list of
+        sources, in a menu row, above a page that asks which source it is and
+        lists every one of them with room to. Naming them twice makes the menu
+        the thing to read and the page the thing to confirm.
+        client/components/import/import.jade
+      a.js-open-import-page(href="{{pathFor '/import'}}")
+        i.fa.fa-download
+        |  {{_ 'import-board-c'}}
+    li
+      a.js-import-dependencies {{_ 'import'}} / {{_ 'card-dependencies'}} (JSON/SVG)
+
+template(name="importDependenciesPopup")
+  form.js-import-dependencies-form
+    label
+      | {{_ 'r-board'}}
+      select.js-import-dependencies-board
+        each boardsForDependencyImport
+          option(value="{{_id}}") {{title}}
+    label
+      | {{_ 'import-dependencies-file'}}
+      input.js-import-dependencies-file(type="file" accept=".json,.svg,application/json,image/svg+xml")
+    textarea.js-import-dependencies-text(rows="6" placeholder="{{_ 'import-dependencies-placeholder'}}")
+    button.primary.confirm.js-import-dependencies-submit(type="submit") {{_ 'import'}}
+    if importResult
+      p.quiet.js-import-dependencies-result {{importResult}}
+
+template(name="archiveBoardPopup")
+  p {{_ 'close-board-pop'}}
+  button.js-confirm.negate.full(type="submit")
+    i.fa.fa-archive
+    | {{_ 'archive'}}
+
+template(name="deleteDuplicateListsPopup")
+  p {{_ 'delete-duplicate-lists-confirm'}}
+  button.js-confirm.negate.full(type="submit")
+    i.fa.fa-trash
+    | {{_ 'delete'}}
+
+template(name="outgoingWebhooksPopup")
+  each integrations
+    form.integration-form
+      a.flex.js-toggle-webhook-enabled
+        .materialCheckBox(class="{{#unless enabled}}is-checked{{/unless}}")
+        span {{_ 'disable-webhook'}}
+      //- #2026 / #1377: which activities this webhook is sent.
+      .webhook-activity-picker
+        span.quiet {{_ 'webhook-activities'}}
+        a.flex.js-toggle-webhook-activity-all
+          .materialCheckBox(class="{{#if webhookPicker.all}}is-checked{{/if}}")
+          span {{_ 'webhook-activities-all'}}
+        each webhookActivityGroups
+          a.flex.js-toggle-webhook-activity-group(data-group=key)
+            .materialCheckBox(class="{{#if checked}}is-checked{{/if}}")
+            span {{_ labelKey}}
+      //- #1297: also each card member and assignee, as a Mattermost direct message.
+      a.flex.js-toggle-webhook-mattermost-dm(title="{{_ 'webhook-mattermost-dm-desc'}}")
+        .materialCheckBox(class="{{#if mattermostDirectMessages}}is-checked{{/if}}")
+        span {{_ 'webhook-mattermost-dm'}}
+      textarea.js-outgoing-webhooks-title(rows="2" placeholder="{{_ 'webhook-title'}}" name="title")= title
+      input.js-outgoing-webhooks-url(type="text" name="url" value=url)
+      input.js-outgoing-webhooks-token(placeholder="{{_ 'webhook-token' }}" type="text" value=token name="token")
+      select.js-outgoing-webhooks-type(name="type")
+          each _type in types
+              if($eq _type this.type)
+                  option(value=_type selected="selected") {{_ _type}}
+              else
+                  option(value=_type) {{_ _type}}
+      input(type="hidden" value=this.type name="_type")
+      input(type="hidden" value=_id name="id")
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+      //- A grain has no network of its own: a webhook leaves only through an
+        address a board admin allowed in the Sandstorm Powerbox.
+      if isSandstorm
+        if webhookGranted _id
+          p.quiet
+            i.fa.fa-check
+            | {{_ 'sandstorm-webhook-granted'}}
+        else
+          a.button.wide.js-sandstorm-webhook-grant
+            i.fa.fa-plug
+            | {{_ 'sandstorm-webhook-grant'}}
+      //- #3695: what this webhook sends, grouped and when (content, grouping,
+        schedule). Saved at once on each change; a two-way webhook keeps the
+        full activity parameters and immediate delivery its reply needs.
+      unless $eq type 'bidirectional-webhooks'
+        +notificationDeliverySettings(scope="integration" targetId=_id channel="webhook")
+  form.integration-form
+    textarea.js-outgoing-webhooks-title(rows="2" placeholder="{{_ 'webhook-title'}}" name="title")
+    input.js-outgoing-webhooks-url(placeholder="{{_ 'settings-group-url' }}" type="text" name="url")
+    input.js-outgoing-webhooks-token(placeholder="{{_ 'webhook-token' }}" type="text" name="token")
+    select.js-outgoing-webhooks-type(name="type")
+        each _type in types
+            option(value=_type) {{_ _type}}
+    input.primary.wide(type="submit" value="{{_ 'create'}}")
+
+//- Board Settings, top to bottom, in groups divided by a rule:
+    Rules | Scrum settings | Change color, Change Background Image, Date |
+    Board View, Swimlane, List, Card | Export, Import, Notifications, Outgoing Webhooks |
+    Archived items, Move Board to Archive. The first group is what the board
+    IS, the second how it is drawn, the third what goes in and out of it,
+    the last what has been put away. Every entry keeps its own guard: the
+    board-admin ones stay board-admin, Export/Import stay behind withApi,
+    Move Board to Archive stays off the templates board.
+    tests/boardMenuOrder.test.cjs pins this order and the rules.
+template(name="boardMenuPopup")
+  if currentUser.isBoardAdmin
+    ul.pop-over-list
+      li
+        a.js-open-rules-view(title="{{_ 'rules'}}")
+          i.fa.fa-magic
+          | {{_ 'rules'}}
+      //- The Rules page's own views, reachable from here too, so the one wanted
+        is a click away rather than Rules first and then its page sidebar. Each
+        opens the Rules page in that view; Import / Export opens its popup
+        here. Same labels and icons as the Rules page sidebar (rulesControls in
+        client/components/rules/rulesMain.jade).
+      li
+        a.js-open-rules-list-view(title="{{_ 'r-list-view'}}")
+          i.fa.fa-list
+          | {{_ 'r-list-view'}}
+      li
+        a.js-open-rules-workflow-view(title="{{_ 'r-workflow-view'}}")
+          i.fa.fa-sitemap
+          | {{_ 'r-workflow-view'}}
+      //- Bots: the alternative workflow view - external runners this board
+        hands cards to (client/components/rules/rulesBots.*). Board admins
+        only, as every entry of this group.
+      li
+        a.js-open-rules-bots-view(title="{{_ 'bots'}}")
+          i.fa.fa-android
+          | {{_ 'bots'}}
+      li
+        a.js-open-rules-blocks-view(title="{{_ 'r-blocks-view'}}")
+          i.fa.fa-puzzle-piece
+          | {{_ 'r-blocks-view'}}
+      li
+        a.js-open-rules-history(title="{{_ 'history'}}")
+          i.fa.fa-history
+          | {{_ 'history'}}
+      li
+        a.js-open-rules-import-export(title="{{_ 'rulesImportExportPopup-title'}}")
+          i.fa.fa-exchange
+          | {{_ 'rulesImportExportPopup-title'}}
+    //- Rules and its views are one group; the board's look starts below it.
+    hr
+    //- Scrum settings: how this board plans its work, above the group that
+      decides how the board looks, with a rule of its own between them.
+    ul.pop-over-list
+      li
+        a.js-open-board-scrum-settings
+          i.fa.fa-repeat
+          | {{_ 'scrum-settings'}}
+    hr
+    ul.pop-over-list
+      //- "Custom Fields" was here. The board's list of them is in the card's own
+        menu now - Card menu / Custom Fields, whose Settings cog opens it - which
+        is where somebody looking at a card's fields already is.
+        client/components/cards/cardDetails.jade
+      li
+        a.js-change-board-color
+          i.fa.fa-paint-brush
+          | {{_ 'board-change-color'}}
+      //- #1566: the board's own announcement, shown to every member.
+      li
+        a.js-open-board-announcement
+          i.fa.fa-bullhorn
+          | {{_ 'board-announcement'}}
+      li
+        a.js-change-background-image
+          i.fa.fa-picture-o
+          | {{_ 'board-change-background-image'}}
+      li
+        a.js-open-board-date-settings(title="{{_ 'date'}}")
+          i.fa.fa-calendar
+          | {{_ 'date'}}
+      //- "Board backgrounds" was here. It was the list of pictures uploaded to
+        this board, and that list is drawn inside Change Background Image now -
+        under the upload that adds to it - so a second entry to the same list
+        was a second place to look for one thing.
+    //Bug Board icons random dance https://github.com/wekan/wekan/issues/4214
+    //if currentUser.isBoardAdmin
+    //
+      unless currentSetting.hideBoardMemberList
+    //
+        unless currentSetting.hideCardCounterList
+    //
+          li
+    //
+            a.js-board-info-on-my-boards(title="{{_ 'board-info-on-my-boards'}}")
+    //
+              i.fa.fa-id-card-o
+    //
+              | {{_ 'board-info-on-my-boards'}}
+    hr
+  else if rulesReadable
+    //- #2217: a member of a board that shows its Rules reads them here; the
+      page draws no control that changes a rule.
+    ul.pop-over-list
+      li
+        a.js-open-rules-view(title="{{_ 'rules'}}")
+          i.fa.fa-magic
+          | {{_ 'rules'}}
+    hr
+  if currentUser
+    //- Board View, Swimlane, List and Card settings, together. Board View,
+      Swimlane and List are board-admin settings (the resize locks), same
+      restriction the server already enforces. Card is not admin-only: it
+      used to be reached from the card's own menu and the minicard's own
+      menu - "Show on Card" / "Show on Minicard" - which put the same
+      board-wide list of toggles behind two different places depending on
+      what you were looking at, and which also let anyone open it for the one
+      PERSONAL row in it ("Labels text" - stored on the user's own profile,
+      not the board). It is back here as one board setting, and keeps that
+      same personal-only fallback for a non-admin.
+      client/components/cards/cardDetails.jade
+    ul.pop-over-list
+      if currentUser.isBoardAdmin
+        //- Board Settings / Board View: which Board View menu entries this
+          board offers, and which one it opens in, for a public and for a
+          private board. Above Swimlane, since it decides what the whole
+          board looks like before any swimlane does.
+          docs/Features/Board-Sidebar/Board-Settings/Board-View.md
+        li
+          a.js-open-board-view-settings(title="{{_ 'board-view'}}")
+            i.fa.fa-eye
+            | {{_ 'board-view'}}
+        li
+          a.js-open-board-swimlane-settings(title="{{_ 'swimlane'}}")
+            i.fa.fa-th-large
+            | {{_ 'swimlane'}}
+        li
+          a.js-open-board-list-settings(title="{{_ 'list'}}")
+            i.fa.fa-trello
+            | {{_ 'list'}}
+        //- "Scrum settings" was here. It is above Change color now, in a group
+          of its own.
+        //- "WIP Limit Groups" was here. It is a row of Board Settings /
+          Swimlane now (boardSwimlaneSettingsPopup below): a group most often
+          caps one swimlane's lists together, so it sits with the swimlane
+          settings rather than as a fourth top-level entry.
+      li
+        a.js-open-board-card-settings(title="{{_ 'card-settings'}}")
+          i.fa.fa-id-card
+          | {{_ 'card'}}
+    hr
+  ul.pop-over-list
+    if withApi
+      unless exportDisabled
+        li
+          a.js-export-board
+            i.fa.fa-upload
+            | {{_ 'export'}}
+        if canImportIntoBoard
+          li
+            a.js-import-into-board
+              i.fa.fa-download
+              | {{_ 'import'}}
+    if currentUser.isBoardAdmin
+      li
+        a.js-open-notification-settings
+          i.fa.fa-bell
+          | {{_ 'notifications'}}
+      li
+        a.js-outgoing-webhooks
+          i.fa.fa-globe
+          | {{_ 'outgoing-webhooks'}}
+      //- "Subtasks Settings" was here. What subtasks do on this board is behind
+        the hamburger at the end of the Subtasks heading on an opened card,
+        which is where somebody looking at subtasks already is.
+        client/components/cards/cardDetails.jade
+  hr
+  ul.pop-over-list
+    li
+      a.js-open-archives
+        i.fa.fa-archive
+        | {{_ 'archived-items'}}
+    li
+      a.js-open-original-positions
+        i.fa.fa-history
+        | {{_ 'original-positions'}}
+    //- Helpers that need no AI (docs/Features/General/Assistants/Assistants.md),
+      each hidden by its Admin Panel / Settings / Visibility / Features tick.
+    if allowFeature 'board-summary'
+      li
+        a.js-open-board-summary
+          i.fa.fa-list-alt
+          | {{_ 'summary'}}
+    if allowFeature 'since-last-visit'
+      li
+        a.js-open-since-last-visit
+          i.fa.fa-bell-o
+          if sinceVisitCount
+            | {{_ 'since-last-visit-count' count=sinceVisitCount}}
+          else
+            | {{_ 'since-last-visit'}}
+    unless currentBoard.isTemplatesBoard
+      if currentUser.isBoardAdmin
+        // li
+        //
+           a.js-delete-duplicate-lists
+        //
+             i.fa.fa-trash
+        //
+             | {{_ 'delete-duplicate-lists'}}
+        //- #6792: this board, copied into the user's Templates as a board
+          template (server/publications/boards.js saveBoardAsTemplate). Not
+          on a template board, which already is one.
+        unless currentBoard.isAnyTemplateBoard
+          li
+            a.js-save-board-as-template
+              i.fa.fa-clone
+              | {{_ 'save-card-as-template'}}
+        li
+          a.js-archive-board
+            i.fa.fa-archive
+            | {{_ 'archive-board'}}
+
+//- Board Settings / Board View. Same table as Card Settings - one row per
+  view of the Board View menu (models/lib/boardViewSettings.js BOARD_VIEWS,
+  in the menu's order), a checkbox per column, the view's name last. The two
+  "Default" columns are radio groups drawn as checkboxes: one tick each. The
+  two public columns are not rendered when Admin Panel / Settings /
+  Visibility hides public boards (tableVisibilityMode-allowPrivateOnly).
+  docs/Features/Board-Sidebar/Board-Settings/Board-View.md, client/components/sidebar/sidebar.js
+template(name="boardViewSettingsPopup")
+  form.board-view-settings(class="{{#if publicBoardsHidden}}hide-public-columns{{/if}}")
+    .board-view-settings-row
+      unless publicBoardsHidden
+        .board-view-settings-column
+          h4 {{_ 'default-on-public-board'}}
+        .board-view-settings-column
+          h4 {{_ 'show-on-public-board'}}
+      .board-view-settings-column
+        h4 {{_ 'default-on-private-board'}}
+      .board-view-settings-column
+        h4 {{_ 'show-on-private-board'}}
+      .board-view-settings-column
+        h4 {{_ 'description'}}
+    .board-view-settings-rows.js-board-view-sortable
+      each boardViewRows
+        .board-view-settings-row.js-board-view-row(data-view="{{view}}")
+          unless ../publicBoardsHidden
+            .board-view-settings-column
+              a.flex.js-board-view-default(data-visibility="public" title="{{_ 'default-on-public-board'}}" class="{{#if isDefaultPublic}}is-checked{{/if}}")
+                i.fa(class="{{#if isDefaultPublic}}fa-check{{else}}fa-square-o{{/if}}")
+            .board-view-settings-column
+              a.flex.js-board-view-show(data-visibility="public" title="{{_ 'show-on-public-board'}}" class="{{#if showOnPublic}}is-checked{{/if}}")
+                i.fa(class="{{#if showOnPublic}}fa-check{{else}}fa-square-o{{/if}}")
+          .board-view-settings-column
+            a.flex.js-board-view-default(data-visibility="private" title="{{_ 'default-on-private-board'}}" class="{{#if isDefaultPrivate}}is-checked{{/if}}")
+              i.fa(class="{{#if isDefaultPrivate}}fa-check{{else}}fa-square-o{{/if}}")
+          .board-view-settings-column
+            a.flex.js-board-view-show(data-visibility="private" title="{{_ 'show-on-private-board'}}" class="{{#if showOnPrivate}}is-checked{{/if}}")
+              i.fa(class="{{#if showOnPrivate}}fa-check{{else}}fa-square-o{{/if}}")
+          .board-view-settings-column
+            //- The row's place in the Board View menu, by drag and drop like
+              Board Settings / Card (client/components/sidebar/sidebar.js
+              boardViewSortable): with drag handles on, the handle sits where
+              the up/down arrows were; with them off, the icon and the label are
+              what is dragged. The Up and Down arrow keys move a focused row one
+              step (models/lib/boardViewSettings.js moveBoardView).
+            if showDragHandles
+              a.flex.board-view-order-handle.js-board-view-order-handle(href="#" draggable="false" role="button" title="{{_ 'drag-to-reorder'}}" aria-label="{{_ 'drag-to-reorder'}}")
+                i.fa.fa-arrows
+            span(class="{{#unless showDragHandles}}js-board-view-order-handle board-view-drag-label{{/unless}}" tabindex="{{#unless showDragHandles}}0{{/unless}}" title="{{#unless showDragHandles}}{{_ 'drag-to-reorder'}}{{/unless}}")
+              i.fa(class="{{icon}}")
+              | {{_ labelKey}}
+
+//- Board Settings / Swimlane. The board-wide swimlane-height resize lock
+  used to be a header icon (#6680); it lives here now, with the rest of a
+  board's settings. client/components/swimlanes/swimlanes.js
+template(name="boardSwimlaneSettingsPopup")
+  +boardDragSettings(section="swimlane")
+  +scrumFieldSettings(kind="swimlane")
+  form.board-swimlane-settings
+    +boardSettingsColumnActions(section="swimlane" column="settings")
+    div.check-div
+      a.flex.js-toggle-swimlane-height-resize-lock(title="{{_ 'lock-swimlane-height-resize'}}" class="{{#if isSwimlaneHeightResizeLocked}}is-checked{{/if}}")
+        i.fa(class="{{#if isSwimlaneHeightResizeLocked}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-arrows-v
+          | {{_ 'lock-swimlane-height-resize'}}
+    //- #2805: one sticky list header row for all swimlanes.
+    div.check-div
+      a.flex.js-toggle-shared-list-headers(title="{{_ 'shared-list-headers-desc'}}" class="{{#if hasSharedListHeaders}}is-checked{{/if}}")
+        i.fa(class="{{#if hasSharedListHeaders}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-header
+          | {{_ 'shared-list-headers'}}
+  //- Board Settings / Swimlane / WIP Limit Groups (#2489). Used to be its own
+    top-level Board Settings entry; it opens the unchanged wipLimitGroupsPopup
+    below, stacked on this one so the popup's back arrow returns here.
+  ul.pop-over-list
+    li
+      a.js-open-board-wip-limit-groups(title="{{_ 'wip-limit-groups'}}")
+        i.fa.fa-tasks
+        | {{_ 'wip-limit-groups'}}
+
+//- Board Settings / List. The board-wide list-width resize lock and the
+  "same width for all lists" setting used to be header icons (#6680); they
+  live here now, with the rest of a board's settings. The per-list "Set
+  width" popup keeps the personal/per-list width settings and the actual
+  shared-width value - this is only the two board-wide switches.
+  client/components/lists/list.js
+template(name="boardListSettingsPopup")
+  +boardDragSettings(section="list")
+  +scrumFieldSettings(kind="list")
+  form.board-list-settings
+    +boardSettingsColumnActions(section="list" column="settings")
+    div.check-div
+      a.flex.js-toggle-list-width-resize-lock(title="{{_ 'lock-list-width-resize'}}" class="{{#if isListWidthResizeLocked}}is-checked{{/if}}")
+        i.fa(class="{{#if isListWidthResizeLocked}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-arrows-h
+          | {{_ 'lock-list-width-resize'}}
+    div.check-div
+      a.flex.js-toggle-same-width-for-all-lists(title="{{_ 'same-width-for-all-lists'}}" class="{{#if isSameWidthForAllLists}}is-checked{{/if}}")
+        i.fa(class="{{#if isSameWidthForAllLists}}fa-check{{else}}fa-square-o{{/if}}")
+        span
+          i.fa.fa-columns
+          | {{_ 'same-width-for-all-lists'}}
+
+//- #2489: Board Settings / WIP Limit Groups - a shared WIP limit across two or
+  more of this board's lists together, on top of the existing per-list
+  wipLimit (client/components/lists/listHeader.jade). Same panel pattern as
+  Swimlane/List/Card settings above. client/components/sidebar/sidebar.js
+template(name="wipLimitGroupsPopup")
+  .wip-limit-groups
+    each wipLimitGroups
+      form.wip-limit-group(data-id="{{_id}}")
+        .wip-limit-group-name
+          textarea.js-wip-limit-group-name(rows="2"  placeholder="{{_ 'wip-limit-group-name-placeholder'}}")= name
+        .wip-limit-group-lists
+          each boardLists
+            label.flex
+              input.js-wip-limit-group-list-toggle(type="checkbox" data-list-id="{{_id}}" checked="{{isListInGroup _id ../listIds}}")
+              | {{title}}
+        .wip-limit-group-limit
+          label {{_ 'set-wip-limit-value'}}
+          input.js-wip-limit-group-limit-value(type="number" value="{{limit}}" min="1" max="999")
+          input.js-wip-limit-group-save(type="submit" value="{{_ 'apply'}}")
+        .wip-limit-group-actions
+          a.flex.js-toggle-wip-limit-group-enabled(class="{{#if enabled}}is-checked{{/if}}")
+            i.fa(class="{{#if enabled}}fa-check{{else}}fa-square-o{{/if}}")
+            span {{_ 'enable-wip-limit'}}
+          a.js-remove-wip-limit-group
+            i.fa.fa-trash
+            | {{_ 'delete'}}
+      hr
+    form.wip-limit-group-new
+      p {{_ 'wip-limit-group-add'}}
+      //- #2380: a WIP limit on a whole swimlane is a WIP limit group whose
+        members are exactly that swimlane's own lists (models/lists.js
+        swimlaneId). This quick-select checks those boxes below rather than
+        adding a second, separate swimlane-limit mechanism.
+      .wip-limit-group-swimlane-quick-select.flex
+        select.js-wip-limit-group-swimlane
+          option(value="") {{_ 'wip-limit-group-select-swimlane'}}
+          each boardSwimlanes
+            option(value="{{_id}}") {{title}}
+        button.js-wip-limit-group-apply-swimlane(type="button") {{_ 'wip-limit-group-apply-swimlane'}}
+      .wip-limit-group-lists
+        each boardLists
+          label.flex
+            input.js-wip-limit-group-new-list(type="checkbox" data-list-id="{{_id}}")
+            | {{title}}
+      label {{_ 'set-wip-limit-value'}}
+      input.js-wip-limit-group-new-limit(type="number" value="1" min="1" max="999")
+      input.js-wip-limit-group-new-save(type="submit" value="{{_ 'wip-limit-group-add'}}")
+
+template(name="exportBoardPopup")
+  //- The same popup as Export swimlane / list / card, with the same panes and
+    the same formats table - a board just happens to be the widest scope, so the
+    entries marked `scopes: ['board']` (HTML, the dependency graph, CSV, and the
+    exports written for another tool) appear here and nowhere else.
+    client/components/boards/exportScope.js
+  +exportScopeBody(title=boardTitle)
+
+template(name="importBoardIntoPopup")
+  //- Import INTO this board - the same body in its import mode. (All Boards has
+    an "Import board" of its own, which makes a NEW board from a file; this one
+    adds to the board you are looking at.)
+  +exportScopeBody(title=boardTitle mode="import")
+
+template(name="labelsWidget")
+  .board-widget.board-widget-labels
+    //- Same caret as Members above: folding Labels hides the labels under it.
+    h3.js-toggle-fold(data-fold="labels" role="button" tabindex="0")
+      i.fa(class="{{foldCaret 'labels'}}")
+      i.fa.fa-tag
+      | {{_ 'labels'}}
+    if isFoldOpen 'labels'
+      .board-widget-content
+        each currentBoard.labels
+            a.card-label(class="{{labelColorClass color}}" style="{{labelColorStyle color}}"
+              class="{{#if currentUser.isNotCommentOnly}}{{#if currentUser.isNotWorker}}js-label{{/if}}{{/if}}")
+              span.card-label-name
+                +viewer
+                  = name
+        if currentUser.isBoardAdmin
+          a.card-label.add-label.js-add-label(title="{{_ 'label-create'}}")
+            i.fa.fa-plus
+
+template(name="memberPopup")
+  .board-member-menu
+    .miniprofile-header
+      +userAvatar(userId=user._id showEdit=true)
+      .info
+        h3
+          .js-profile= user.profile.fullname
+        p.quiet @#{user.username}
+        if isInvited
+          p
+            i.fa.fa-exclamation-triangle
+            | {{_ 'not-accepted-yet'}}
+
+    ul.pop-over-list
+      li
+        a.js-filter-member {{_ 'filter-cards'}}
+      if currentUser.isBoardAdmin
+        li
+          a.js-change-role
+            | {{_ 'change-permissions'}}
+            span.quiet (#{memberType})
+        if isImportedMember
+          li
+            a.js-map-imported-member
+              i.fa.fa-user-plus
+              | {{_ 'map-to-existing-user'}}
+      unless currentUser.isWorker
+        li
+          if $eq currentUser._id userId
+            a.js-leave-member {{_ 'leave-board'}}
+          else if currentUser.isBoardAdmin
+            a.js-remove-member {{_ 'remove-from-board'}}
+
+template(name="mapImportedMemberPopup")
+  p.quiet {{_ 'map-to-existing-user-desc'}}
+  .js-map-target-search
+    input.js-map-target-search-input(type="text" placeholder="{{_ 'map-to-existing-user-search'}}" autocomplete="off")
+  if searching
+    .map-target-status.quiet {{_ 'loading'}}
+  ul.pop-over-list
+    each u in mapTargets
+      li
+        a.js-pick-map-target(data-id="{{u._id}}")
+          +userAvatar(userId=u._id)
+          span.full-name= u.profile.fullname
+          |  (@#{u.username})
+          unless u.isBoardMember
+            span.quiet  — {{_ 'map-to-existing-user-not-member'}}
+    unless hasMapTargets
+      li
+        p.quiet {{mapTargetsEmptyText}}
+
+template(name="removeMemberPopup")
+  p {{_ 'remove-member-pop' name=user.profile.fullname username=user.username boardTitle=board.title}}
+  if isSandstorm
+    p.warning {{_ 'sandstorm-remove-member-warning'}}
+  button.js-confirm.negate.full(type="submit") {{_ 'remove-member'}}
+
+template(name="leaveBoardPopup")
+  p {{_ 'leave-board-pop' boardTitle=board.title}}
+  button.js-confirm.negate.full(type="submit") {{_ 'leave-board'}}
+
+template(name="addBoardOrgPopup")
+  select.js-boardOrgs#jsBoardOrgs
+    option(value="-1") {{_ 'organizations'}} :
+    each value in orgsDatas
+      option(value="{{value._id}}") {{value.orgDisplayName}}
+
+template(name="removeBoardOrgPopup")
+  form
+    input.hide#hideOrgId(type="text" value=org._id)
+    label
+      | {{_ 'remove-organization-from-board'}}
+  br
+  hr
+  div.buttonsContainer
+    input.primary.wide.leaveBoardBtn#leaveBoardBtn(type="submit" value="{{_ 'confirm-btn'}}")
+    input.primary.wide.cancelLeaveBoardBtn#cancelLeaveBoardBtn(type="submit" value="{{_ 'cancel'}}")
+
+template(name="addBoardTeamPopup")
+  select.js-boardTeams#jsBoardTeams
+    option(value="-1") {{_ 'teams'}} :
+    each value in teamsDatas
+      option(value="{{value._id}}") {{_ value.teamDisplayName}}
+
+template(name="removeBoardTeamPopup")
+  form
+    input.hide#hideTeamId(type="text" value=team._id)
+    label
+      | {{_ 'remove-team-from-table'}}
+  br
+  hr
+  div.buttonsContainer
+    input.primary.wide.leaveBoardBtn#leaveBoardTeamBtn(type="submit" value="{{_ 'confirm-btn'}}")
+    input.primary.wide.cancelLeaveBoardBtn#cancelLeaveBoardTeamBtn(type="submit" value="{{_ 'cancel'}}")
+
+template(name="addBoardDomainPopup")
+  form.js-add-board-domain
+    label
+      | {{_ 'domain'}}
+      input.js-board-domain-input#jsBoardDomainInput(type="text" autofocus placeholder="example.com")
+    if error.get
+      .warning {{_ error.get}}
+    div.buttonsContainer
+      input.primary.wide#jsAddBoardDomainBtn(type="submit" value="{{_ 'add-domain'}}")
+
+template(name="removeBoardDomainPopup")
+  form
+    input.hide#hideDomain(type="text" value=domain)
+    label
+      | {{_ 'remove-domain-from-board'}}
+  br
+  hr
+  div.buttonsContainer
+    input.primary.wide.leaveBoardBtn#leaveBoardDomainBtn(type="submit" value="{{_ 'confirm-btn'}}")
+    input.primary.wide.cancelLeaveBoardBtn#cancelLeaveBoardDomainBtn(type="submit" value="{{_ 'cancel'}}")
+
+template(name="addMemberPopup")
+  .js-search-member
+    input.js-search-member-input(type="text" placeholder="{{_ 'email-address'}}")
+  if loading.get
+    +spinner
+  else if error.get
+    .warning {{_ error.get}}
+  else
+    ul.pop-over-list
+      each searchResults
+        li.item.js-member-item
+          a.name.js-select-member(title="{{profile.fullname}} ({{username}})")
+            +userAvatar(userId=_id)
+            span.full-name
+              = profile.fullname
+              | (<span class="username">{{username}}</span>)
+    //- A Sandstorm identity must enter through grain sharing; creating a local
+      email/password account here would produce an account that cannot use the
+      grain's header-based login. Existing grain identities remain searchable.
+    unless isSandstorm
+      button.js-email-invite.primary.full {{_ 'email-invite'}}
+
+
+template(name="changePermissionsPopup")
+  ul.pop-over-list
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-admin{{/if}}")
+        | {{_ 'admin'}}
+        if isAdmin
+          i.fa.fa-check
+        span.sub-name {{_ 'admin-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-normal{{/if}}")
+        | {{_ 'normal'}}
+        if isNormal
+          i.fa.fa-check
+        span.sub-name {{_ 'normal-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-normal-assigned-only{{/if}}")
+        | {{_ 'normal-assigned-only'}}
+        if isNormalAssignedOnly
+          i.fa.fa-check
+        span.sub-name {{_ 'normal-assigned-only-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-no-comments{{/if}}")
+        | {{_ 'no-comments'}}
+        if isNoComments
+          i.fa.fa-check
+        span.sub-name {{_ 'no-comments-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-comment-only{{/if}}")
+        | {{_ 'comment-only'}}
+        if isCommentOnly
+          i.fa.fa-check
+        span.sub-name {{_ 'comment-only-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-comment-assigned-only{{/if}}")
+        | {{_ 'comment-assigned-only'}}
+        if isCommentAssignedOnly
+          i.fa.fa-check
+        span.sub-name {{_ 'comment-assigned-only-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-worker{{/if}}")
+        | {{_ 'worker'}}
+        if isWorker
+          i.fa.fa-check
+        span.sub-name {{_ 'worker-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-read-only{{/if}}")
+        | {{_ 'read-only'}}
+        if isReadOnly
+          i.fa.fa-check
+        span.sub-name {{_ 'read-only-desc'}}
+    li
+      a(class="{{#if isLastAdmin}}disabled{{else}}js-set-read-assigned-only{{/if}}")
+        | {{_ 'read-assigned-only'}}
+        if isReadAssignedOnly
+          i.fa.fa-check
+        span.sub-name {{_ 'read-assigned-only-desc'}}
+    //- Custom roles (#3022), defined in Admin Panel / People / Roles.
+    each customRoles
+      li
+        a(class="{{#if isLastAdmin}}disabled{{else}}js-set-custom-role{{/if}}" data-role="{{_id}}")
+          | {{name}}
+          if isCurrent
+            i.fa.fa-check
+          span.sub-name {{summary}}
+  if isLastAdmin
+    hr
+    p.quiet.bottom {{_ 'last-admin-desc'}}

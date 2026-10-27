@@ -1,0 +1,63 @@
+template(name="checklistActions")
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      div.trigger-dropdown
+        select(id="check-action")
+          option(value="add") {{_'r-add'}}
+          option(value="remove") {{_'r-remove'}}
+      div.trigger-text
+        | {{_'r-checklist'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checklist-name",placeholder="{{_'r-name'}}")
+    button.trigger-button.js-add-checklist-action.js-goto-rules(type="button" aria-label="{{_ 'r-add-action'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      div.trigger-dropdown
+        select(id="checkall-action")
+          option(value="check") {{_'r-check-all'}}
+          option(value="uncheck") {{_'r-uncheck-all'}}
+      div.trigger-text
+        | {{_'r-items-check'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checklist-name2",placeholder="{{_'r-name'}}")
+    button.trigger-button.js-add-checkall-action.js-goto-rules(type="button" aria-label="{{_ 'r-add-action'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+
+  div.trigger-item(data-editor-scope)
+    div.trigger-content
+      div.trigger-dropdown
+        select(id="check-item-action")
+          option(value="check") {{_'r-check'}}
+          option(value="uncheck") {{_'r-uncheck'}}
+      div.trigger-text
+        | {{_'r-item'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checkitem-name",placeholder="{{_'r-name'}}")
+      div.trigger-text
+        | {{_'r-of-checklist'}}
+      div.trigger-dropdown
+        textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checklist-name3",placeholder="{{_'r-name'}}")
+    button.trigger-button.js-add-check-item-action.js-goto-rules(type="button" aria-label="{{_ 'r-add-action'}}")
+      i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item(data-editor-scope)
+      div.trigger-content
+        div.trigger-text
+          | {{_'r-add-checklist'}}
+        div.trigger-dropdown
+          textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checklist-name-3",placeholder="{{_'r-name'}}")
+        div.trigger-text
+          | {{_'r-with-items'}}
+        div.trigger-dropdown
+          textarea(rows="2" data-editor-submit=".js-goto-action, .js-goto-rules" id="checklist-items",placeholder="{{_'r-items-list'}}")
+      button.trigger-button.js-add-checklist-items-action.js-goto-rules(type="button" aria-label="{{_ 'r-add-action'}}")
+        i.fa.fa-plus(aria-hidden="true")
+
+  div.trigger-item
+      div.trigger-content
+        div.trigger-text
+          | {{_'r-checklist-note'}}
+

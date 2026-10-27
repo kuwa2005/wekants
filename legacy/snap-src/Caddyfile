@@ -1,0 +1,32 @@
+# Caddy 2 configuration for Wekan
+#
+# {$CADDY_PORT} is the snap's `port` setting and {$CADDY_BIND_PORT} its
+# `caddy-bind-port`, the port WeKan listens on when Caddy is enabled
+# (bin/wekan-read-settings). `sudo snap set wekan port=...` then reaches
+# this file by itself, without anything editing it.
+
+:{$CADDY_PORT:8080} {
+  # Reverse proxy to Wekan
+  reverse_proxy localhost:{$CADDY_BIND_PORT:3001} {
+    # Enable WebSocket support
+    header_up Connection {>Connection}
+    header_up Upgrade {>Upgrade}
+  }
+}
+
+# SSL/TLS example with HTTP/2 disabled for Firefox WebSocket compatibility
+# Uncomment and customize for your domain
+#{$DOMAIN:wekan.example.com} {
+#  # Enable TLS but use HTTP/1.1 protocol
+#  tls {
+#    protocols tls1.2 tls1.3
+#    alpn http/1.1
+#  }
+#
+#  # Reverse proxy to Wekan
+#  reverse_proxy localhost:{$CADDY_BIND_PORT:3001} {
+#    # Enable WebSocket support
+#    header_up Connection {>Connection}
+#    header_up Upgrade {>Upgrade}
+#  }
+#}

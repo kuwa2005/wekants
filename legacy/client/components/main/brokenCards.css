@@ -1,0 +1,28 @@
+.broken-cards-card-wrapper {
+  margin-top: 0;
+  margin-bottom: 12px;
+  border-width: 6px !important;
+  border-color: #808080 !important;
+  border-style: solid;
+  border-radius: 10px;
+  padding: 18px 28px;
+  background-color: #fff;
+}
+.broken-cards-wrapper {
+  max-width: min(500px, 65vw);
+  margin-inline-end: auto;
+  margin-inline-start: auto;
+}
+.broken-cards-card-title {
+  font-weight: bold;
+}
+.broken-cards-context {
+  display: inline-block;
+}
+.broken-cards-context-separator {
+  font-weight: bold;
+}
+.broken-cards-null {
+  color: #8b0000;
+  font-style: italic;
+}

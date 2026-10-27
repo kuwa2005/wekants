@@ -1,0 +1,288 @@
+import { ReactiveVar } from 'meteor/reactive-var';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { TAPi18n } from '/imports/i18n';
+import { Utils } from '/client/lib/utils';
+import Boards from '/models/boards';
+import Swimlanes from '/models/swimlanes';
+import Lists from '/models/lists';
+
+/**
+ * Helper class for popup dialogs that let users select a board, swimlane, and list.
+ * Not a BlazeComponent — instantiated by each Template's onCreated callback.
+ */
+export class BoardSwimlaneListDialog {
+  /**
+   * @param {Blaze.TemplateInstance} tpl - the template instance
+   * @param {Object} callbacks
+   * @param {Function} callbacks.getDialogOptions - returns saved options from card/user
+   * @param {Function} callbacks.setDone - performs the action (boardId, swimlaneId, listId, options)
+   * @param {Function} [callbacks.getDefaultOption] - override default option shape
+   */
+  constructor(tpl, callbacks = {}) {
+    this.tpl = tpl;
+    // Do not depend on the long-lived All Boards composite subscription being
+    // populated. This picker-owned subscription stops with the popup.
+    this.tpl.subscribe('boardDestinations');
+    this._getDialogOptions = callbacks.getDialogOptions || (() => undefined);
+    this._setDone = callbacks.setDone || (() => {});
+    if (callbacks.getDefaultOption) {
+      this.getDefaultOption = callbacks.getDefaultOption;
+    }
+
+    this.currentBoardId = Utils.getCurrentBoardId();
+    this.selectedBoardId = new ReactiveVar(this.currentBoardId);
+    this.selectedSwimlaneId = new ReactiveVar('');
+    this.selectedListId = new ReactiveVar('');
+    this.loading = new ReactiveVar(true);
+    this.error = new ReactiveVar('');
+    this.saving = new ReactiveVar(false);
+    this._request = 0;
+    this.tpl.view?.onViewDestroyed(() => {
+      this._disposed = true;
+      this._request++;
+      this._boardSubscription?.stop();
+    });
+    this.setOption(this.currentBoardId);
+  }
+
+  /** get the default options
+   * @return the options
+   */
+  getDefaultOption() {
+    return {
+      boardId: '',
+      swimlaneId: '',
+      listId: '',
+    };
+  }
+
+  /** returns the card dialog options (delegates to callback) */
+  getDialogOptions() {
+    return this._getDialogOptions();
+  }
+
+  /** performs the done action (delegates to callback) */
+  async setDone(...args) {
+    return this._setDone(...args);
+  }
+
+  /** set the last confirmed dialog field values
+   * @param boardId the current board id
+   */
+  setOption(boardId) {
+    this.cardOption = this.getDefaultOption();
+
+    const currentOptions = this.getDialogOptions();
+    if (currentOptions && boardId && currentOptions[boardId]) {
+      this.cardOption = currentOptions[boardId];
+      if (
+        this.cardOption.boardId &&
+        this.cardOption.swimlaneId &&
+        this.cardOption.listId
+      ) {
+        this.selectedBoardId.set(this.cardOption.boardId);
+        this.selectedSwimlaneId.set(this.cardOption.swimlaneId);
+        this.selectedListId.set(this.cardOption.listId);
+      }
+    }
+    this.getBoardData(this.selectedBoardId.get());
+    if (
+      !this.selectedSwimlaneId.get() ||
+      !ReactiveCache.getSwimlane({
+        _id: this.selectedSwimlaneId.get(),
+        boardId: this.selectedBoardId.get(),
+      })
+    ) {
+      this.setFirstSwimlaneId();
+    }
+    if (
+      !this.selectedListId.get() ||
+      !ReactiveCache.getList({
+        _id: this.selectedListId.get(),
+        boardId: this.selectedBoardId.get(),
+      })
+    ) {
+      this.setFirstListId();
+    }
+  }
+
+  /** sets the first swimlane id */
+  setFirstSwimlaneId() {
+    try {
+      const swimlaneId = this.swimlanes()[0]?._id || '';
+      this.selectedSwimlaneId.set(swimlaneId);
+    } catch (e) {}
+  }
+
+  /** sets the first list id */
+  setFirstListId() {
+    try {
+      const boardId = this.selectedBoardId.get();
+      const swimlaneId = this.selectedSwimlaneId.get();
+      const lists = this.getListsForBoardSwimlane(boardId, swimlaneId);
+      const listId = lists[0] ? lists[0]._id : '';
+      this.selectedListId.set(listId);
+    } catch (e) {}
+  }
+
+  /** get lists filtered by board and swimlane */
+  getListsForBoardSwimlane(boardId, swimlaneId) {
+    if (!boardId) return [];
+    const board = Boards.findOne(boardId);
+    if (!board) return [];
+
+    const selector = {
+      boardId,
+      archived: false,
+      deletedAt: null,
+    };
+
+    if (swimlaneId) {
+      // Lists with no swimlane are board-global, not default-swimlane lists.
+      // Offer them beside the selected swimlane's own lists for every swimlane.
+      selector.swimlaneId = { $in: [swimlaneId, null, ''] };
+    }
+
+    return Lists.find(selector, { sort: { sort: 1 } }).fetch();
+  }
+
+  /** returns if the board id was the last confirmed one */
+  isDialogOptionBoardId(boardId) {
+    return this.cardOption.boardId == boardId;
+  }
+
+  /** returns if the swimlane id was the last confirmed one */
+  isDialogOptionSwimlaneId(swimlaneId) {
+    return this.cardOption.swimlaneId == swimlaneId;
+  }
+
+  /** returns if the list id was the last confirmed one */
+  isDialogOptionListId(listId) {
+    return this.cardOption.listId == listId;
+  }
+
+  /** returns if the board id is the currently selected one (reactive).
+   * Like isSelectedSwimlaneId/isSelectedListId, binds the board <option selected>
+   * attribute to the live selectedBoardId rather than the last-confirmed option,
+   * which is empty for a fresh dialog.  Without this, a Blaze re-render of the
+   * board <select> leaves no option selected, the DOM selectedIndex falls back to
+   * -1, and the move/copy reads an undefined boardId — making card.move fail with
+   * a 403 "may only update documents by ID" validation error. */
+  isSelectedBoardId(boardId) {
+    return this.selectedBoardId.get() == boardId;
+  }
+
+  /** returns if the swimlane id is the currently selected one (reactive).
+   * Used to bind the <option selected> attribute to the live selection rather
+   * than the last-confirmed option, so a Blaze re-render of the swimlane <select>
+   * cannot silently revert the user's in-progress choice. */
+  isSelectedSwimlaneId(swimlaneId) {
+    return this.selectedSwimlaneId.get() == swimlaneId;
+  }
+
+  /** returns if the list id is the currently selected one (reactive).
+   * See isSelectedSwimlaneId — binding the <option selected> attribute to the
+   * live selectedListId keeps the DOM <select> in sync with the user's choice
+   * across reactive re-renders (e.g. when the board subscription data arrives). */
+  isSelectedListId(listId) {
+    return this.selectedListId.get() == listId;
+  }
+
+  /** returns all available boards */
+  boards() {
+    // Query Minimongo directly so Blaze tracks the destination publication.
+    // DataCache can retain the empty result computed before that subscription
+    // becomes ready, leaving the real board selector blank.
+    return Boards.find(
+      {
+        archived: false,
+        members: { $elemMatch: { userId: Meteor.userId(), isActive: true } },
+        _id: { $ne: ReactiveCache.getCurrentUser().getTemplatesBoardId() },
+      },
+      {
+        sort: { sort: 1 },
+      },
+    ).fetch();
+  }
+
+  /** returns all available swimlanes of the current board */
+  swimlanes() {
+    const boardId = this.selectedBoardId.get();
+    if (!boardId) return [];
+    // onReady runs before DataCache's invalidated computations necessarily
+    // flush. Read the subscription's current documents so an old empty cache
+    // cannot leave the selected swimlane blank and Done disabled indefinitely.
+    return Swimlanes.find(
+      { boardId, archived: false },
+      { sort: { sort: 1 } },
+    ).fetch();
+  }
+
+  /** returns all available lists of the current board */
+  lists() {
+    return this.getListsForBoardSwimlane(
+      this.selectedBoardId.get(),
+      this.selectedSwimlaneId.get(),
+    );
+  }
+
+  /** Fix swimlane title translation issue for "Default" swimlane */
+  isTitleDefault(title) {
+    if (
+      title.startsWith("key 'default") &&
+      title.endsWith('returned an object instead of string.')
+    ) {
+      if (
+        `${TAPi18n.__('defaultdefault')}`.startsWith("key 'default") &&
+        `${TAPi18n.__('defaultdefault')}`.endsWith(
+          'returned an object instead of string.',
+        )
+      ) {
+        return 'Default';
+      } else {
+        return `${TAPi18n.__('defaultdefault')}`;
+      }
+    } else if (title === 'Default') {
+      return `${TAPi18n.__('defaultdefault')}`;
+    } else {
+      return title;
+    }
+  }
+
+  /** get the board data from the server */
+  getBoardData(boardId) {
+    const changed = this.selectedBoardId.get() !== boardId;
+    const request = ++this._request;
+    this._boardSubscription?.stop();
+    this.selectedBoardId.set(boardId);
+    this.loading.set(true);
+    this.error.set('');
+    if (changed) {
+      this.selectedSwimlaneId.set('');
+      this.selectedListId.set('');
+      this.selectedCardId?.set('');
+    }
+    if (!boardId) return;
+    this._boardSubscription = this.tpl.subscribe('board', boardId, false, {
+      onReady: () => {
+        if (this._disposed || request !== this._request) return;
+        const lanes = this.swimlanes();
+        if (!lanes.some(lane => lane._id === this.selectedSwimlaneId.get())) this.setFirstSwimlaneId();
+        if (!this.lists().some(list => list._id === this.selectedListId.get())) this.setFirstListId();
+        if (this.selectedCardId && !this.cards().some(card => card._id === this.selectedCardId.get())) {
+          this.selectedCardId.set('');
+        }
+        this.loading.set(false);
+      },
+      onStop: error => {
+        if (this._disposed || request !== this._request || !error) return;
+        this.selectedSwimlaneId.set('');
+        this.selectedListId.set('');
+        this.selectedCardId?.set('');
+        this.error.set(TAPi18n.__('server-error'));
+        this.loading.set(false);
+      },
+    });
+  }
+
+}

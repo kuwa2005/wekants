@@ -1,0 +1,15 @@
+.git
+.cursor
+legacy
+target
+node_modules
+**/.npmrc
+**/.env
+apps/api/data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+playwright-report
+test-results
+dist
+**/*.node

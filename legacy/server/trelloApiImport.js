@@ -1,0 +1,1074 @@
+import { Meteor } from 'meteor/meteor';
+import { Mongo } from 'meteor/mongo';
+import { EJSON } from 'meteor/ejson';
+import { Random } from 'meteor/random';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { TrelloCreator } from '/models/trelloCreator';
+import { trackImport } from '/server/importRuns';
+import Users from '/models/users';
+import Boards from '/models/boards';
+import Activities from '/models/activities';
+import Avatars from '/models/avatars';
+import TrelloImportJobs from '/models/trelloImportJobs';
+import { generateUniversalAvatarUrl } from '/models/lib/universalUrlGenerator';
+import { validateAttachmentUrl } from '/models/lib/attachmentUrlValidation';
+import { fetchSafe } from '/server/lib/ssrfGuard';
+import { isSandstormServer, sandstormFetch, runAsEgressUser } from '/server/sandstormEgress';
+
+// Server-only collection holding each user's saved Trello API key + token.
+// It is defined here (not under /models) and never published, so the
+// credentials never reach the browser — only the `profile.trelloApiSaved`
+// boolean is published as a "saved" indicator.
+const TrelloApiCredentials = new Mongo.Collection('trello_api_credentials');
+
+// Resolve credentials for a user: prefer the ones passed from the client
+// (when the user typed them), otherwise fall back to their saved credentials.
+export async function resolveCreds(userId, key, token) {
+  if (key && token) {
+    return { key, token };
+  }
+  const saved = await TrelloApiCredentials.findOneAsync(userId);
+  if (saved && saved.apiKey && saved.apiToken) {
+    return { key: saved.apiKey, token: saved.apiToken };
+  }
+  return null;
+}
+
+async function storeCreds(userId, key, token) {
+  await TrelloApiCredentials.upsertAsync(
+    { _id: userId },
+    { $set: { apiKey: key, apiToken: token } },
+  );
+  await Users.updateAsync(userId, { $set: { 'profile.trelloApiSaved': true } });
+}
+
+async function clearCreds(userId) {
+  await TrelloApiCredentials.removeAsync(userId);
+  await Users.updateAsync(userId, { $set: { 'profile.trelloApiSaved': false } });
+}
+
+// ---------------------------------------------------------------------------
+// Live Trello import via the Trello REST API.
+//
+// The offline path (paste JSON + upload the attachments ZIP) works without
+// credentials, but every board has to be exported and downloaded by hand.
+// These methods let a logged-in user paste their Trello API key + token once
+// and then list and import whole workspaces (Trello "organizations") and their
+// boards directly, including attachments — which require OAuth to download and
+// are therefore fetched server-side here and handed to the same TrelloCreator
+// the offline importer uses.
+// ---------------------------------------------------------------------------
+
+const TRELLO_API = 'https://api.trello.com/1';
+
+// Trello rate limits: 100 requests / 10 s per API key and 300 / 10 s per
+// token (https://developer.atlassian.com/cloud/trello/guides/rest-api/rate-limits/).
+// Strategy:
+//  1. Proactive: keep a minimum gap between sequential requests so a bulk
+//     import never approaches the limit in the first place.
+//  2. Reactive: if Trello still answers 429, honour the `Retry-After` header
+//     (seconds) when present, otherwise back off exponentially, and retry.
+//  5xx / network errors are also retried with exponential backoff.
+const MIN_REQUEST_GAP_MS = 120;
+const MAX_RETRIES = 5;
+const BASE_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 30000;
+const REQUEST_TIMEOUT_MS = 30000;
+let _lastRequestAt = 0;
+
+const sleep = ms => new Promise(resolve => Meteor.setTimeout(resolve, ms));
+
+async function throttle() {
+  const now = Date.now();
+  const wait = MIN_REQUEST_GAP_MS - (now - _lastRequestAt);
+  if (wait > 0) {
+    await sleep(wait);
+  }
+  _lastRequestAt = Date.now();
+}
+
+function authHeader(key, token) {
+  // OAuth header is required to download attachment files; for normal API
+  // calls the key/token are passed as query params instead.
+  return `OAuth oauth_consumer_key="${key}", oauth_token="${token}"`;
+}
+
+// RelayBleed: the header above is the importing user's Trello key and token.
+// Attachment, background and avatar URLs come from the board being imported,
+// and anyone who can add a link attachment to that board chooses them - a
+// link renamed to look like a file is downloaded like one. So the credential
+// goes only to Trello's own HTTPS hosts, on the default port. Anything else is
+// downloaded without it (a public file needs none); fetchSafe already drops
+// it on a redirect that leaves the origin.
+const TRELLO_CREDENTIAL_HOSTS = new Set(['trello.com', 'api.trello.com']);
+export function isTrelloCredentialHost(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch (e) { return false; }
+  return parsed.protocol === 'https:' && parsed.port === '' && !parsed.username && !parsed.password &&
+    TRELLO_CREDENTIAL_HOSTS.has(parsed.hostname.toLowerCase());
+}
+function trelloAuthHeaders(url, key, token) {
+  return isTrelloCredentialHost(url) ? { Authorization: authHeader(key, token) } : {};
+}
+
+// How long to wait before a retry. Prefers the server-provided Retry-After
+// header (seconds, or an HTTP date), falling back to capped exponential backoff.
+function retryDelayMs(res, attempt) {
+  const header = res && res.headers && res.headers.get('retry-after');
+  if (header) {
+    const secs = Number(header);
+    if (Number.isFinite(secs)) return Math.min(secs * 1000, MAX_BACKOFF_MS);
+    const dateMs = Date.parse(header);
+    if (!Number.isNaN(dateMs)) {
+      return Math.max(0, Math.min(dateMs - Date.now(), MAX_BACKOFF_MS));
+    }
+  }
+  return Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
+}
+
+// How many redirects a download of an attacker-named URL may follow. Trello's
+// own attachment endpoint answers with a 302 to a signed S3 URL, so refusing
+// every redirect would mean importing no attachments at all; each hop is put
+// through the SSRF guard, so following a few is safe.
+const MAX_DOWNLOAD_REDIRECTS = 5;
+
+// Single rate-limit/error-aware fetch. Retries 429 and 5xx (and network
+// errors), honouring Retry-After; throws a Meteor.Error on a non-retryable
+// failure or once retries are exhausted.
+//
+// `untrusted` picks WHICH fetch. The Trello REST API calls go to the hardcoded
+// api.trello.com, so they use the platform fetch. A DOWNLOAD goes to a URL that
+// came out of a Trello board — an attachment, a background, an avatar — which
+// its owner chose, so it goes through fetchSafe: DNS resolved once and pinned,
+// blocked ranges refused, and every redirect validated the same way before it
+// is followed (FollowBleed, GHSA-j9p2-jm73-p549).
+// `idempotent: false` is for a request that creates something (the export's
+// POSTs): it is retried only on 429, which Trello answers before doing
+// anything. A 5xx or a dropped connection may have created the object already,
+// and a retry would create it twice.
+async function trelloFetch(url, options = {}, { untrusted = false, idempotent = true } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    await throttle();
+    let res;
+    try {
+      res = isSandstormServer()
+        ? await sandstormTrelloFetch(url, options, untrusted)
+        : untrusted
+        ? await fetchSafe(url, {
+          ...options,
+          maxRedirects: MAX_DOWNLOAD_REDIRECTS,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          maxResponseBytes: 256 * 1024 * 1024,
+        })
+        : await fetch(url, {
+          ...options,
+          signal: options.signal || AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+    } catch (networkErr) {
+      // Sandstorm's answers - no grant, or an address a grain cannot reach -
+      // are verdicts too: retrying cannot change them.
+      if (networkErr instanceof Meteor.Error && /^sandstorm-/.test(networkErr.error)) {
+        throw networkErr;
+      }
+      // A refusal by the SSRF guard is a verdict, not a hiccup: retrying it
+      // just repeats the same blocked request five more times.
+      if (/^SSRF_GUARD:/.test(networkErr && networkErr.message)) {
+        throw new Meteor.Error('trello-blocked-url', networkErr.message);
+      }
+      // Transient network failure — back off and retry.
+      lastError = networkErr;
+      if (attempt < MAX_RETRIES && idempotent) {
+        await sleep(Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
+        continue;
+      }
+      throw new Meteor.Error('trello-api-error', `Trello request failed: ${networkErr.message}`);
+    }
+
+    if (idempotent ? ([408, 425, 429].includes(res.status) || res.status >= 500) : res.status === 429) {
+      lastError = res;
+      // A streamed body that is not used is let go before the retry.
+      if (res.body && typeof res.body.destroy === 'function') res.body.destroy();
+      if (attempt < MAX_RETRIES) {
+        const delay = retryDelayMs(res, attempt);
+        if (process.env.DEBUG === 'true') {
+          console.warn(`Trello ${res.status}; retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        }
+        await sleep(delay);
+        continue;
+      }
+    }
+    return res;
+  }
+  // Retries exhausted on a 429/5xx.
+  const status = lastError && lastError.status;
+  throw new Meteor.Error(
+    'trello-api-rate-limited',
+    `Trello API still failing after ${MAX_RETRIES} retries (status ${status || 'network error'})`,
+  );
+}
+
+// A Trello REST call that changes something (POST/PUT), for the export
+// (server/trelloApiExport.js). The same throttle, rate-limit handling and, on
+// Sandstorm, the same Powerbox route as the import; never retried after Trello
+// may have acted (see trelloFetch).
+export async function trelloSend(method, path, key, token, params = {}, body) {
+  const search = new URLSearchParams({ key, token, ...params });
+  const res = await trelloFetch(`${TRELLO_API}${path}?${search.toString()}`, { method, body }, { idempotent: false });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    if (res.status === 401) {
+      throw new Meteor.Error('trello-api-unauthorized', 'Trello rejected the API key or token (401)');
+    }
+    throw new Meteor.Error('trello-api-error', `Trello API ${res.status} for ${method} ${path}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// On Sandstorm a grain has no network of its own: a Trello REST call goes
+// through the Powerbox grant for api.trello.com (server/sandstormEgress.js). A
+// DOWNLOAD cannot: an uploaded file is on trello.com and needs an
+// `Authorization: OAuth` header, and the bridge proxy keeps Authorization for
+// its own token. Such a download is refused at once instead of being tried and
+// retried; the board is imported without the file, and the job says how many
+// were left out (they can be added from Trello's attachments ZIP).
+async function sandstormTrelloFetch(url, options, untrusted) {
+  if (untrusted) {
+    throw new Meteor.Error('sandstorm-download-unavailable',
+      'Files uploaded to Trello cannot be downloaded through the Sandstorm Powerbox.');
+  }
+  return sandstormFetch(url, options);
+}
+
+async function trelloGet(path, key, token, params = {}) {
+  const search = new URLSearchParams({ key, token, ...params });
+  const res = await trelloFetch(`${TRELLO_API}${path}?${search.toString()}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    // Surface the common, actionable cases clearly.
+    if (res.status === 401) {
+      throw new Meteor.Error('trello-api-unauthorized', 'Trello rejected the API key or token (401)');
+    }
+    throw new Meteor.Error(
+      'trello-api-error',
+      `Trello API ${res.status} for ${path}: ${body.slice(0, 200)}`,
+    );
+  }
+  return res.json();
+}
+
+// The same download as a stream (fetchSafe stream: true), for an attachment
+// that goes straight into storage: the same URL check, the same pinned and
+// validated redirects and the same 256 MB limit, but never the whole file in
+// memory. Resolves to the body stream, or null when it is not downloaded.
+async function downloadAttachmentStream(url, key, token) {
+  const validation = await validateAttachmentUrl(url);
+  if (!validation.valid) {
+    try {
+      require('/server/lib/securityLog').record({
+        key: 'ssrf.attachment', action: 'blocked', source: 'trelloLiveImport.attachment',
+        detail: `blocked attachment url (${validation.reason})`,
+      });
+    } catch (e) { /* logging must never break the guard */ }
+    return null;
+  }
+  const res = await trelloFetch(url, { headers: trelloAuthHeaders(url, key, token), stream: true }, { untrusted: true });
+  if (!res.ok) {
+    if (res.body && typeof res.body.destroy === 'function') res.body.destroy();
+    return null;
+  }
+  return res.body;
+}
+
+// For TrelloCreator.attachmentStream: each uploaded attachment downloaded as
+// the creator reaches it and streamed into storage, one at a time, instead of
+// every file of the board downloaded first and kept as base64 on the board.
+// A link attachment (its name is its URL) is no file and gets no stream.
+export function trelloAttachmentStreamer(key, token) {
+  return att => {
+    if (!att || !att.url || att.name === att.url) return null;
+    const { PassThrough } = require('stream');
+    const out = new PassThrough();
+    downloadAttachmentStream(att.url, key, token).then(body => {
+      if (!body) {
+        out.destroy(new Error('trello-attachment-unavailable'));
+        return;
+      }
+      body.on('error', error => out.destroy(error));
+      body.pipe(out);
+    }, error => out.destroy(error));
+    return out;
+  };
+}
+
+// The uploaded attachments of a board - those with a URL that are not links -
+// which trelloAttachmentStreamer will download.
+export function countUploadedAttachments(board) {
+  const ids = new Set();
+  const collect = att => {
+    if (!att || !att.url || att.name === att.url) return;
+    ids.add(att.id || att._id || att.url);
+  };
+  (board.cards || []).forEach(card => (card.attachments || []).forEach(collect));
+  return ids.size;
+}
+
+// Build the full board object in the shape TrelloCreator expects, mirroring a
+// Trello "Export JSON": nested cards (with attachments), lists, labels,
+// checklists, members, custom fields and the action log.
+async function fetchBoard(boardId, key, token) {
+  return trelloGet(`/boards/${boardId}`, key, token, {
+    fields: 'all',
+    actions: 'all',
+    action_fields: 'all',
+    actions_limit: '1000',
+    cards: 'all',
+    card_fields: 'all',
+    card_attachments: 'true',
+    card_stickers: 'true',
+    lists: 'all',
+    list_fields: 'all',
+    labels: 'all',
+    labels_limit: '1000',
+    members: 'all',
+    member_fields: 'all',
+    checklists: 'all',
+    checklist_fields: 'all',
+    customFields: 'true',
+    organization: 'true',
+    organization_fields: 'all',
+  });
+}
+
+// Download the board background image server-side and inject it as
+// board.backgroundFile so TrelloCreator can store it as a board-level
+// attachment. Trello backgrounds are usually public (S3), so try without auth
+// first and fall back to the OAuth header (custom backgrounds may need it).
+export async function inlineBoardBackground(board, key, token) {
+  // Images live on other hosts than the granted API; a grain cannot reach them.
+  if (isSandstormServer()) return;
+  const prefs = board.prefs || {};
+  const scaled = Array.isArray(prefs.backgroundImageScaled)
+    ? prefs.backgroundImageScaled
+    : [];
+  const url =
+    prefs.backgroundImage ||
+    (scaled.length && scaled[scaled.length - 1] && scaled[scaled.length - 1].url);
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return;
+  }
+  // SSRF fix (reported by meifukun): block loopback/private/metadata background URLs.
+  const bgValidation = await validateAttachmentUrl(url);
+  if (!bgValidation.valid) {
+    if (process.env.DEBUG === 'true') {
+      console.warn('Blocked Trello background URL during live import:', url, '-', bgValidation.reason);
+    }
+    return;
+  }
+  const tryFetch = async withAuth => {
+    const options = withAuth
+      ? { headers: trelloAuthHeaders(url, key, token) }
+      : {};
+    // FollowBleed: fetchSafe, not fetch — see downloadAttachmentStream.
+    const res = await fetchSafe(url, {
+      ...options,
+      maxRedirects: MAX_DOWNLOAD_REDIRECTS,
+    });
+    if (!res.ok) return null;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const type = (res.headers.get('content-type') || 'image/jpeg').split(';')[0];
+    const ext = type.split('/')[1] || 'jpg';
+    return { file: buffer.toString('base64'), type, name: `trello-background.${ext}` };
+  };
+  try {
+    let bf = null;
+    try {
+      bf = await tryFetch(false);
+    } catch (e) {
+      bf = null;
+    }
+    // RelayBleed: the credential retry only for a Trello-hosted background.
+    if (!bf && isTrelloCredentialHost(url)) {
+      bf = await tryFetch(true);
+    }
+    if (bf) {
+      board.backgroundFile = bf;
+    }
+  } catch (e) {
+    if (process.env.DEBUG === 'true') {
+      console.warn('Trello board background download failed:', url, e && e.message);
+    }
+  }
+}
+
+// Download Trello member avatars and store them for the mapped WeKan users that
+// have no avatar yet (existing avatars are never overwritten). `membersMapping`
+// maps a Trello member id to a WeKan user id. Best-effort: a failed download
+// never aborts the import.
+export async function inlineMemberAvatars(board, membersMapping, key, token) {
+  // Images live on other hosts than the granted API; a grain cannot reach them.
+  if (isSandstormServer()) return 0;
+  // Admin Panel / Features / Security: skip importing Trello member avatars when
+  // import avatars is disabled.
+  try {
+    const { getImportExportSecuritySettings } = require('/models/lib/importExportSecurity');
+    if ((await getImportExportSecuritySettings()).disableImportAvatars) return 0;
+  } catch (e) { /* fall through (default: allowed) */ }
+  const mapping = membersMapping || {};
+  let count = 0;
+  for (const member of board.members || []) {
+    const wekanUserId = mapping[member.id];
+    if (!wekanUserId || !member.avatarUrl) continue;
+    try {
+      const user = await Users.findOneAsync(wekanUserId, {
+        fields: { 'profile.avatarUrl': 1 },
+      });
+      if (!user) continue;
+      if (user.profile && user.profile.avatarUrl) continue; // don't overwrite
+
+      // Trello avatar URLs are a base path; append a size to get a real image.
+      const imgUrl = /\.(png|jpe?g|gif)$/i.test(member.avatarUrl)
+        ? member.avatarUrl
+        : `${member.avatarUrl}/170.png`;
+      // SSRF fix (reported by meifukun): block loopback/private/metadata avatar URLs.
+      const avValidation = await validateAttachmentUrl(imgUrl);
+      if (!avValidation.valid) {
+        if (process.env.DEBUG === 'true') {
+          console.warn('Blocked Trello avatar URL during live import:', imgUrl, '-', avValidation.reason);
+        }
+        continue;
+      }
+      // Trello avatars are public (S3); try without auth, fall back to OAuth.
+      // FollowBleed: fetchSafe, not fetch — see downloadAttachmentStream.
+      let res = await fetchSafe(imgUrl, { maxRedirects: MAX_DOWNLOAD_REDIRECTS });
+      // RelayBleed: the credential retry only for a Trello-hosted avatar.
+      if (!res.ok && isTrelloCredentialHost(imgUrl)) {
+        res = await fetchSafe(imgUrl, {
+          headers: trelloAuthHeaders(imgUrl, key, token),
+          maxRedirects: MAX_DOWNLOAD_REDIRECTS,
+        });
+      }
+      if (!res.ok) continue;
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const type = (res.headers.get('content-type') || 'image/png').split(';')[0];
+      const ext = type.split('/')[1] || 'png';
+      const fileRef = await Avatars.writeAsync(
+        buffer,
+        {
+          fileName: `avatar-${member.username || wekanUserId}.${ext}`,
+          type,
+          userId: wekanUserId,
+          meta: { userId: wekanUserId },
+        },
+        true,
+      );
+      if (fileRef && fileRef._id) {
+        await Users.updateAsync(wekanUserId, {
+          $set: { 'profile.avatarUrl': generateUniversalAvatarUrl(fileRef._id) },
+        });
+        count += 1;
+      }
+    } catch (e) {
+      if (process.env.DEBUG === 'true') {
+        console.warn('Trello avatar download failed:', member.username, e && e.message);
+      }
+    }
+  }
+  return count;
+}
+
+// A Trello "Export JSON" often omits card stickers. When credentials are
+// available, fetch the board's cards with their stickers in a single API call
+// and fill them in for any card that has none. TrelloCreator maps each
+// sticker.image to a WeKan sticker icon. Best-effort: a failure never aborts.
+export async function inlineStickers(board, key, token) {
+  // Images live on other hosts than the granted API; a grain cannot reach them.
+  if (isSandstormServer()) return 0;
+  if (!board.id || !(board.cards || []).length) return 0;
+  const needsStickers = (board.cards || []).filter(
+    c => !(Array.isArray(c.stickers) && c.stickers.length),
+  );
+  if (!needsStickers.length) return 0; // every card already has stickers
+  let cards;
+  try {
+    cards = await trelloGet(`/boards/${board.id}/cards`, key, token, {
+      fields: 'id',
+      stickers: 'true',
+    });
+  } catch (e) {
+    if (process.env.DEBUG === 'true') {
+      console.warn('Trello sticker fetch failed:', e && e.message);
+    }
+    return 0;
+  }
+  const byId = new Map((cards || []).map(c => [c.id, c.stickers || []]));
+  let added = 0;
+  for (const card of needsStickers) {
+    const stickers = byId.get(card.id);
+    if (stickers && stickers.length) {
+      card.stickers = stickers;
+      added += stickers.length;
+    }
+  }
+  return added;
+}
+
+// Auto-map Trello members to existing Wekan users by username. Members without
+// a matching Wekan account are left unmapped and attributed to the importer.
+async function buildMembersMapping(board) {
+  const mapping = {};
+  for (const member of board.members || []) {
+    if (!member.username) continue;
+    // Match by WeKan username, then by a previously-recorded imported username
+    // (set on earlier imports / by an admin in the People panel).
+    const wekanUser =
+      (await ReactiveCache.getUser({ username: member.username })) ||
+      (await ReactiveCache.getUser({ importUsernames: member.username }));
+    if (wekanUser) {
+      mapping[member.id] = wekanUser._id;
+    }
+  }
+  return mapping;
+}
+
+// --- Personal workspace tree helpers (same shape as server/models/users.js) -
+function findNodeByName(nodes, name) {
+  for (const node of nodes || []) {
+    if (node.name === name) return node;
+    if (node.children) {
+      const found = findNodeByName(node.children, name);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+// Ensure a workspace node named `name` exists for the user (under parentId if
+// given), creating it only if absent. Returns its id.
+async function ensureWorkspaceNode(userId, name, parentId) {
+  const user = (await Users.findOneAsync(userId)) || {};
+  const tree =
+    user.profile && user.profile.boardWorkspacesTree
+      ? EJSON.clone(user.profile.boardWorkspacesTree)
+      : [];
+
+  const existing = findNodeByName(tree, name);
+  if (existing) return existing.id;
+
+  const newNode = { id: Random.id(), name, children: [] };
+  if (!parentId) {
+    tree.push(newNode);
+  } else {
+    const insertInto = nodes => {
+      for (const n of nodes) {
+        if (n.id === parentId) {
+          n.children = n.children || [];
+          n.children.push(newNode);
+          return true;
+        }
+        if (n.children && n.children.length && insertInto(n.children)) return true;
+      }
+      return false;
+    };
+    if (!insertInto(tree)) tree.push(newNode);
+  }
+  await Users.updateAsync(userId, {
+    $set: { 'profile.boardWorkspacesTree': tree },
+  });
+  return newNode.id;
+}
+
+async function assignBoardToNode(userId, boardId, spaceId) {
+  const user = await Users.findOneAsync(userId, {
+    fields: { 'profile.boardWorkspaceAssignments': 1 },
+  });
+  const assignments = (user.profile && user.profile.boardWorkspaceAssignments) || {};
+  assignments[boardId] = spaceId;
+  await Users.updateAsync(userId, {
+    $set: { 'profile.boardWorkspaceAssignments': assignments },
+  });
+}
+
+Meteor.methods({
+  // Save the user's Trello API key + token server-side (never returned to the
+  // client). Only the profile.trelloApiSaved boolean becomes visible.
+  async saveTrelloCredentials(key, token) {
+    check(key, String);
+    check(token, String);
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    if (!key.trim() || !token.trim()) {
+      throw new Meteor.Error('trello-api-credentials-required');
+    }
+    await storeCreds(this.userId, key.trim(), token.trim());
+    return true;
+  },
+
+  // Remove the user's saved Trello API credentials from the database.
+  async deleteTrelloCredentials() {
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    await clearCreds(this.userId);
+    return true;
+  },
+
+  // List the user's Trello workspaces (organizations) and their boards, plus a
+  // synthetic "Personal Boards" workspace for boards with no organization.
+  async trelloListWorkspaces(key, token) {
+    check(key, String);
+    check(token, String);
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    return runAsEgressUser(this.userId, () => listWorkspaces(this.userId, key, token));
+  },
+
+});
+
+async function listWorkspaces(userId, key, token) {
+  const creds = await resolveCreds(userId, key, token);
+  if (!creds) throw new Meteor.Error('trello-api-credentials-required');
+  ({ key, token } = creds);
+
+  const orgs = await trelloGet('/members/me/organizations', key, token, {
+    fields: 'id,name,displayName',
+  });
+  const boards = await trelloGet('/members/me/boards', key, token, {
+    fields: 'id,name,closed,idOrganization',
+    filter: 'all',
+  });
+
+  const byOrg = new Map();
+  orgs.forEach(org => {
+    byOrg.set(org.id, {
+      id: org.id,
+      name: org.displayName || org.name,
+      boards: [],
+    });
+  });
+  const personal = { id: 'personal', name: 'Personal Boards', boards: [] };
+
+  boards.forEach(board => {
+    const entry = {
+      id: board.id,
+      name: board.name,
+      closed: !!board.closed,
+    };
+    const ws = board.idOrganization && byOrg.get(board.idOrganization);
+    (ws || personal).boards.push(entry);
+  });
+
+  const result = Array.from(byOrg.values()).filter(ws => ws.boards.length);
+  if (personal.boards.length) result.push(personal);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Background import jobs.
+//
+// The import runs server-side as a persisted job (TrelloImportJobs) so the user
+// can navigate away and return to watch progress, resume after a fatal API
+// error, or cancel and delete the imported boards. The API key/token are kept
+// only in this in-memory map (never persisted) and must be re-supplied on
+// resume — e.g. after a server restart.
+// ---------------------------------------------------------------------------
+
+const jobCreds = new Map(); // jobId -> { key, token }
+const runningJobs = new Set(); // jobIds with an active loop
+const workerId = `${process.pid}-${Random.id(10)}`;
+const JOB_LEASE_MS = 2 * 60 * 1000;
+
+async function claimJob(jobId) {
+  const now = new Date();
+  const count = await TrelloImportJobs.updateAsync({
+    _id: jobId,
+    status: 'running',
+    $or: [
+      { leaseUntil: { $exists: false } },
+      { leaseUntil: { $lte: now } },
+      { leaseOwner: workerId },
+    ],
+  }, {
+    $set: {
+      leaseOwner: workerId,
+      leaseUntil: new Date(now.getTime() + JOB_LEASE_MS),
+      updatedAt: now,
+    },
+  });
+  return count > 0;
+}
+
+async function renewJobLease(jobId) {
+  await TrelloImportJobs.updateAsync(
+    { _id: jobId, status: 'running', leaseOwner: workerId },
+    { $set: { leaseUntil: new Date(Date.now() + JOB_LEASE_MS), updatedAt: new Date() } },
+  );
+}
+
+async function releaseJobLease(jobId) {
+  await TrelloImportJobs.updateAsync(
+    { _id: jobId, leaseOwner: workerId },
+    { $unset: { leaseOwner: '', leaseUntil: '' }, $set: { updatedAt: new Date() } },
+  );
+}
+
+// A fatal error stops the whole import and is resumable (invalid credentials,
+// or rate-limit still failing after retries). Anything else is a per-board
+// failure: it is recorded and the import moves on to the next board.
+function isFatalError(e) {
+  const code = e && e.error;
+  return code === 'trello-api-unauthorized' || code === 'trello-api-rate-limited';
+}
+
+function errMessage(e) {
+  return (e && e.reason) || (e && e.message) || 'import failed';
+}
+
+// Remove the boards this job created (hooked remove cascades cards, lists,
+// checklists, comments, attachments, …) and drop their workspace assignments,
+// so the user can start the whole import over cleanly.
+async function deleteJobBoards(job) {
+  for (const boardId of job.createdBoardIds || []) {
+    try {
+      await Boards.removeAsync({ _id: boardId });
+    } catch (e) {
+      if (process.env.DEBUG === 'true') {
+        console.warn('Failed to delete imported board', boardId, e && e.message);
+      }
+    }
+  }
+  // Clean the user's workspace assignments for the deleted boards.
+  const user = await Users.findOneAsync(job.userId, {
+    fields: { 'profile.boardWorkspaceAssignments': 1 },
+  });
+  const assignments = (user && user.profile && user.profile.boardWorkspaceAssignments) || {};
+  let changed = false;
+  (job.createdBoardIds || []).forEach(boardId => {
+    if (assignments[boardId]) {
+      delete assignments[boardId];
+      changed = true;
+    }
+  });
+  if (changed) {
+    await Users.updateAsync(job.userId, {
+      $set: { 'profile.boardWorkspaceAssignments': assignments },
+    });
+  }
+  await TrelloImportJobs.updateAsync(job._id, {
+    $set: { createdBoardIds: [], updatedAt: new Date() },
+  });
+}
+
+async function finalizeCancel(jobId) {
+  const job = await TrelloImportJobs.findOneAsync(jobId);
+  if (!job) return;
+  jobCreds.delete(jobId);
+  if (job.deleteOnCancel) {
+    await deleteJobBoards(job);
+  }
+  await TrelloImportJobs.updateAsync(jobId, {
+    $set: { status: 'cancelled', finishedAt: new Date(), updatedAt: new Date() },
+  });
+}
+
+async function runJob(jobId) {
+  if (runningJobs.has(jobId)) return; // already processing
+  if (!(await claimJob(jobId))) return; // another WeKan replica owns it
+  runningJobs.add(jobId);
+  // A board with many attachments can take longer than one lease. Renew while
+  // network and database work is in flight, not merely between boards, so a
+  // second replica cannot reclaim and duplicate that side effect.
+  const heartbeat = Meteor.setInterval(() => {
+    renewJobLease(jobId).catch(error => {
+      console.error('Trello import lease renewal failed', jobId, errMessage(error));
+    });
+  }, Math.floor(JOB_LEASE_MS / 4));
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const job = await TrelloImportJobs.findOneAsync(jobId);
+      if (!job) break;
+
+      if (job.cancelRequested) {
+        await finalizeCancel(jobId);
+        break;
+      }
+      if (job.currentIndex >= job.boardIds.length) {
+        await TrelloImportJobs.updateAsync(jobId, {
+          $set: { status: 'done', finishedAt: new Date(), updatedAt: new Date() },
+        });
+        break;
+      }
+
+      let creds = jobCreds.get(jobId);
+      if (!creds) {
+        // In-memory token gone (e.g. server restarted) — fall back to the
+        // user's saved credentials if they have any.
+        creds = await resolveCreds(job.userId, '', '');
+        if (creds) {
+          jobCreds.set(jobId, creds);
+        }
+      }
+      if (!creds) {
+        // No credentials available — pause for the user to resume.
+        await TrelloImportJobs.updateAsync(jobId, {
+          $set: {
+            status: 'paused',
+            lastError: 'Credentials needed to resume',
+            updatedAt: new Date(),
+          },
+        });
+        break;
+      }
+
+      const trelloBoardId = job.boardIds[job.currentIndex];
+      try {
+        await renewJobLease(jobId);
+        // The side effect may have completed immediately before a crash but its
+        // queue checkpoint may not. The importBoard activity is durable evidence
+        // keyed by source board and owner, so reclaim adopts it instead of
+        // creating a duplicate board.
+        const existing = await Activities.findOneAsync({
+          activityType: 'importBoard',
+          'source.system': 'Trello',
+          'source.id': trelloBoardId,
+          userId: job.userId,
+        }, { sort: { createdAt: -1 } });
+        if (existing && existing.boardId && await Boards.findOneAsync(existing.boardId)) {
+          await TrelloImportJobs.updateAsync(jobId, {
+            $set: { currentIndex: job.currentIndex + 1, updatedAt: new Date() },
+            $addToSet: { createdBoardIds: existing.boardId },
+            $push: { results: {
+              trelloBoardId, boardId: existing.boardId,
+              success: true, recovered: true,
+            } },
+          });
+          continue;
+        }
+        const board = await fetchBoard(trelloBoardId, creds.key, creds.token);
+        // Attachments stream from Trello into storage as the creator reaches
+        // them, instead of every file downloaded first as base64.
+        // On Sandstorm the uploaded files cannot be downloaded (see
+        // sandstormTrelloFetch): they are counted as left out, not imported.
+        const uploadedAttachments = countUploadedAttachments(board);
+        const attachmentsImported = isSandstormServer() ? 0 : uploadedAttachments;
+        const attachmentsSkipped = isSandstormServer() ? uploadedAttachments : 0;
+        await inlineBoardBackground(board, creds.key, creds.token);
+        const membersMapping = await buildMembersMapping(board);
+        const sanitized = require('/server/lib/secureTransfer').secureTransfer(board, {
+          direction: 'import', source: 'import:trello-api', userId: job.userId,
+        });
+        const creator = new TrelloCreator({ membersMapping });
+        creator.attachmentStream = trelloAttachmentStreamer(creds.key, creds.token);
+        const newBoardId = await trackImport({ userId: job.userId, source: 'trello-api', creator,
+          execute: () => creator.create(sanitized, null) }).promise;
+
+        // The sanitized copy, like the creator above: the organization name is
+        // stored as a workspace title, so it is imported text too.
+        const wsName =
+          (sanitized.organization && sanitized.organization.displayName) ||
+          (sanitized.organization && sanitized.organization.name) ||
+          'Personal Boards';
+        const spaceId = await ensureWorkspaceNode(
+          job.userId,
+          wsName,
+          job.parentWorkspaceNodeId || null,
+        );
+        await assignBoardToNode(job.userId, newBoardId, spaceId);
+
+        await TrelloImportJobs.updateAsync(jobId, {
+          $set: {
+            currentIndex: job.currentIndex + 1,
+            status: 'running',
+            updatedAt: new Date(),
+          },
+          $push: {
+            results: {
+              trelloBoardId,
+              boardId: newBoardId,
+              title: sanitized.name,
+              attachmentsImported,
+              attachmentsSkipped,
+              success: true,
+            },
+            createdBoardIds: newBoardId,
+          },
+        });
+      } catch (e) {
+        const msg = errMessage(e);
+        if (isFatalError(e)) {
+          // Stop here; the user can fix credentials / wait and resume.
+          await TrelloImportJobs.updateAsync(jobId, {
+            $set: { status: 'error', lastError: msg, updatedAt: new Date() },
+            $push: { errorLog: `[board ${trelloBoardId}] ${msg}` },
+          });
+          break;
+        }
+        // Per-board failure: record and continue with the next board.
+        await TrelloImportJobs.updateAsync(jobId, {
+          $set: { currentIndex: job.currentIndex + 1, updatedAt: new Date() },
+          $push: {
+            results: { trelloBoardId, success: false, error: msg },
+            errorLog: `[board ${trelloBoardId}] ${msg}`,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    await TrelloImportJobs.updateAsync(jobId, {
+      $set: { status: 'error', lastError: errMessage(e), updatedAt: new Date() },
+      $push: { errorLog: `[job] ${errMessage(e)}` },
+    }).catch(() => {});
+  } finally {
+    Meteor.clearInterval(heartbeat);
+    runningJobs.delete(jobId);
+    await releaseJobLease(jobId).catch(() => {});
+  }
+}
+
+// Launch the loop detached so the Meteor method returns immediately and the
+// import keeps running on the server.
+// A job runs as the user who created it, so on Sandstorm its Trello requests
+// use that user's Powerbox grant (server/sandstormEgress.js).
+function launchJob(jobId) {
+  TrelloImportJobs.findOneAsync(jobId)
+    .then(job => runAsEgressUser(job && job.userId, () => runJob(jobId)))
+    .catch(e => {
+      console.error('Trello import job crashed', jobId, e);
+    });
+}
+
+Meteor.methods({
+  // Start a background import of the selected boards. Returns the job id; the
+  // client watches progress via the trelloImportJobs publication.
+  async trelloStartImport(key, token, boardIds, parentWorkspaceNodeId) {
+    check(key, String);
+    check(token, String);
+    check(boardIds, [String]);
+    check(parentWorkspaceNodeId, Match.Maybe(String));
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    if (!boardIds.length) {
+      throw new Meteor.Error('no-boards', 'No boards selected');
+    }
+    if (boardIds.length > 100) {
+      throw new Meteor.Error('too-many-boards', 'At most 100 boards per import');
+    }
+
+    const provided = !!(key && token);
+    const creds = await resolveCreds(this.userId, key, token);
+    if (!creds) throw new Meteor.Error('trello-api-credentials-required');
+    // Remember credentials the user typed, so they don't have to re-enter them.
+    if (provided) {
+      await storeCreds(this.userId, creds.key, creds.token);
+    }
+
+    const now = new Date();
+    const jobId = await TrelloImportJobs.insertAsync({
+      userId: this.userId,
+      status: 'running',
+      boardIds,
+      parentWorkspaceNodeId: parentWorkspaceNodeId || null,
+      currentIndex: 0,
+      total: boardIds.length,
+      results: [],
+      errorLog: [],
+      createdBoardIds: [],
+      cancelRequested: false,
+      deleteOnCancel: false,
+      lastError: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+    jobCreds.set(jobId, { key: creds.key, token: creds.token });
+    launchJob(jobId);
+    return jobId;
+  },
+
+  // Resume a paused/errored job from where it stopped. Credentials come from
+  // those typed now, else the user's saved credentials.
+  async trelloResumeImport(jobId, key, token) {
+    check(jobId, String);
+    check(key, String);
+    check(token, String);
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    const job = await TrelloImportJobs.findOneAsync(jobId);
+    if (!job || job.userId !== this.userId) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    if (!['paused', 'error', 'running'].includes(job.status)) {
+      throw new Meteor.Error('not-resumable', `Job is ${job.status}`);
+    }
+    const creds = await resolveCreds(this.userId, key, token);
+    if (!creds) throw new Meteor.Error('trello-api-credentials-required');
+    jobCreds.set(jobId, { key: creds.key, token: creds.token });
+    await TrelloImportJobs.updateAsync(jobId, {
+      $set: {
+        status: 'running',
+        cancelRequested: false,
+        lastError: '',
+        updatedAt: new Date(),
+      },
+    });
+    launchJob(jobId);
+    return true;
+  },
+
+  // Cancel a job. When deleteImported is true, also delete the boards already
+  // imported by this job so the whole process can be retried cleanly.
+  async trelloCancelImport(jobId, deleteImported) {
+    check(jobId, String);
+    check(deleteImported, Boolean);
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    const job = await TrelloImportJobs.findOneAsync(jobId);
+    if (!job || job.userId !== this.userId) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    await TrelloImportJobs.updateAsync(jobId, {
+      $set: {
+        cancelRequested: true,
+        deleteOnCancel: !!deleteImported,
+        updatedAt: new Date(),
+      },
+    });
+    // If the loop is running it will stop at the next board boundary and
+    // finalize (including deletion). If it isn't running, finalize now.
+    if (!runningJobs.has(jobId)) {
+      await finalizeCancel(jobId);
+    }
+    return true;
+  },
+
+  // Delete a finished/cancelled job's record (and optionally its boards) so the
+  // import page is clean for a fresh run.
+  async trelloClearImportJob(jobId, deleteImported) {
+    check(jobId, String);
+    check(deleteImported, Boolean);
+    if (!this.userId) throw new Meteor.Error('error-notAuthorized');
+    const job = await TrelloImportJobs.findOneAsync(jobId);
+    if (!job || job.userId !== this.userId) {
+      throw new Meteor.Error('error-notAuthorized');
+    }
+    if (job.status === 'running' && runningJobs.has(jobId)) {
+      throw new Meteor.Error('job-running', 'Cancel the running import first');
+    }
+    if (deleteImported) {
+      await deleteJobBoards(job);
+    }
+    jobCreds.delete(jobId);
+    await TrelloImportJobs.removeAsync(jobId);
+    return true;
+  },
+});
+
+// On server (re)start, reclaim every due running job. Saved credentials are
+// resolved inside runJob; a job without them is paused with an actionable reason.
+// A non-expired lease belongs to another live replica and is left alone.
+Meteor.startup(async () => {
+  try {
+    const jobs = await TrelloImportJobs.find({ status: 'running' }, {
+      fields: { _id: 1, leaseUntil: 1 },
+    }).fetchAsync();
+    jobs.forEach((job, index) => {
+      const delay = Math.max(0, job.leaseUntil ? job.leaseUntil.getTime() - Date.now() : 0);
+      Meteor.setTimeout(() => launchJob(job._id), delay + index * 250);
+    });
+  } catch (e) {
+    console.error('Trello import job recovery failed', e && e.message);
+  }
+});

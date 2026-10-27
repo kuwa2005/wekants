@@ -1,0 +1,41 @@
+#!/bin/sh
+
+if [[ "$PATH" != *"$SNAP_INSTANCE_NAME"* ]]; then
+  export PATH="${PATH/\/snap\/wekan\//\/snap\/$SNAP_INSTANCE_NAME\/}"
+fi
+
+# read wekan config
+source $SNAP/bin/config
+
+
+for key in ${keys[@]}
+do
+    default_value="DEFAULT_$key"
+    description="DESCRIPTION_$key"
+    snappy_key="KEY_$key"
+    # #6746: a key listed in $keys without its KEY_ name made this run a bare
+    # `snapctl get`, which prints "error: snapctl: get which option?" into every
+    # service's log (four of them, for the SAML_* settings) and could never
+    # read the setting. Such a key falls back to its default instead; the test
+    # snapSettingsKeys keeps the list and the names in step.
+    value=""
+    if [ -n "${!snappy_key}" ]; then
+        value=$(snapctl get "${!snappy_key}")
+    fi
+    if [ "x$value" == "x" ]; then
+        echo -e "$key=${!default_value} (default value)"
+        export $key="${!default_value}"
+    else
+        echo -e "$key=$value"
+        export $key="$value"
+    fi
+done
+
+# if caddy is enabled, do update port settings based on caddy file
+if [ "$CADDY_ENABLED" = "true" ]; then
+    echo "caddy is enabled, adjusting ports"
+    export CADDY_PORT=${PORT}
+    echo -e "CADDY_PORT=$CADDY_PORT"
+    export PORT=${CADDY_BIND_PORT}
+    echo -e "PORT=$PORT"
+fi

@@ -1,0 +1,339 @@
+# Use use the meteor-spk tool to generate a sandstorm package (spk) from this
+# meteor application source code. https://github.com/sandstorm-io/meteor-spk
+@0xa5275bd3ad124e12;
+
+using Spk = import "/sandstorm/package.capnp";
+# This imports:
+#   $SANDSTORM_HOME/latest/usr/include/sandstorm/package.capnp
+# Check out that file to see the full, documented package definition format.
+
+const pkgdef :Spk.PackageDefinition = (
+  # The package definition. Note that the spk tool looks specifically for the
+  # "pkgdef" constant.
+
+  id = "m86q05rdvj14yvn78ghaxynqz7u2svw6rnttptxx49g1785cdv1h",
+  # The app ID is actually its public key. The private key was placed in your
+  # keyring. All updates must be signed with the same key.
+
+  manifest = (
+    # This manifest is included in our app package to tell Sandstorm about our
+    # app.
+
+    appTitle = (defaultText = "Wekan"),
+    # The name of the app as it is displayed to the user.
+
+    appVersion = 1265,
+    # Increment this for every release.
+
+    appMarketingVersion = (defaultText = "12.65~2026-10-25"),
+    # Human-readable presentation of the app version.
+
+    minUpgradableAppVersion = 0,
+    # The minimum version of the app which can be safely replaced by this app
+    # package without data loss.  This might be non-zero if the app's data store
+    # format changed drastically in the past and the app is no longer able to
+    # read the old format.
+
+    actions = [
+      # Define your "new document" handlers here.
+      (
+        title = (defaultText = "New board"),
+        command = .myCommand,
+        # The command to run when starting for the first time. (".myCommand" is
+        # just a constant defined at the bottom of the file.)
+      )
+    ],
+
+    continueCommand = .myCommand,
+    # This is the command called to start your app back up after it has been
+    # shut down for inactivity. Here we're using the same command as for
+    # starting a new instance, but you could use different commands for each
+    # case.
+
+    metadata = (
+      icons = (
+        appGrid = (svg = embed "meta/icons/wekan-128.svg"),
+        grain = (svg = embed "meta/icons/wekan-24.svg"),
+        market = (svg = embed "meta/icons/wekan-150.svg"),
+      ),
+
+      website = "https://wekan.github.io",
+      codeUrl = "https://github.com/wekan/wekan",
+      license = (openSource = mit),
+      categories = [productivity, office],
+
+      author = (
+        contactEmail = "x@xet7.org",
+        pgpSignature = embed "meta/wekanteam-pgp-sig",
+      ),
+
+      pgpKeyring = embed "meta/keyring",
+
+      description = (defaultText = embed "meta/description.md"),
+
+      shortDescription = (defaultText = "Kanban board"),
+
+      screenshots = [
+        (
+          width = 1920,
+          height = 1133,
+          png = embed "meta/screenshots/board_view_01.png"
+        ),
+        (
+          width = 1920,
+          height = 1133,
+          png = embed "meta/screenshots/board_view_02.png"
+        ),
+      ],
+
+      changeLog = (defaultText = embed "CHANGELOG.md"),
+    ),
+  ),
+
+  sourceMap = (
+    # The following directories will be copied into your package.
+    searchPath = [
+      (sourcePath = ".meteor-spk/deps"),
+      (sourcePath = ".meteor-spk/bundle"),
+    ]
+  ),
+
+  alwaysInclude = [ "." ],
+  # This says that we always want to include all files from the source map. (An
+  # alternative is to automatically detect dependencies by watching what the app
+  # opens while running in dev mode. To see what that looks like, run `spk init`
+  # without the -A option.)
+
+  bridgeConfig = (
+    viewInfo = (
+      permissions = [(
+        name = "participate",
+        title = (
+          defaultText = "participate",
+          localizations = [
+            (locale = "fr", text = "participer"),
+            (locale = "fi", text = "osallistu"),
+          ],
+        ),
+        description = (
+          defaultText = "allows participating in the board",
+          localizations = [
+            (locale = "fr", text = "permet de participer dans le tableau"),
+            (locale = "fi", text = "mahdollistaa taululle osallistumisen"),
+          ],
+        )
+      ), (
+        name = "configure",
+        title = (
+          defaultText = "configure",
+          localizations = [
+            (locale = "fr", text = "configurer"),
+            (locale = "fi", text = "asetukset"),
+          ],
+        ),
+        description = (
+          defaultText = "allows configuring the board",
+          localizations = [
+            (locale = "fr", text = "permet de configurer le tableau"),
+            (locale = "fi", text = "mahdollistaa taulun asetusten määrittämisen"),
+          ],
+        )
+      )],
+
+      roles = [(
+        title = (
+          defaultText = "observer",
+          localizations = [
+            (locale = "fr", text = "observateur"),
+            (locale = "fi", text = "tarkkailija"),
+          ],
+        ),
+        permissions = [false, false],
+        verbPhrase = (
+          defaultText = "can read",
+          localizations = [
+            (locale = "fr", text = "peut lire"),
+            (locale = "fi", text = "voi lukea"),
+          ],
+        )
+      ), (
+        title = (
+          defaultText = "member",
+          localizations = [
+            (locale = "fr", text = "membre"),
+            (locale = "fi", text = "jäsen"),
+          ],
+        ),
+        permissions = [true, false],
+        verbPhrase = (
+          defaultText = "can edit",
+          localizations = [
+            (locale = "fr", text = "peut éditer"),
+            (locale = "fi", text = "voi muokata"),
+          ],
+        ),
+        default = true,
+      # ), (
+      #   title = (defaultText = "administrator"),
+      #   permissions = [true, true],
+      #   verbPhrase = (defaultText = "can configure")
+      #
+      # XXX Administrators configuration options aren’t implemented yet, so this
+      # role is currently useless.
+      )],
+
+      eventTypes = [(
+         name = "addBoardMember",
+         verbPhrase = (defaultText = "added to board"),
+      ), (
+        name = "createList",
+        verbPhrase = (defaultText = "created new list"),
+      ), (
+        name = "archivedList",
+        verbPhrase = (defaultText = "archived list"),
+      ), (
+        name = "restoredList",
+        verbPhrase = (defaultText = "restored list"),
+      ), (
+        name = "createCard",
+        verbPhrase = (defaultText = "created new card"),
+      ), (
+        name = "moveCard",
+        verbPhrase = (defaultText = "moved card"),
+      ), (
+        name = "archivedCard",
+        verbPhrase = (defaultText = "archived card"),
+      ), (
+        name = "restoredCard",
+        verbPhrase = (defaultText = "restored card"),
+      ), (
+        name = "addComment",
+        verbPhrase = (defaultText = "added comment"),
+      ), (
+        name = "addAttachement",
+        verbPhrase = (defaultText = "added attachment"),
+      ), (
+        name = "joinMember",
+        verbPhrase = (defaultText = "added to card"),
+      ), (
+        name = "unjoinMember",
+        verbPhrase = (defaultText = "removed from card"),
+      ), ],
+    ),
+    apiPath = "/",
+    saveIdentityCaps = true,
+  ),
+);
+
+const myCommand :Spk.Manifest.Command = (
+  # Here we define the command used to start up your server.
+  #argv = ["/sandstorm-http-bridge", "4000", "--", "node", "--stack-size=65500", "start.js"],
+  # node, not a shell script: a grain has no /bin/sh (meteor-spk's bin/ holds only
+  # mongod, niscud and node), so a "./start-memory.sh" died with execvp ENOENT.
+  argv = ["/sandstorm-http-bridge", "4000", "--", "node", "start-memory.js"],
+  environ = [
+    # Note that this defines the *entire* environment seen by your app.
+    # Lightweight startup markers. Enable METEOR_PROFILE only for diagnostics:
+    # its hook stack traces force expensive source-map processing at startup.
+    (key = "WEKAN_STARTUP_TIMING", value = "1"),
+    #---------------------------------------------------------------------
+    # https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132
+    # Add more Node heap:
+    #export NODE_OPTIONS="--max_old_space_size=4096"
+    # Add more stack:
+    #bash -c "ulimit -s 65500; exec node --stack-size=65500 main.js"
+    #---------------------------------------------------------------------
+    (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin"),
+    # Files root for the Node26/FerretDB build: attachments/, avatars/ and the
+    # FerretDB SQLite db/ live under /var/files (start.js also exports this). See
+    # docs/Platforms/FOSS/Container/Sandstorm/Meteor3/Migration.md.
+    (key = "WRITABLE_PATH", value = "/var/files"),
+    (key = "RESULTS_PER_PAGE", value = ""),
+    (key = "WITH_API", value = "true"),
+    (key = "CARD_OPENED_WEBHOOK_ENABLED", value="false"),
+    (key = "NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE", value=""),
+    (key = "BIGEVENTS_PATTERN", value="NONE"),
+    (key = "MATOMO_ADDRESS", value=""),
+    (key = "MATOMO_SITE_ID", value=""),
+    (key = "MATOMO_DO_NOT_TRACK", value="true"),
+    (key = "MATOMO_WITH_USERNAME", value="false"),
+    (key = "BROWSER_POLICY_ENABLED", value="true"),
+    (key = "TRUSTED_URL", value=""),
+    (key = "WEBHOOKS_ATTRIBUTES", value=""),
+    (key = "OAUTH2_ENABLED", value="false"),
+    (key = "OAUTH2_CA_CERT", value=""),
+    (key = "OAUTH2_ADFS_ENABLED", value="false"),
+    (key = "OAUTH2_B2C_ENABLED", value="false"),
+    (key = "OAUTH2_CLIENT_ID", value="false"),
+    (key = "OAUTH2_SECRET", value=""),
+    (key = "OAUTH2_SERVER_URL", value=""),
+    (key = "OAUTH2_AUTH_ENDPOINT", value=""),
+    (key = "OAUTH2_USERINFO_ENDPOINT", value=""),
+    (key = "OAUTH2_TOKEN_ENDPOINT", value=""),
+    (key = "OAUTH_GOOGLE_ENABLED", value="false"),
+    (key = "OAUTH_GOOGLE_CLIENT_ID", value=""),
+    (key = "OAUTH_GOOGLE_SECRET", value=""),
+    (key = "OAUTH_GOOGLE_SECRET_FILE", value=""),
+    (key = "OAUTH_GITHUB_ENABLED", value="false"),
+    (key = "OAUTH_GITHUB_CLIENT_ID", value=""),
+    (key = "OAUTH_GITHUB_SECRET", value=""),
+    (key = "OAUTH_GITHUB_SECRET_FILE", value=""),
+    (key = "OAUTH_FACEBOOK_ENABLED", value="false"),
+    (key = "OAUTH_FACEBOOK_APP_ID", value=""),
+    (key = "OAUTH_FACEBOOK_SECRET", value=""),
+    (key = "OAUTH_FACEBOOK_SECRET_FILE", value=""),
+    (key = "OAUTH_TWITTER_ENABLED", value="false"),
+    (key = "OAUTH_TWITTER_CONSUMER_KEY", value=""),
+    (key = "OAUTH_TWITTER_SECRET", value=""),
+    (key = "OAUTH_TWITTER_SECRET_FILE", value=""),
+    (key = "OAUTH_METEOR_DEVELOPER_ENABLED", value="false"),
+    (key = "OAUTH_METEOR_DEVELOPER_CLIENT_ID", value=""),
+    (key = "OAUTH_METEOR_DEVELOPER_SECRET", value=""),
+    (key = "OAUTH_METEOR_DEVELOPER_SECRET_FILE", value=""),
+    (key = "OAUTH_WEIBO_ENABLED", value="false"),
+    (key = "OAUTH_WEIBO_CLIENT_ID", value=""),
+    (key = "OAUTH_WEIBO_SECRET", value=""),
+    (key = "OAUTH_WEIBO_SECRET_FILE", value=""),
+    (key = "OAUTH_MEETUP_ENABLED", value="false"),
+    (key = "OAUTH_MEETUP_CLIENT_ID", value=""),
+    (key = "OAUTH_MEETUP_SECRET", value=""),
+    (key = "OAUTH_MEETUP_SECRET_FILE", value=""),
+    (key = "OAUTH_PROVIDERS_LOGIN_STYLE", value="redirect"),
+    (key = "OAUTH_PROVIDERS_MERGE_EXISTING_USERS", value="false"),
+    (key = "SAML_ENABLED", value="false"),
+    (key = "SAML_PROVIDER", value=""),
+    (key = "SAML_ENTRYPOINT", value=""),
+    (key = "SAML_ISSUER", value=""),
+    (key = "SAML_CERT", value=""),
+    (key = "SAML_IDPSLO_REDIRECTURL", value=""),
+    (key = "SAML_PRIVATE_KEYFILE", value=""),
+    (key = "SAML_PUBLIC_CERTFILE", value=""),
+    (key = "SAML_IDENTIFIER_FORMAT", value=""),
+    (key = "SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE", value=""),
+    (key = "SAML_ATTRIBUTES", value=""),
+    (key = "SAML_MERGE_EXISTING_USERS", value="false"),
+    (key = "SAML_IDP_PROFILE", value=""),
+    (key = "SAML_WANT_RESPONSE_SIGNED", value=""),
+    (key = "SAML_WANT_ASSERTIONS_SIGNED", value=""),
+    (key = "SAML_LOGIN_FLOW", value=""),
+    (key = "PASSWORDLESS_ENABLED", value="false"),
+    (key = "LDAP_ENABLE", value="false"),
+    (key = "PASSWORD_LOGIN_ENABLED", value="true"),
+    (key = "SANDSTORM", value="1"),
+    # A grain talks DDP over sockjs, and SAYS so rather than relying on
+    # ddp-server's default. That default IS sockjs today (Meteor.settings, then
+    # DDP_TRANSPORT, then DISABLE_SOCKJS, then sockjs), and the uws transport's
+    # `Npm.require('uWebSockets.js')` runs only inside the setup() of whichever
+    # transport was chosen - so a sockjs grain never loads that module. The .spk
+    # therefore does not SHIP it: releases/bundle-trim.mjs drops all 121 MB of
+    # it, twenty prebuilt binaries for OS/CPU/ABI combinations a grain is not,
+    # which is a large part of how the package fits Sandstorm's 1 GiB limit.
+    # Pinning the value here is what makes that safe - if this said uws, or if
+    # upstream changed its default, the grain would ask for a module that was
+    # left out and fail to boot. tests/bundleTrim.test.cjs ties the two together
+    # so they cannot drift apart. This environ is the app's ENTIRE environment,
+    # so there is nowhere else it could come from.
+    (key = "DDP_TRANSPORT", value="sockjs"),
+    (key = "METEOR_SETTINGS", value = "{\"public\": {\"sandstorm\": true}}")
+  ]
+);

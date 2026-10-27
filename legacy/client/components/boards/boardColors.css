@@ -1,0 +1,6088 @@
+/* The Admin Panel's selected left-menu row is painted by the SAME rules as the
+   second header bar. Flat themes below share structure and publish only their
+   values; exceptional and gradient themes retain explicit rules.
+   See docs/Features/General/Theme/Change-Color.md and docs/Features/All-Boards/Left-Menu.md. */
+
+/* Ordinary solid-colour themes. */
+
+.board-color-nephritis {
+  --board-theme-accent: #27ae60;
+  --board-theme-dark: #1f8b4d;
+  --board-theme-hover: #2cc66d;
+  --board-theme-emphasis: #ae2775;
+  --board-theme-emphasis-hover: #9d2369;
+  --board-theme-emphasis-close: #8b1f5e;
+  --board-theme-checklist-bg: #d4f1dd;
+  --board-theme-selected-bg: #e7faef;
+  --board-theme-selected-hover-bg: #f8fdfa;
+  --board-theme-bright: #3dd37c;
+  --board-theme-canvas-scrollbar: #27ae60f2;
+  --board-theme-sidebar-scrollbar: #27ae60f2;
+}
+
+.board-color-pomegranate {
+  --board-theme-accent: #c0392b;
+  --board-theme-dark: #9a2e22;
+  --board-theme-hover: #d24435;
+  --board-theme-emphasis: #2bb2c0;
+  --board-theme-emphasis-hover: #27a0ad;
+  --board-theme-emphasis-close: #228e9a;
+  --board-theme-checklist-bg: #f5d5d2;
+  --board-theme-selected-bg: #faeae9;
+  --board-theme-selected-hover-bg: #fdf9f8;
+  --board-theme-bright: #d7584b;
+  --board-theme-canvas-scrollbar: #c0392bf2;
+  --board-theme-sidebar-scrollbar: #c0392bf2;
+}
+
+.board-color-belize {
+  --board-theme-accent: #2980b9;
+  --board-theme-dark: #216694;
+  --board-theme-hover: #2e90d0;
+  --board-theme-emphasis: #b96229;
+  --board-theme-emphasis-hover: #a75825;
+  --board-theme-emphasis-close: #944e21;
+  --board-theme-checklist-bg: #d1e7f5;
+  --board-theme-selected-bg: #e8f3fa;
+  --board-theme-selected-hover-bg: #f8fbfd;
+  --board-theme-bright: #459cd6;
+  --board-theme-canvas-scrollbar: #2573a7f2;
+  --board-theme-sidebar-scrollbar: #2980b9f2;
+}
+
+.board-color-wisteria {
+  --board-theme-accent: #8e44ad;
+  --board-theme-dark: #72368a;
+  --board-theme-hover: #9c51bb;
+  --board-theme-emphasis: #63ad44;
+  --board-theme-emphasis-hover: #599c3d;
+  --board-theme-emphasis-close: #4f8a36;
+  --board-theme-checklist-bg: #e8d9f0;
+  --board-theme-selected-bg: #f4ecf7;
+  --board-theme-selected-hover-bg: #fcf9fd;
+  --board-theme-bright: #a765c2;
+  --board-theme-canvas-scrollbar: #8e44adf2;
+  --board-theme-sidebar-scrollbar: #8e44adf2;
+}
+
+.board-color-midnight {
+  --board-theme-accent: #2c3e50;
+  --board-theme-dark: #233240;
+  --board-theme-hover: #3a5169;
+  --board-theme-emphasis: #503e2c;
+  --board-theme-emphasis-hover: #483828;
+  --board-theme-emphasis-close: #403223;
+  --board-theme-checklist-bg: #d2dae2;
+  --board-theme-selected-bg: #e6ecf1;
+  --board-theme-selected-hover-bg: #f8f9fb;
+  --board-theme-bright: #476582;
+  --board-theme-canvas-scrollbar: #2c3e50f2;
+  --board-theme-sidebar-scrollbar: #2c3e50f2;
+}
+
+.board-color-pumpkin {
+  --board-theme-accent: #e67e22;
+  --board-theme-dark: #be6415;
+  --board-theme-hover: #e98b38;
+  --board-theme-emphasis: #228ae6;
+  --board-theme-emphasis-hover: #187dd5;
+  --board-theme-emphasis-close: #156fbe;
+  --board-theme-checklist-bg: #f9e5d1;
+  --board-theme-selected-bg: #fdf2e9;
+  --board-theme-selected-hover-bg: #fefbf8;
+  --board-theme-bright: #eb984e;
+  --board-theme-canvas-scrollbar: #e67e22f2;
+  --board-theme-sidebar-scrollbar: #e67e22f2;
+}
+
+.board-color-moderatepink {
+  --board-theme-accent: #cd5a91;
+  --board-theme-dark: #b53773;
+  --board-theme-hover: #d26b9c;
+  --board-theme-emphasis: #5acd96;
+  --board-theme-emphasis-hover: #43c688;
+  --board-theme-emphasis-close: #37b579;
+  --board-theme-checklist-bg: #f4dde8;
+  --board-theme-selected-bg: #faeef4;
+  --board-theme-selected-hover-bg: #fefafc;
+  --board-theme-bright: #d77ba7;
+  --board-theme-canvas-scrollbar: #cd5a91f2;
+  --board-theme-sidebar-scrollbar: #cd5a91f2;
+}
+
+.board-color-strongcyan {
+  --board-theme-accent: #00aecc;
+  --board-theme-dark: #008ba3;
+  --board-theme-hover: #00c8eb;
+  --board-theme-emphasis: #cc1e00;
+  --board-theme-emphasis-hover: #b81b00;
+  --board-theme-emphasis-close: #a31800;
+  --board-theme-checklist-bg: #ccf2f9;
+  --board-theme-selected-bg: #e0fbff;
+  --board-theme-selected-hover-bg: #f6feff;
+  --board-theme-bright: #0adbff;
+  --board-theme-canvas-scrollbar: #00aeccf2;
+  --board-theme-sidebar-scrollbar: #00aeccf2;
+}
+
+.board-color-limegreen {
+  --board-theme-accent: #4bbf6b;
+  --board-theme-dark: #389d54;
+  --board-theme-hover: #5dc57a;
+  --board-theme-emphasis: #bf4b9f;
+  --board-theme-emphasis-hover: #b13f91;
+  --board-theme-emphasis-close: #9d3881;
+  --board-theme-checklist-bg: #daf4de;
+  --board-theme-selected-bg: #edf9f0;
+  --board-theme-selected-hover-bg: #fafdfb;
+  --board-theme-bright: #6fcc89;
+  --board-theme-canvas-scrollbar: #4bbf6bf2;
+  --board-theme-sidebar-scrollbar: #4bbf6bf2;
+}
+
+.board-color-corteza {
+  --board-theme-accent: #568ba2;
+  --board-theme-dark: #456f82;
+  --board-theme-hover: #6597ad;
+  --board-theme-emphasis: #a26d56;
+  --board-theme-emphasis-hover: #92624d;
+  --board-theme-emphasis-close: #825745;
+  --board-theme-checklist-bg: #dce6ec;
+  --board-theme-selected-bg: #eef3f6;
+  --board-theme-selected-hover-bg: #fafcfc;
+  --board-theme-bright: #76a3b6;
+  --board-theme-canvas-scrollbar: #568ba2f2;
+  --board-theme-sidebar-scrollbar: #568ba2f2;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header-quick-access,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+).sk-spinner div,
+.board-backgrounds-list :is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+).background-box,
+.public-board-row:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+),
+.board-list li:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+),
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .setting-content .content-body .side-menu ul li.active,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: var(--board-theme-accent);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .is-selected .minicard {
+  border-inline-start: 3px solid var(--board-theme-accent);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) button[type=submit].primary,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) input[type=submit].primary,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .sidebar .sidebar-content .sidebar-btn,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .selected-calendar-picker button.primary {
+  background-color: var(--board-theme-dark);
+  border-radius: 7px;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+).pop-over .pop-over-list li a:not(.disabled):hover,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .sidebar .sidebar-content .sidebar-btn:hover,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .sidebar-list li a:hover {
+  background-color: var(--board-theme-hover);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header ul li.current,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header-quick-access ul li.current {
+  border-bottom: 4px solid var(--board-theme-bright);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header-quick-access {
+  color: #fff;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header #header-main-bar .board-header-btn.emphasis {
+  background: var(--board-theme-emphasis);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header #header-main-bar .board-header-btn.emphasis:hover,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: var(--board-theme-emphasis-hover);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+)#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: var(--board-theme-emphasis-close);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .materialCheckBox.is-checked {
+  border-bottom: 2px solid var(--board-theme-accent);
+  border-right: 2px solid var(--board-theme-accent);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .checklist-progress-bar {
+  background-color: var(--board-theme-checklist-bg) !important;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .checklist-progress-bar .checklist-progress {
+  background-color: var(--board-theme-accent) !important;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: var(--board-theme-selected-bg);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: var(--board-theme-selected-hover-bg);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .toggle-label:after,
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .toggle-switch:checked ~ .toggle-label:after {
+  background-color: var(--board-theme-dark);
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .toggle-switch:checked ~ .toggle-label {
+  background-color: var(--board-theme-bright);
+}
+
+@media screen and (max-width: 800px) {
+  :is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+).pop-over .header {
+    background: var(--board-theme-accent);
+    color: #fff;
+  }
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .board-canvas {
+  scrollbar-color: var(--board-theme-canvas-scrollbar) #e4e4e400;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .sidebar .sidebar-content {
+  scrollbar-color: var(--board-theme-sidebar-scrollbar) #e4e4e400;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+:is(
+  .board-color-nephritis,
+  .board-color-pomegranate,
+  .board-color-belize,
+  .board-color-wisteria,
+  .board-color-midnight,
+  .board-color-pumpkin,
+  .board-color-moderatepink,
+  .board-color-strongcyan,
+  .board-color-limegreen,
+  .board-color-corteza
+) .list-body {
+  margin-top: 8px;
+}
+
+/* ===============
+THEME - Dark
+=================*/
+
+.board-color-dark#header,
+.board-color-dark#header-quick-access,
+.board-color-dark.sk-spinner div,
+.board-backgrounds-list .board-color-dark.background-box,
+.public-board-row.board-color-dark,
+.board-list li.board-color-dark,
+.board-color-dark .setting-content .content-body .side-menu ul li.active,
+.board-color-dark .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #2c3e51;
+}
+.board-color-dark .is-selected .minicard {
+  border-inline-start: 3px solid #2c3e51;
+}
+.board-color-dark .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  background-color: rgb(255 255 255 / 90%);
+}
+.board-color-dark button[type=submit].primary,
+.board-color-dark input[type=submit].primary,
+.board-color-dark .sidebar .sidebar-content .sidebar-btn,
+.board-color-dark .selected-calendar-picker button.primary {
+  background-color: #233241;
+  border-radius: 7px;
+}
+.board-color-dark.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-dark .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-dark .sidebar-list li a:hover {
+  background-color: #3a516a;
+}
+.board-color-dark#header ul li.current,
+.board-color-dark#header-quick-access ul li.current {
+  border-bottom: 2px solid #3a516a;
+}
+.board-color-dark#header-quick-access {
+  color: #fff;
+}
+.board-color-dark#header #header-main-bar .board-header-btn.emphasis {
+  background: #513f2c;
+}
+.board-color-dark#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-dark#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #493928;
+}
+.board-color-dark#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #413223;
+}
+.board-color-dark .materialCheckBox.is-checked {
+  border-bottom: 2px solid #2c3e51;
+  border-right: 2px solid #2c3e51;
+}
+.board-color-dark .checklist-progress-bar {
+  background-color: #d2dae2 !important;
+}
+.board-color-dark .checklist-progress-bar .checklist-progress {
+  background-color: #2c3e51 !important;
+}
+.board-color-dark .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #e6ecf1;
+}
+.board-color-dark .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f8f9fb;
+}
+.board-color-dark .toggle-label:after {
+  background-color: #233241;
+}
+.board-color-dark .toggle-switch:checked ~ .toggle-label {
+  background-color: #476483;
+}
+.board-color-dark .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #233241;
+}
+@media screen and (max-width: 800px) {
+  .board-color-dark.pop-over .header {
+    background: #2c3e51;
+    color: #fff;
+  }
+}
+.board-color-dark#header ul li.current,
+.board-color-dark#header-quick-access ul li.current {
+  border-bottom: 4px solid #476483;
+}
+
+/* Board Wrapper background fix for dark theme */
+.board-color-dark.board-wrapper {
+    background-color: #2c3e50;
+}
+
+.board-color-dark .swimlane,
+.board-color-dark .swimlane >.swimlane-header-wrap,
+.board-color-dark .swimlane >.list.js-list,
+.board-color-dark .swimlane >.list-composer.js-list-composer,
+.board-color-dark .list-body,
+.board-color-dark .list,
+.board-color-dark .list-composer,
+.board-color-dark .sidebar-content,
+.board-color-dark .card-details {
+  background-color: #2c3e50;
+}
+.board-color-dark .card-details h3,
+.board-color-dark .card-details-left p,
+.board-color-dark .card-details-items,
+.board-color-dark .card-checklist-items .ui-sortable,
+.board-color-dark .card-subtasks-items,
+.board-color-dark .activities,
+.board-color-dark .material-toggle-switch {
+  color: #bbb;
+}
+.board-color-dark .list-header {
+  background-color: #888;
+}
+.board-color-dark .board-widget,
+.board-color-dark .board-widget-labels,
+.board-color-dark .board-widget-members {
+  color: #aaa;
+}
+/* This theme used to hide every popup's header outright
+   (`.board-color-dark .pop-over > .header { display: none }`), which took the
+   TITLE, the back arrow and the X with it - so on Dark, "Change Color" was an
+   untitled panel you could only leave with Escape or a click outside. No other
+   theme does that; the header is drawn here exactly as it is everywhere else. */
+.board-color-dark #header-quick-access .fa-plus {
+  display: none;
+}
+.board-color-dark #header-quick-access:hover .fa-plus {
+  display: inherit;
+}
+.board-color-dark .open-minicard-composer {
+  visibility: hidden;
+}
+.board-color-dark .list.js-list:hover .open-minicard-composer {
+  visibility: visible;
+}
+.board-color-dark .list-header-menu {
+  visibility: hidden;
+}
+.board-color-dark .list.js-list:hover .list-header-menu {
+  visibility: visible;
+}
+.board-color-dark .list.js-list-composer >.list-header {
+  visibility: hidden;
+}
+.board-color-dark .list.js-list-composer:hover >.list-header {
+  visibility: visible;
+}
+.board-color-dark #header-quick-access,
+.board-color-dark #header {
+  background-color: rgba(0,0,0,0.75) !important;
+}
+.board-color-dark #header .board-header-btn:hover {
+  background-color: rgba(255,255,255,0.3) !important;
+}
+.board-color-dark .list >.list-header,
+/* Comment out, fixed white swimlane text not visible https://github.com/wekan/wekan/issues/4451
+.board-color-dark .swimlane-header {
+  color: rgba(255,255,255,0.7);
+}
+*/
+.board-color-dark .minicard-wrapper.is-selected .minicard,
+.board-color-dark .minicard:hover,
+.board-color-dark .minicard-composer.js-composer,
+.board-color-dark .open-minicard-composer:hover {
+  background-color: rgba(255,255,255,0.8) !important;
+  color: #000;
+  border-radius: 7px;
+}
+.board-color-dark .minicard:hover .badge,
+.board-color-dark .minicard-wrapper.is-selected .badge {
+  color: #000;
+}
+.board-color-dark .card-details .card-details-header {
+  background-color: #ccc;
+}
+.board-color-dark .sidebar-tongue,
+.board-color-dark .sidebar-shadow {
+  background-color: #666 !important;
+}
+.board-color-dark .sidebar-content h3,
+.board-color-dark .sidebar-content h2,
+.board-color-dark .sidebar-content {
+  color: rgba(255,255,255,0.7) !important;
+}
+.board-color-dark .card-details .activities .activity .activity-desc .activity-comment {
+  background-color: #ccc;
+  color: #222;
+}
+
+/* Transparent modern scrollbar - dark*/
+.board-color-dark .board-canvas {
+  scrollbar-color: #f2f2f2f2 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-dark .sidebar .sidebar-content {
+  scrollbar-color: #f2f2f2f2 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-dark .list {
+  border-inline-start: none; /* Remove this property to bring back lines in-between columns if needed*/
+  padding: 0px 1px 8px 1px; /* Improves spacing between columns due to no borders, 8px padding at bottom to separate horizontal scrollbar/lists */
+}
+
+.board-color-dark .list-body {
+ margin-top: 8px;
+}
+
+/* === END Dark THEME === */
+
+/* ===============
+THEME - Relax
+=================*/
+
+.board-color-relax#header,
+.board-color-relax#header-quick-access,
+.board-color-relax.sk-spinner div,
+.board-backgrounds-list .board-color-relax.background-box,
+.public-board-row.board-color-relax,
+.board-list li.board-color-relax,
+.board-color-relax .setting-content .content-body .side-menu ul li.active,
+.board-color-relax .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #27ae61;
+}
+.board-color-relax .is-selected .minicard {
+  border-inline-start: 3px solid #27ae61;
+}
+.board-color-relax .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+.board-color-relax button[type=submit].primary,
+.board-color-relax input[type=submit].primary,
+.board-color-relax .sidebar .sidebar-content .sidebar-btn,
+.board-color-relax .selected-calendar-picker button.primary {
+  background-color: #1f8b4e;
+  border-radius: 7px;
+}
+.board-color-relax.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-relax .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-relax .sidebar-list li a:hover {
+  background-color: #2cc66f;
+}
+.board-color-relax#header ul li.current,
+.board-color-relax#header-quick-access ul li.current {
+  border-bottom: 2px solid #2cc66f;
+}
+.board-color-relax#header-quick-access {
+  color: #fff;
+}
+.board-color-relax#header #header-main-bar .board-header-btn.emphasis {
+  background: #ae2774;
+}
+.board-color-relax#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-relax#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #9d2368;
+}
+.board-color-relax#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #8b1f5d;
+}
+.board-color-relax .materialCheckBox.is-checked {
+  border-bottom: 2px solid #27ae61;
+  border-right: 2px solid #27ae61;
+}
+.board-color-relax .checklist-progress-bar {
+  background-color: #d4f1dd !important;
+}
+.board-color-relax .checklist-progress-bar .checklist-progress {
+  background-color: #27ae61 !important;
+}
+.board-color-relax .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #e7faef;
+}
+.board-color-relax .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f8fdfa;
+}
+.board-color-relax .toggle-label:after {
+  background-color: #1f8b4e;
+}
+.board-color-relax .toggle-switch:checked ~ .toggle-label {
+  background-color: #3dd37e;
+}
+.board-color-relax .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #1f8b4e;
+}
+@media screen and (max-width: 800px) {
+  .board-color-relax.pop-over .header {
+    background: #27ae61;
+    color: #fff;
+  }
+}
+.board-color-relax#header ul li.current,
+.board-color-relax#header-quick-access ul li.current {
+  border-bottom: 4px solid #3dd37e;
+}
+.board-color-relax .board-wrapper {
+  background-color: #a7e366;
+}
+.board-color-relax .list-header {
+  background-color: #a7e366;
+}
+.board-color-relax .list-body {
+  background-color: #a7e366;
+}
+.board-color-relax .list {
+  border-inline-start: 1px dotted #000;
+}
+.board-color-relax .card-details .card-details-items ~ .js-open-inlined-form .viewer {
+  background-color: #fff !important;
+  padding: 15px !important;
+  border: 1px solid #000 !important;
+  word-wrap: break-word;
+}
+.board-color-relax .minicard .badges .badge .badge-icon.badge-comment,
+.board-color-relax .minicard .badges .badge .badge-text.badge-comment {
+  display: block;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin-bottom: 0.3rem;
+  color: #f00;
+  background-color: #fff;
+  font-weight: bold;
+  font-size: 11pt;
+}
+
+/* Transparent modern scrollbar - relax*/
+.board-color-relax .board-canvas {
+  scrollbar-color: #fffffff2 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-relax .sidebar .sidebar-content {
+  scrollbar-color: #a7e366 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-relax .list {
+  border-inline-start: none;
+ /* padding-bottom: 8px; - Removed to get rid of grey bars for relax theme */
+}
+
+.board-color-relax .list-body {
+ margin-top: 8px;
+}
+
+/* === END Relax THEME === */
+
+/* ===============
+THEME - Apple Glass Pastel
+=================*/
+
+.board-color-appleglasspastel {
+  background:
+    radial-gradient(60% 50% at 85% 5%, rgba(255, 200, 220, 0.55), transparent 60%),
+    radial-gradient(55% 50% at 5% 25%, rgba(180, 215, 255, 0.55), transparent 65%),
+    radial-gradient(55% 50% at 95% 95%, rgba(200, 230, 255, 0.5), transparent 60%),
+    radial-gradient(70% 60% at 0% 100%, rgba(230, 215, 255, 0.5), transparent 65%),
+    linear-gradient(180deg, #f6f7fb 0%, #eef0f7 100%);
+  color: #111827;
+}
+
+/* Apple's Liquid Glass (WWDC 2025): a surface is not a colour but frosted
+   glass over what lies behind it - a translucent fill, a backdrop blur with
+   extra saturation, a rim of light along its edges (brightest on top), and a
+   diagonal sheen. The header bars are glass too: the mesh shows through them,
+   their text is dark, and blue is kept for what is active and for the one
+   primary action. tests/playwright/specs/theme-appleglasspastel-contrast.e2e.js
+   measures every text against what is really painted behind it. */
+.board-color-appleglasspastel#header,
+.board-color-appleglasspastel#header #header-main-bar,
+.board-color-appleglasspastel#header-quick-access {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.58) 100%),
+    radial-gradient(60% 140% at 85% 0%, rgba(255, 200, 220, 0.55), transparent 60%),
+    radial-gradient(55% 140% at 5% 0%, rgba(180, 215, 255, 0.55), transparent 65%),
+    linear-gradient(180deg, #f6f7fb 0%, #eef0f7 100%);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+    0 8px 24px rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+}
+
+.board-color-appleglasspastel.sk-spinner div,
+.board-color-appleglasspastel .setting-content .content-body .side-menu ul li.active,
+.board-color-appleglasspastel .setting-content .content-body .side-menu ul li.active:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+.board-backgrounds-list .board-color-appleglasspastel.background-box,
+.public-board-row.board-color-appleglasspastel,
+.board-list li.board-color-appleglasspastel {
+  background:
+    radial-gradient(80% 70% at 80% 0%, rgba(255, 200, 220, 0.7), transparent 62%),
+    radial-gradient(70% 80% at 0% 15%, rgba(180, 215, 255, 0.75), transparent 66%),
+    radial-gradient(75% 70% at 100% 100%, rgba(230, 215, 255, 0.7), transparent 62%),
+    linear-gradient(180deg, #f6f7fb 0%, #eef0f7 100%);
+  color: #111827 !important;
+}
+
+/* THE LIGHT TILES' TEXT. A board tile writes its title in #f6f6f6
+   (`.board-list .board-list-item`, boardsList.css), which is right on the
+   fifteen dark themes and invisible on a light one: Apple Glass Pastel's tile
+   is a pastel wash from #f6f7fb, so its title and description were white on
+   near-white and only the tile's shape said a board was there. The colour on
+   the tile itself does not reach them - `.board-list .board-list-item` sets a
+   colour of its own on the child, so there is nothing to inherit - which is why
+   each child is named here.
+   EVERY light-tiled theme belongs in this one block: a new one added without it
+   is a board nobody can read in the overview, and tests/boardTileTheme.cjs
+   fails until it is listed. */
+.board-list li.board-color-appleglasspastel .board-list-item,
+.board-list li.board-color-appleglasspastel .board-list-item-name,
+.board-list li.board-color-appleglasspastel .board-list-item-desc,
+.board-list li.board-color-appleglasspastel .board-list-item-sub-name,
+.board-list li.board-color-appleglasspastel .board-list-item-archived-at,
+.public-board-row.board-color-appleglasspastel td {
+  color: #111827;
+}
+.board-list li.board-color-cleanlight .board-list-item,
+.board-list li.board-color-cleanlight .board-list-item-name,
+.board-list li.board-color-cleanlight .board-list-item-desc,
+.board-list li.board-color-cleanlight .board-list-item-sub-name,
+.board-list li.board-color-cleanlight .board-list-item-archived-at,
+.public-board-row.board-color-cleanlight td {
+  color: rgba(10, 10, 20, 0.85);
+}
+/* The count pill and the star sit on that same light tile: a mid-grey pill and
+   a white star are the same problem in a smaller shape. */
+.board-list li.board-color-appleglasspastel .board-list-card-count,
+.board-list li.board-color-cleanlight .board-list-card-count {
+  background: rgba(0, 0, 0, 0.12);
+  color: #111827;
+}
+.board-list li.board-color-appleglasspastel .is-not-star-active,
+.board-list li.board-color-cleanlight .is-not-star-active {
+  color: rgba(10, 10, 20, 0.55);
+}
+
+.board-color-appleglasspastel#header-quick-access {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.board-color-appleglasspastel .boards-left-menu .menu-item.active a,
+.board-color-appleglasspastel .boards-left-menu .menu-item.active a:hover {
+  background: #2563eb;
+}
+
+.board-color-appleglasspastel#header ul li.current,
+.board-color-appleglasspastel#header-quick-access ul li.current {
+  border-bottom: 3px solid #2563eb;
+}
+
+.board-color-appleglasspastel#header-quick-access #header-new-board-icon,
+.board-color-appleglasspastel#header-quick-access #header-user-bar,
+.board-color-appleglasspastel#header-quick-access ul li,
+.board-color-appleglasspastel#header-quick-access a,
+.board-color-appleglasspastel#header .board-header-btn,
+.board-color-appleglasspastel#header .board-header-btn i {
+  color: #0f172a;
+}
+
+/* Everything the header CSS paints white for the blue bars (header.css) is
+   dark on the glass: the buttons, their icons, the house, the username. Only
+   what still sits on blue - the emphasis button, the active desktop/mobile
+   toggle - keeps its white. */
+.board-color-appleglasspastel#header-quick-access .board-header-btn,
+.board-color-appleglasspastel#header-quick-access i.fa,
+.board-color-appleglasspastel#header-quick-access .home-icon .header-home-link,
+.board-color-appleglasspastel#header-quick-access ul li a,
+.board-color-appleglasspastel#header-quick-access #header-user-bar .header-user-bar-name,
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn,
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn i.fa,
+.board-color-appleglasspastel#header #header-main-bar h1 a i.fa {
+  color: #0f172a;
+}
+
+.board-color-appleglasspastel#header-quick-access .mobile-mode-toggle .board-header-btn {
+  color: #0f172a !important;
+}
+
+/* The stock WeKan logo is white, made for the blue bar; on glass it is drawn
+   dark. A custom logo is the instance's own and is left as it is. */
+.board-color-appleglasspastel#header-quick-access div.header-logo img {
+  filter: brightness(0.2);
+}
+
+.board-color-appleglasspastel#header ul li:hover,
+.board-color-appleglasspastel#header-quick-access ul li:hover,
+.board-color-appleglasspastel .board-header-btn:hover {
+  background: rgba(37, 99, 235, 0.10);
+  border-radius: 10px;
+}
+
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis,
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis i {
+  color: #fff;
+}
+
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis {
+  background: #1e3a8a;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.12), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #1d4ed8;
+}
+
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #1e3a8a;
+}
+
+.board-color-appleglasspastel.board-wrapper {
+  background:
+    radial-gradient(60% 50% at 85% 5%, rgba(255, 200, 220, 0.55), transparent 60%),
+    radial-gradient(55% 50% at 5% 25%, rgba(180, 215, 255, 0.55), transparent 65%),
+    radial-gradient(55% 50% at 95% 95%, rgba(200, 230, 255, 0.5), transparent 60%),
+    radial-gradient(70% 60% at 0% 100%, rgba(230, 215, 255, 0.5), transparent 65%),
+    linear-gradient(180deg, #f6f7fb 0%, #eef0f7 100%);
+}
+
+.board-color-appleglasspastel .board-canvas {
+  scrollbar-color: rgba(37, 99, 235, 0.35) rgba(255, 255, 255, 0);
+  scrollbar-width: thin;
+}
+
+.board-color-appleglasspastel .swimlane {
+  background: transparent;
+}
+
+.board-color-appleglasspastel .swimlane .swimlane-header-wrap {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 100%),
+    rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.board-color-appleglasspastel .swimlane-header {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.board-color-appleglasspastel .list {
+  /* Sheen over the frosted fill: light falling from the top left. */
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.08) 30%, rgba(255, 255, 255, 0) 60%),
+    rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-inline-start: none;
+  border-radius: 22px;
+  /* The rim: a bright top edge, softer sides and bottom, and a soft drop. */
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.35),
+    inset 1px 0 1px rgba(255, 255, 255, 0.3),
+    inset -1px 0 1px rgba(255, 255, 255, 0.3);
+  color: #111827;
+  margin: 10px 0;
+  padding-bottom: 8px;
+}
+
+/* list.css paints every list header #e4e4e4 with !important, so the glass
+   has to say it the same way. */
+.board-color-appleglasspastel .list-header {
+  background: rgba(255, 255, 255, 0.4) !important;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.75) !important;
+  border-radius: 22px 22px 0 0;
+}
+
+.board-color-appleglasspastel .list-header .list-header-name,
+.board-color-appleglasspastel .list-header .viewer,
+.board-color-appleglasspastel .minicard-title {
+  color: #0f172a;
+}
+
+.board-color-appleglasspastel .list-body {
+  margin-top: 8px;
+  padding: 11px;
+  scrollbar-color: rgba(37, 99, 235, 0.35) rgba(255, 255, 255, 0);
+  scrollbar-width: thin;
+}
+
+.board-color-appleglasspastel .minicard,
+.board-color-appleglasspastel .card-details,
+.board-color-appleglasspastel.pop-over,
+.board-color-appleglasspastel .sidebar {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.1) 32%, rgba(255, 255, 255, 0) 60%),
+    rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.4);
+  color: #111827;
+}
+
+.board-color-appleglasspastel.pop-over {
+  border-radius: 18px;
+}
+
+.board-color-appleglasspastel .minicard {
+  border-radius: 14px;
+  padding: 10px 10px 4px 10px;
+}
+
+.board-color-appleglasspastel .minicard:hover:not(.minicard-composer),
+.board-color-appleglasspastel .is-selected .minicard,
+.board-color-appleglasspastel .draggable-hover-card .minicard {
+  background: rgba(239, 246, 255, 0.88);
+}
+
+.board-color-appleglasspastel .is-selected .minicard {
+  border-inline-start: 3px solid #2563eb;
+}
+
+.board-color-appleglasspastel .card-details {
+  border-radius: 22px;
+}
+
+.board-color-appleglasspastel .card-details .card-details-header {
+  background: rgba(239, 246, 255, 0.78);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.75);
+  color: #0f172a;
+}
+
+.board-color-appleglasspastel .card-details-item-title,
+.board-color-appleglasspastel .card-details-left .viewer p,
+.board-color-appleglasspastel .activity-desc .activity-member {
+  color: #111827;
+}
+
+.board-color-appleglasspastel .quiet,
+.board-color-appleglasspastel .quiet a,
+.board-color-appleglasspastel .activity-desc,
+.board-color-appleglasspastel .sidebar-list-item-description {
+  color: #6b7280;
+}
+
+.board-color-appleglasspastel .list.list-composer,
+.board-color-appleglasspastel .list-body .open-minicard-composer,
+.board-color-appleglasspastel .list.list-composer .open-list-composer {
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  color: #4b5563;
+  opacity: 1;
+}
+
+/* The sidebar's section headings and Board Settings were the default #808080,
+   3.8:1 on glass. */
+.board-color-appleglasspastel .sidebar .sidebar-content h3,
+.board-color-appleglasspastel .sidebar .sidebar-content h3 i.fa,
+.board-color-appleglasspastel .sidebar .board-header-btn,
+.board-color-appleglasspastel .sidebar .board-header-btn i.fa {
+  color: #374151;
+}
+
+/* The icons. WeKan draws its control icons #a6a6a6, 2.4:1 on white glass -
+   below the 3:1 a graphic that says what a control does needs (WCAG 1.4.11).
+   An icon given its own colour (a dependency, a status) keeps it, and one on a
+   blue button stays white. */
+.board-color-appleglasspastel .board-canvas .fa:not([style*="color"]),
+.board-color-appleglasspastel .card-details .fa:not([style*="color"]),
+.board-color-appleglasspastel .sidebar .fa:not([style*="color"]),
+.board-color-appleglasspastel.pop-over .fa:not([style*="color"]),
+.board-color-appleglasspastel#header-quick-access .fa,
+.board-color-appleglasspastel#header .fa {
+  color: #4b5563;
+}
+
+.board-color-appleglasspastel#header-quick-access .fa,
+.board-color-appleglasspastel#header .fa {
+  color: #0f172a;
+}
+
+.board-color-appleglasspastel button .fa,
+.board-color-appleglasspastel .primary .fa,
+.board-color-appleglasspastel#header #header-main-bar .board-header-btn.emphasis .fa {
+  color: inherit;
+}
+
+.board-color-appleglasspastel .list-body .open-minicard-composer:hover,
+.board-color-appleglasspastel .list.list-composer .open-list-composer:hover,
+.board-color-appleglasspastel.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-appleglasspastel .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-appleglasspastel .sidebar-list li a:hover {
+  background: rgba(219, 234, 254, 0.78);
+  color: #1e3a8a;
+}
+
+/* popup.css makes a hovered menu row white on the accent with !important; on
+   this theme the row turns pale blue, so its text and icon turn navy the same
+   way. */
+.board-color-appleglasspastel.pop-over .pop-over-list li > a:not(.disabled):hover,
+.board-color-appleglasspastel.pop-over .pop-over-list li > a:not(.disabled):hover i,
+.board-color-appleglasspastel.pop-over .pop-over-list li > a:not(.disabled):hover i.fa {
+  color: #1e3a8a !important;
+}
+
+@media screen and (max-width: 800px) {
+  .board-color-appleglasspastel.pop-over .header a,
+  .board-color-appleglasspastel.pop-over .header .fa,
+  .board-color-appleglasspastel.pop-over .header .close-btn i.fa {
+    color: #0f172a;
+  }
+}
+
+/* The sidebar hamburger is forced white with !important by the accessibility
+   style boardBody.js injects, which assumes a blue bar. */
+.board-color-appleglasspastel#header-quick-access .js-toggle-page-sidebar .fa-bars {
+  color: #0f172a !important;
+}
+
+.board-color-appleglasspastel button[type=submit].primary,
+.board-color-appleglasspastel input[type=submit].primary,
+.board-color-appleglasspastel button.primary,
+.board-color-appleglasspastel input.primary,
+.board-color-appleglasspastel .sidebar .sidebar-content .sidebar-btn,
+.board-color-appleglasspastel .selected-calendar-picker button.primary {
+  /* Tinted glass: the blue with a highlight across its upper half. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 55%),
+    #2563eb;
+  border: 0;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 4px 16px rgba(37, 99, 235, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  color: #fff;
+}
+
+.board-color-appleglasspastel button[type="submit"].primary:hover,
+.board-color-appleglasspastel input[type="submit"].primary:hover,
+.board-color-appleglasspastel button.primary:hover,
+.board-color-appleglasspastel input.primary:hover,
+.board-color-appleglasspastel .selected-calendar-picker button.primary:hover {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.board-color-appleglasspastel input[type="email"],
+.board-color-appleglasspastel input[type="password"],
+.board-color-appleglasspastel input[type="text"],
+.board-color-appleglasspastel textarea,
+.board-color-appleglasspastel select {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(229, 231, 235, 0.9);
+  border-radius: 12px;
+  color: #111827;
+}
+
+.board-color-appleglasspastel input:focus,
+.board-color-appleglasspastel textarea:focus,
+.board-color-appleglasspastel select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.board-color-appleglasspastel .materialCheckBox.is-checked {
+  border-bottom: 2px solid #2563eb;
+  border-right: 2px solid #2563eb;
+}
+
+.board-color-appleglasspastel .checklist-progress-bar {
+  background-color: #dbeafe !important;
+}
+
+.board-color-appleglasspastel .checklist-progress-bar .checklist-progress {
+  background-color: #2563eb !important;
+}
+
+.board-color-appleglasspastel .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #eff6ff;
+}
+
+.board-color-appleglasspastel .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.board-color-appleglasspastel .toggle-label:after {
+  background-color: #2563eb;
+}
+
+.board-color-appleglasspastel .toggle-switch:checked ~ .toggle-label {
+  background-color: #93c5fd;
+}
+
+.board-color-appleglasspastel .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #2563eb;
+}
+
+.board-color-appleglasspastel .card-date.current,
+.board-color-appleglasspastel .minicard .current {
+  background: #1f7d38;
+  color: #fff !important;
+}
+
+.board-color-appleglasspastel .card-date.due,
+.board-color-appleglasspastel .minicard .due {
+  background: #dc3545;
+  color: #fff !important;
+}
+
+.board-color-appleglasspastel .sidebar .sidebar-content {
+  scrollbar-color: rgba(37, 99, 235, 0.35) rgba(255, 255, 255, 0);
+}
+
+@media screen and (max-width: 800px) {
+  .board-color-appleglasspastel.pop-over .header {
+    background: rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid rgba(229, 231, 235, 0.75);
+    color: #0f172a;
+  }
+}
+
+/* Reduce transparency (macOS, iOS, Windows), and a browser with no
+   backdrop-filter: the glass turns nearly opaque, so text never depends on
+   what happens to lie behind it. */
+@media (prefers-reduced-transparency: reduce) {
+  .board-color-appleglasspastel#header,
+  .board-color-appleglasspastel#header #header-main-bar,
+  .board-color-appleglasspastel#header-quick-access,
+  .board-color-appleglasspastel .list,
+  .board-color-appleglasspastel .minicard,
+  .board-color-appleglasspastel .card-details,
+  .board-color-appleglasspastel.pop-over,
+  .board-color-appleglasspastel .sidebar,
+  .board-color-appleglasspastel .swimlane .swimlane-header-wrap {
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .board-color-appleglasspastel .list,
+  .board-color-appleglasspastel .minicard,
+  .board-color-appleglasspastel .card-details,
+  .board-color-appleglasspastel.pop-over,
+  .board-color-appleglasspastel .sidebar {
+    background: rgba(255, 255, 255, 0.92);
+  }
+}
+
+/* === END Apple Glass Pastel THEME === */
+
+/* ===============
+THEME - Clear Blue
+=================*/
+
+.board-color-clearblue.sk-spinner div,
+.board-backgrounds-list .board-color-clearblue.background-box,
+.public-board-row.board-color-clearblue,
+.board-list li.board-color-clearblue {
+  background: linear-gradient(180deg, #499bea 0%, #00aecc 100%);
+}
+.board-color-clearblue .is-selected .minicard {
+  border-inline-start: 3px solid #499bea;
+}
+.board-color-clearblue.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-clearblue .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-clearblue .sidebar-list li a:hover {
+  background-color: #5ba5ec;
+}
+.board-color-clearblue#header ul li.current,
+.board-color-clearblue#header-quick-access ul li.current {
+  border-bottom: 4px solid #00c8eb;
+}
+.board-color-clearblue#header-quick-access {
+  color: #fff;
+}
+/* Half-white was right when this bar was a thin SECONDARY strip above the
+   coloured main bar - the username and the board links in it were background
+   furniture. This bar is the header now, so its text is the header's text:
+   full white, like every other theme's, and like the page title beside it.
+   No other theme dims these. docs/Features/General/Theme/Change-Color.md */
+.board-color-clearblue#header-quick-access #header-new-board-icon,
+.board-color-clearblue#header-quick-access #header-user-bar,
+.board-color-clearblue#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-clearblue#header,
+.board-color-clearblue#header-quick-access,
+.board-color-clearblue .setting-content .content-body .side-menu ul li.active,
+.board-color-clearblue .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #00aecc;
+  border-bottom: 1px solid #008ba3;
+  border-top: 1px solid #00687a;
+}
+/* clearblue's bar is a colour SLIDE, and the slide has to be on the bar that is
+   actually on screen. It was only ever on `#header #header-main-bar` - the
+   inner element of the SECOND bar - because that is where the theme used to
+   live. The first bar got the flat `background-color: #00aecc` from the rule
+   above instead, which is exactly strongcyan's colour: picking clearblue
+   painted the header strongcyan.
+   `#header-quick-access` has no inner bar of its own, so the slide goes
+   directly on it.
+
+   The All Boards left menu's selected row is named here too. Every other theme
+   paints that row through `--theme-accent`, which is one colour and is exactly
+   right for them; a slide is not a colour, so the variable cannot carry it and
+   clearblue's row came out flat #00aecc while the Admin Panel's row beside it
+   slid. The Admin Panel's row has always been named in this rule; this is the
+   All Boards row joining it. docs/Features/General/Theme/Change-Color.md */
+.board-color-clearblue#header #header-main-bar,
+.board-color-clearblue#header-quick-access,
+.board-color-clearblue .setting-content .content-body .side-menu ul li.active,
+.board-color-clearblue .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-clearblue .boards-left-menu .menu-item.active a,
+.board-color-clearblue .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #499bea 0%, #00aecc 100%);
+}
+.board-color-clearblue#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-clearblue#header #header-main-bar .board-header-btn.emphasis {
+  background: #00c8eb;
+}
+.board-color-clearblue#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-clearblue#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearblue#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearblue .materialCheckBox.is-checked {
+  border-bottom: 2px solid #499bea;
+  border-right: 2px solid #499bea;
+}
+.board-color-clearblue .checklist-progress-bar {
+  background-color: #daeefb !important;
+}
+.board-color-clearblue .checklist-progress-bar .checklist-progress {
+  background-color: #499bea !important;
+}
+.board-color-clearblue .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #e0fbff;
+}
+.board-color-clearblue .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f6feff;
+}
+.board-color-clearblue .toggle-switch:checked ~ .toggle-label {
+  background-color: #6dafee;
+}
+.board-color-clearblue .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #197ddc;
+}
+.board-color-clearblue.board-wrapper {
+  background: linear-gradient(135deg, #499bea 0%, #00aecc 100%);
+}
+.board-color-clearblue .swimlane {
+  background: none;
+}
+.board-color-clearblue .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-clearblue .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-clearblue .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-clearblue .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-clearblue .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-clearblue .list.list-composer .open-list-composer:hover i,
+.board-color-clearblue .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearblue .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-clearblue .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-clearblue .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearblue .list-body {
+  padding: 11px;
+}
+.board-color-clearblue .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-clearblue .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-clearblue .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-clearblue .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearblue button[type=submit].primary,
+.board-color-clearblue input[type=submit].primary,
+.board-color-clearblue .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-clearblue button[type="submit"].primary:hover,
+.board-color-clearblue input[type="submit"].primary:hover,
+.board-color-clearblue .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-clearblue .quiet,
+.board-color-clearblue .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-clearblue .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-clearblue a.fa,
+.board-color-clearblue a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearblue a:not(.disabled).is-active.fa,
+.board-color-clearblue a:not(.disabled).is-active i.fa,
+.board-color-clearblue a:not(.disabled):hover.fa,
+.board-color-clearblue a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-clearblue input[type="email"],
+.board-color-clearblue input[type="password"],
+.board-color-clearblue input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-clearblue .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #00aecc;
+}
+.board-color-clearblue .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-clearblue .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearblue .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-clearblue .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-clearblue .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearblue .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearblue .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-clearblue .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-clearblue .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-clearblue .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-clearblue .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-clearblue .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-clearblue .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-clearblue .list.ui-sortable-helper,
+.board-color-clearblue .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-clearblue .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - clearblue*/
+.board-color-clearblue .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-clearblue .list-body {
+  scrollbar-width: thin;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-clearblue .sidebar .sidebar-content {
+   scrollbar-color: #00aecc #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-clearblue .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-clearblue .list-body {
+ margin-top: 8px;
+}
+
+/* === END Clearblue THEME === */
+
+/* ===============
+THEME - Natural
+=================*/
+
+.board-color-natural#header,
+.board-color-natural#header-quick-access,
+.board-color-natural.sk-spinner div,
+.board-backgrounds-list .board-color-natural.background-box,
+.public-board-row.board-color-natural,
+.board-list li.board-color-natural,
+.board-color-natural .setting-content .content-body .side-menu ul li.active,
+.board-color-natural .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #596557;
+}
+.board-color-natural .is-selected .minicard {
+  border-inline-start: 3px solid #596557;
+}
+.board-color-natural .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+.board-color-natural button[type=submit].primary,
+.board-color-natural input[type=submit].primary,
+.board-color-natural .sidebar .sidebar-content .sidebar-btn,
+.board-color-natural .selected-calendar-picker button.primary {
+  background-color: #475146;
+  border-radius: 7px;
+}
+.board-color-natural.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-natural .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-natural .sidebar-list li a:hover {
+  background-color: #687666;
+}
+.board-color-natural#header ul li.current,
+.board-color-natural#header-quick-access ul li.current {
+  border-bottom: 2px solid #687666;
+}
+.board-color-natural#header-quick-access {
+  color: #fff;
+}
+.board-color-natural#header #header-main-bar .board-header-btn.emphasis {
+  background: #635765;
+}
+.board-color-natural#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-natural#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #594e5b;
+}
+.board-color-natural#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #4f4651;
+}
+.board-color-natural .materialCheckBox.is-checked {
+  border-bottom: 2px solid #596557;
+  border-right: 2px solid #596557;
+}
+.board-color-natural .checklist-progress-bar {
+  background-color: #dee0dd !important;
+}
+.board-color-natural .checklist-progress-bar .checklist-progress {
+  background-color: #596557 !important;
+}
+.board-color-natural .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #eef0ee;
+}
+.board-color-natural .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fafbfa;
+}
+.board-color-natural .toggle-label:after {
+  background-color: #475146;
+}
+.board-color-natural .toggle-switch:checked ~ .toggle-label {
+  background-color: #778875;
+}
+.board-color-natural .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #475146;
+}
+@media screen and (max-width: 800px) {
+  .board-color-natural.pop-over .header {
+    background: #596557;
+    color: #fff;
+  }
+}
+.board-color-natural#header ul li.current,
+.board-color-natural#header-quick-access ul li.current {
+  border-bottom: 4px solid #778875;
+}
+/* The first bar keeps this theme's OWN colour. `#2d392b` was here because the
+   quick-access bar used to be a thin dark strip ABOVE the coloured main bar;
+   the main bar is gone and this one carries the theme, so the darker shade
+   painted Natural near-black instead of its green-grey. The shared
+   `#header, #header-quick-access` rule above provides the colour.
+   docs/Features/General/Theme/Change-Color.md */
+.board-color-natural.board-wrapper {
+  background-color: #dedede;
+}
+.board-color-natural .swimlane .swimlane-header-wrap {
+  background-color: #c2c0ab;
+}
+
+/* Transparent modern scrollbar - natural*/
+.board-color-natural .board-canvas {
+  scrollbar-color: #596557f2 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-natural .sidebar .sidebar-content {
+  scrollbar-color: #596557f2 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-natural .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-natural .list-body {
+ margin-top: 8px;
+}
+
+/* === END Natural THEME === */
+
+/* ===============
+THEME - Modern
+=================*/
+
+.board-color-modern#header,
+.board-color-modern#header-quick-access,
+.board-color-modern.sk-spinner div,
+.board-backgrounds-list .board-color-modern.background-box,
+.public-board-row.board-color-modern,
+.board-list li.board-color-modern,
+.board-color-modern .setting-content .content-body .side-menu ul li.active,
+.board-color-modern .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #2a80b8;
+}
+.board-color-modern .is-selected .minicard {
+  border-inline-start: 3px solid #2a80b8;
+}
+.board-color-modern .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+.board-color-modern button[type=submit].primary,
+.board-color-modern input[type=submit].primary,
+.board-color-modern .sidebar .sidebar-content .sidebar-btn,
+.board-color-modern .selected-calendar-picker button.primary {
+  background-color: #226693;
+  border-radius: 7px;
+}
+.board-color-modern.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-modern .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-modern .sidebar-list li a:hover {
+  background-color: #2f90cf;
+}
+.board-color-modern#header ul li.current,
+.board-color-modern#header-quick-access ul li.current {
+  border-bottom: 2px solid #2f90cf;
+}
+.board-color-modern#header-quick-access {
+  color: #fff;
+}
+.board-color-modern#header #header-main-bar .board-header-btn.emphasis {
+  background: #b8622a;
+}
+.board-color-modern#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-modern#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #a65826;
+}
+.board-color-modern#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #934e22;
+}
+.board-color-modern .materialCheckBox.is-checked {
+  border-bottom: 2px solid #2a80b8;
+  border-right: 2px solid #2a80b8;
+}
+.board-color-modern .checklist-progress-bar {
+  background-color: #d1e7f5 !important;
+}
+.board-color-modern .checklist-progress-bar .checklist-progress {
+  background-color: #2a80b8 !important;
+}
+.board-color-modern .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #e8f3fa;
+}
+.board-color-modern .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f8fbfd;
+}
+.board-color-modern .toggle-label:after {
+  background-color: #226693;
+}
+.board-color-modern .toggle-switch:checked ~ .toggle-label {
+  background-color: #469cd5;
+}
+.board-color-modern .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #226693;
+}
+@media screen and (max-width: 800px) {
+  .board-color-modern.pop-over .header {
+    background: #2a80b8;
+    color: #fff;
+  }
+}
+.board-color-modern#header ul li.current,
+.board-color-modern#header-quick-access ul li.current {
+  border-bottom: 4px solid #469cd5;
+}
+.board-color-modern body {
+  background: #f5f5f5;
+}
+/* Same as Natural: `#333 !important` was the thin dark strip's colour, and it
+   painted Modern charcoal instead of its blue. The padding and font-size were
+   the strip's too - this bar sizes itself like every other theme's now.
+   docs/Features/General/Theme/Change-Color.md */
+.board-color-modern#header-quick-access ul {
+  overflow: visible;
+}
+.board-color-modern#header-quick-access ul li.current {
+  border: 0 !important;
+  font-weight: bold;
+}
+.board-color-modern#header-quick-access ul li.separator {
+  display: none;
+}
+.board-color-modern#header-quick-access ul li:nth-child(3) {
+  margin-inline-end: 10px;
+}
+.board-color-modern#header-quick-access ul li a {
+  padding: 5px 10px;
+  border-radius: 2px;
+}
+.board-color-modern#header-quick-access ul li.current a {
+  border-radius: 2px;
+  background: rgba(255,255,255,0.2);
+}
+.board-color-modern#header #header-main-bar h1 {
+/*  font-family: Poppins; */
+  font-weight: bold;
+}
+.board-color-modern#header-quick-access #header-user-bar {
+  position: relative;
+}
+.board-color-modern#header-quick-access #header-user-bar .header-user-bar-name {
+  margin: 5px 3px 0 0;
+}
+.board-color-modern section#notifications-drawer {
+  top: 46px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  max-width: 100%;
+}
+.board-color-modern section#notifications-drawer .header {
+  top: 46px;
+  border-radius: 0 3px;
+  height: 21px;
+  background: #f7f7f7;
+}
+.board-color-modern.board-wrapper {
+  background: #f5f5f5;
+}
+.board-color-modern .swimlane {
+  background: none;
+}
+.board-color-modern .swimlane .swimlane-header-wrap .swimlane-header {
+  /* font-family: Poppins; */
+}
+.board-color-modern .board-list .board-list-item {
+  padding: 20px;
+}
+.board-color-modern .board-list-item-name {
+  /* font-family: Poppins; */
+}
+.board-color-modern .list {
+  background: transparent;
+  border-inline-start: 0;
+  margin: 10px 0;
+  padding: 0px;
+  border-radius: 5px;
+  min-width: 300px;
+}
+.board-color-modern .list-body .open-minicard-composer:hover {
+  background: none;
+  box-shadow: none;
+}
+.board-color-modern .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-modern .swimlane .list:nth-child {
+  flex: 0 0 265px;
+ }
+.board-color-modern .list.list-composer.js-list-composer {
+  transition: all 0.3s ease;
+  min-width: 20px;
+}
+.board-color-modern .open-list-composer.js-open-inlined-form:hover {
+  color: #222;
+}
+.board-color-modern .list-header {
+   background: #f5f5f5f2; /*Added background colour same colour as base board background, prevents poor text visibility when bgd image applied*/
+}
+.board-color-modern .list-header .list-header-name {
+  /* font-family: Poppins; */
+  color: #000;
+  font-weight: 500;
+}
+.board-color-modern .minicard {
+  padding: 15px 15px 10px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.05);
+}
+.board-color-modern .minicard-plum:hover:not(.minicard-composer),
+.board-color-modern .is-selected .minicard-plum,
+.board-color-modern .draggable-hover-card .minicard-plum {
+  background: none;
+}
+.board-color-modern .minicard-title {
+  line-height: 1.5em;
+}
+.board-color-modern .minicard .minicard-cover {
+  margin: -15px -15px 10px;
+  height: 100px;
+}
+.board-color-modern .minicard .minicard-cover-image {
+  height: 100px;
+}
+.board-color-modern .card-label-orange {
+  color: #fff;
+}
+.board-color-modern .card-date {
+  font-size: calc(12px * var(--wekan-ui-font-scale, 1));
+  padding: 3px 5px;
+}
+.board-color-modern .header-title {
+  /* font-family: Poppins; */
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  color: #333;
+}
+.board-color-modern .pop-over {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  border: 0;
+  border-radius: 5px;
+}
+.board-color-modern .pop-over .header {
+  padding: 10px;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: #eee;
+}
+.board-color-modern .pop-over .header .header-title {
+  /* font-family: Poppins; */
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  color: #333;
+}
+.board-color-modern .pop-over .header .close-btn {
+  font-size: calc(20px * var(--wekan-ui-font-scale, 1));
+  top: 6px;
+  inset-inline-end: 8px;
+}
+.board-color-modern .pop-over .content-container .content {
+  /* Padding only. This carried `width: 260px`, which pinned EVERY popup on this
+     theme to one narrow column: the Change Color picker's swatches ran down the
+     popup one per row, and the same would happen to Export board, Show on Card
+     and Show on Minicard - the popups that ask for width by name
+     (`WIDE_POPUP_WIDTHS`, client/lib/popupOffset.js, mirrored in popup.css).
+     How wide a popup is belongs to the popup, not to the theme; a theme decides
+     what it looks like. */
+  padding: 5px 20px 20px;
+}
+.board-color-modern .pop-over-list li > a {
+  border-radius: 5px;
+}
+.board-color-modern .pop-over-list li > a > i {
+  margin-inline-end: 5px;
+}
+.board-color-modern .pop-over-list li>a .sub-name {
+  margin-bottom: 8px;
+}
+.board-color-modern .sidebar {
+  box-shadow: 0 0 60px rgba(0,0,0,0.2);
+}
+.board-color-modern .board-color-modern section#notifications-drawer {
+  border-radius: 5px;
+}
+.board-color-modern .board-color-modern section#notifications-drawer .header {
+  padding: 18px 16px;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: #eee;
+}
+.board-color-modern .board-color-modern section#notifications-drawer .header h5 {
+  /* font-family: Poppins; */
+  font-weight: bold;
+}
+.board-color-modern .board-color-modern section#notifications-drawer .header .close {
+  font-size: calc(20px * var(--wekan-ui-font-scale, 1));
+  top: 14px;
+}
+.board-color-modern section#notifications-drawer .header .toggle-read {
+  top: 18px;
+}
+
+/* Transparent modern scrollbar - modern*/
+.board-color-modern .board-canvas {
+  scrollbar-color: #333333f2 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-modern .sidebar .sidebar-content {
+  scrollbar-color: #333333f2 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-modern .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-modern .list-body {
+ margin-top: 8px;
+}
+
+/* === END Modern THEME === */
+
+/* ===============
+THEME - Modern Dark
+=================*/
+
+.board-color-moderndark#header,
+.board-color-moderndark#header-quick-access,
+.board-color-moderndark.sk-spinner div,
+.board-backgrounds-list .board-color-moderndark.background-box,
+.public-board-row.board-color-moderndark,
+.board-list li.board-color-moderndark,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #2a2a2a;
+}
+.board-color-moderndark .is-selected .minicard {
+  border-inline-start: 3px solid #2a2a2a;
+}
+.board-color-moderndark .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+.board-color-moderndark button[type=submit].primary,
+.board-color-moderndark input[type=submit].primary,
+.board-color-moderndark .sidebar .sidebar-content .sidebar-btn,
+.board-color-moderndark .selected-calendar-picker button.primary {
+  background-color: #222;
+  border-radius: 7px;
+}
+.board-color-moderndark.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-moderndark .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-moderndark .sidebar-list li a:hover {
+  background-color: #3f3f3f;
+}
+.board-color-moderndark#header ul li.current,
+.board-color-moderndark#header-quick-access ul li.current {
+  border-bottom: 2px solid #3f3f3f;
+}
+.board-color-moderndark#header-quick-access {
+  color: #fff;
+}
+@media screen and (min-width: 801px) {
+  .board-color-moderndark .js-toggle-desktop-drag-handles {
+    padding-top: 6px
+  }
+}
+.board-color-moderndark#header #header-main-bar .board-header-btn.emphasis {
+  background: #2a2a2a;
+}
+.board-color-moderndark#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-moderndark#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #262626;
+}
+.board-color-moderndark#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #222;
+}
+.board-color-moderndark .materialCheckBox.is-checked {
+  border-bottom: 2px solid #2a2a2a;
+  border-right: 2px solid #2a2a2a;
+}
+.board-color-moderndark .checklist-progress-bar {
+  background-color: #d1d1d1 !important;
+}
+.board-color-moderndark .checklist-progress-bar .checklist-progress {
+  background-color: #2a2a2a !important;
+}
+.board-color-moderndark .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #eaeaea;
+}
+.board-color-moderndark .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f9f9f9;
+}
+.board-color-moderndark .toggle-label:after {
+  background-color: #222;
+}
+.board-color-moderndark .toggle-switch:checked ~ .toggle-label {
+  background-color: #555;
+}
+.board-color-moderndark .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #222;
+}
+@media screen and (max-width: 800px) {
+  .board-color-moderndark.pop-over .header {
+    background: #2a2a2a;
+    color: #fff;
+  }
+  #header.board-color-moderndark #header-main-bar .board-header-btn i.fa {
+    margin: 0 8px;
+  }
+}
+.board-color-moderndark#header ul li.current,
+.board-color-moderndark#header-quick-access ul li.current {
+  border-bottom: 4px solid #555;
+}
+.board-color-moderndark body {
+  background: #2a2a2a;
+}
+.board-color-moderndark .board-wrapper .board-canvas .board-overlay {
+  opacity: 0.6;
+}
+.board-color-moderndark button[type=submit].primary,
+.board-color-moderndark .board-color-modern input[type=submit].primary,
+.board-color-moderndark .selected-calendar-picker button.primary {
+  background-color: #777;
+  border-radius: 7px;
+}
+.board-color-moderndark .toggle-switch:checked~.toggle-label {
+  background-color: #f7f7f7;
+}
+.board-color-moderndark .toggle-label:after,
+.board-color-moderndark .board-color-modern .toggle-switch:checked~.toggle-label:after {
+  background-color: #777 !important;
+}
+.board-color-moderndark button,
+.board-color-moderndark input:not([type=file]),
+.board-color-moderndark select,
+.board-color-moderndark textarea {
+  border-radius: 7px;
+}
+.board-color-moderndark#header,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #262626;
+  border-bottom: 1px solid #555;
+  border-top: 1px solid #555;
+}
+.board-color-moderndark .background-box,
+.board-color-moderndark #header {
+  background-color: #333;
+}
+.board-color-moderndark#header-quick-access {
+  padding: 4px;
+  font-size: calc(14px * var(--wekan-ui-font-scale, 1));
+}
+@media screen and (max-width: 800px) {
+  .board-color-moderndark#header-quick-access {
+    padding: 0;
+  }
+}
+.board-color-moderndark#header-quick-access .allBoards {
+  padding: 5px 10px 0 10px;
+}
+.board-color-moderndark#header-quick-access ul.header-quick-access-list {
+  margin: -5px 0 -5px 0;
+}
+.board-color-moderndark#header #header-main-bar,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active,
+.board-color-moderndark .setting-content .content-body .side-menu ul li.active:hover {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.board-color-moderndark#header-quick-access ul {
+  overflow: visible;
+}
+.board-color-moderndark#header-quick-access ul li.current {
+  border: 0 !important;
+  font-weight: bold;
+}
+.board-color-moderndark#header-quick-access ul li.separator {
+  display: none;
+}
+.board-color-moderndark#header-quick-access ul li:nth-child(3) {
+  margin-inline-end: 10px;
+}
+.board-color-moderndark#header-quick-access ul li a {
+  padding: 5px 10px;
+  border-radius: 2px;
+}
+.board-color-moderndark#header-quick-access ul li.current a {
+  border-radius: 2px;
+  background: rgba(255,255,255,0.2);
+}
+.board-color-moderndark#header #header-main-bar h1 {
+  font-weight: bold;
+  line-height: 0.8em;
+  padding-top: 10px;
+}
+.board-color-moderndark.board-wrapper {
+  background: #2a2a2a;
+}
+.board-color-moderndark .swimlane .swimlane-header-wrap {
+  background-color: #494949;
+  color: #ccc;
+  padding: 4px 0;
+}
+.board-color-moderndark .swimlane .swimlane-header-wrap .swimlane-header-menu {
+  padding: 6px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+}
+.board-color-moderndark .swimlane .swimlane-header-wrap .swimlane-header-plus-icon {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+}
+.board-color-moderndark .swimlane {
+  background: #2a2a2a;
+  line-height: calc(18px * var(--wekan-ui-font-scale, 1));
+  max-height: 100%;
+}
+.board-color-moderndark .swimlane .list {
+  background: #666;
+  border-radius: 0;
+  border: 0px solid #666;
+}
+.board-color-moderndark .swimlane .list:first-child {
+  color: #eee;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-moderndark .swimlane .list-composer .list-header-add .inlined-form .edit-controls .quiet,
+.board-color-moderndark .swimlane .list-composer .list-header-add .inlined-form .edit-controls .quiet a.js-list-template {
+  color: #eee;
+}
+.board-color-moderndark .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-moderndark .swimlane .list:nth-child(even) .list-header,
+.board-color-moderndark .swimlane .list:nth-child(even) .list-body {
+  background: #6a6a6a;
+}
+.board-color-moderndark .swimlane .list:nth-child(odd) .list-header,
+.board-color-moderndark .swimlane .list:nth-child(odd) .list-body {
+  background: #555;
+}
+.board-color-moderndark .list-header {
+  background: #6a6a6a;
+}
+.board-color-moderndark .list-header .viewer {
+  padding-inline-start: 10px;
+}
+.board-color-moderndark .list-header .list-header-name,
+.board-color-moderndark .minicard {
+  line-height: calc(14px * var(--wekan-ui-font-scale, 1));
+  color: #eee;
+}
+@media screen and (max-width: 800px) {
+  .board-color-moderndark .list-header .list-header-name {
+    line-height: unset;
+    padding-top: 10px;
+  }
+  .board-color-moderndark .list-header-black, .board-color-moderndark .mini-list {
+    border-bottom: 0;
+  }
+}
+@media screen and (min-width: 801px) {
+  .board-color-moderndark .list-header .list-header-name {
+    float: inline-start;
+  }
+  .board-color-moderndark .list-header .list-header-menu {
+    padding: 0 10px 10px;
+  }
+}
+.board-color-moderndark .list-header .list-header-menu {
+  top: 0;
+}
+.board-color-moderndark .list-header .list-header-plus-top {
+  color: #a6a6a6;
+}
+.board-color-moderndark .list-body {
+  scrollbar-width: thin;
+  scrollbar-color: #343434 #999;
+}
+.board-color-moderndark .list-body::-webkit-scrollbar {
+  width: 10px;
+}
+.board-color-moderndark .list-body::-webkit-scrollbar-track {
+  background: #343434;
+  border-radius: 3px;
+  margin: 4px 0;
+}
+.board-color-moderndark .list-body::-webkit-scrollbar-thumb {
+  background-color: #999;
+  border-radius: 6px;
+  border: 3px solid #343434;
+}
+.board-color-moderndark .list-body .open-minicard-composer:hover {
+  background: none;
+  box-shadow: none;
+  border-bottom: 0;
+}
+.board-color-moderndark .list-body a.open-minicard-composer,
+.board-color-moderndark .list-body a.open-minicard-composer i,
+.board-color-moderndark .list .list-composer .open-list-composer i {
+  color: #bbb;
+}
+.board-color-moderndark .swimlane .list:first-child .open-list-composer:hover i,
+.board-color-moderndark .list-body a.open-minicard-composer:hover,
+.board-color-moderndark .list-body a.open-minicard-composer:hover i,
+.board-color-moderndark .list .list-composer .open-list-composer:hover i {
+  color: #fff;
+  border-radius: 7px;
+}
+.board-color-moderndark .minicard-wrapper {
+  margin-bottom: 12px;
+}
+.board-color-moderndark .minicard {
+  background-color: #444;
+  color: #ccc;
+  border-radius: 2px;
+  font-size: 0.95em;
+  box-shadow: 0 4px 3px -3px rgba(0,0,0,0.8);
+  border-bottom: 1px solid #666;
+  padding: 8px;
+}
+.board-color-moderndark .minicard:hover {
+  color: #f7f7f7;
+  background-color: #4d4d4d !important;
+}
+.board-color-moderndark .minicard .minicard-labels {
+  margin: 8px 0 4px;
+}
+.board-color-moderndark .minicard .card-label {
+  font-size: calc(11px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  padding: 1px 6px 0;
+  border-radius: 2px;
+  line-height: calc(18px * var(--wekan-ui-font-scale, 1));
+}
+.board-color-moderndark .minicard .badges {
+  color: #bbb;
+}
+.board-color-moderndark .minicard .date {
+  margin-bottom: 10px;
+  font-size: calc(11px * var(--wekan-ui-font-scale, 1));
+}
+.board-color-moderndark .card-date {
+  color: #444;
+  border-radius: 2px;
+}
+.board-color-moderndark .card-date.almost-due {
+  color: #444;
+}
+.board-color-moderndark .minicard.minicard-composer textarea.minicard-composer-textarea:focus {
+  background-color: #eee;
+  color: #333;
+  padding: 6px;
+}
+.board-color-moderndark .is-selected .minicard {
+  background-color: #666;
+}
+.board-color-moderndark .card-details {
+  background-color: #454545;
+  color: #ccc;
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+  border: 1px solid #111;
+  z-index: 100 !important;
+}
+@media screen and (max-width: 800px) {
+  .board-color-moderndark .card-details {
+    width: 94%;
+  }
+  .board-color-moderndark .card-details-popup {
+    padding: 0;
+  }
+  .board-color-moderndark .card-details-left, .board-color-moderndark .card-details-right {
+    padding: 0px 20px;
+  }
+  .board-color-moderndark .card-details .card-details-header .card-details-menu-mobile-web {
+    margin-inline-end: 0;
+  }
+  .board-color-moderndark .pop-over > .content-wrapper > .popup-container-depth-0 > .content {
+    width: calc(100% - 20px);
+  }
+}
+@media screen and (min-width: 801px) {
+  .board-color-moderndark .card-details {
+    position: fixed;
+    top: 82px;
+    inset-inline-start: calc(50% - 384px);
+    width: 768px;
+    max-height: calc(100% - 60px);
+  }
+}
+.board-color-moderndark .card-details {
+  scrollbar-width: thin;
+  scrollbar-color: #343434 #999;
+}
+.board-color-moderndark .card-details::-webkit-scrollbar {
+  width: 16px;
+}
+.board-color-moderndark .card-details::-webkit-scrollbar-track {
+  background: #343434;
+}
+.board-color-moderndark .card-details::-webkit-scrollbar-thumb {
+  background-color: #999;
+  border-radius: 6px;
+  border: 4px solid #343434;
+}
+.board-color-moderndark .card-details .card-details-header {
+  background: #333;
+  color: #ccc;
+  border-bottom: 2px solid #2d2d2d;
+}
+.board-color-moderndark .card-details hr {
+  background: #2d2d2d;
+}
+.board-color-moderndark .card-details .card-details-item-title {
+  color: #fff;
+}
+.board-color-moderndark .card-details .new-description textarea,
+.board-color-moderndark .card-details .new-comment textarea {
+  background-color: #ddd;
+  color: #111;
+}
+.board-color-moderndark .card-details .checklist {
+  background-color: transparent;
+  margin-bottom: 10px;
+}
+.board-color-moderndark .card-details .checklist-item {
+  background-color: rgba(255,255,255,0.1);
+  padding: 4px 8px;
+  border-radius: 2px;
+  font-size: calc(13px * var(--wekan-ui-font-scale, 1));
+  margin-top: 5px;
+}
+.board-color-moderndark .card-details .checklist-item:hover {
+  background-color: rgba(255,255,255,0.2);
+}
+.board-color-moderndark .card-details .checklist-item .item-title .viewer p {
+  max-width: auto;
+}
+.board-color-moderndark .card-details .check-box.materialCheckBox {
+  border-color: #fff;
+}
+.board-color-moderndark .card-details .check-box.materialCheckBox.is-checked {
+  border-bottom: 2px solid #fff;
+  border-right: 2px solid #fff;
+  border-top: 0;
+  border-left: 0;
+}
+.board-color-moderndark .card-details .js-add-checklist-item {
+  margin-top: 4px;
+}
+.board-color-moderndark .checklist-items .add-checklist-item {
+  margin-top: 0.7em;
+}
+.board-color-moderndark .card-details .activities .activity .activity-desc .activity-comment {
+  background-color: #ccc;
+  color: #222;
+}
+.board-color-moderndark .sidebar {
+  background-color: #222;
+  box-shadow: -10px 0 5px -10px #444;
+  border-inline-start: 1px solid #333;
+  color: #ccc;
+}
+.board-color-moderndark .activities .activity .activity-desc .activity-comment {
+  background-color: #ccc;
+  color: #222;
+}
+.board-color-moderndark .activities .activity .activity-desc .activity-checklist {
+  background-color: #ccc;
+  color: #222;
+}
+.board-color-moderndark .attachments-gallery .attachment-item {
+  color: #222;
+}
+.board-color-moderndark .minicard-description {
+  color: #222;
+}
+.pop-over.board-color-moderndark {
+  background-color: #454545;
+  color: #ccc;
+  border: 1px solid #111;
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+}
+.pop-over.board-color-moderndark .header {
+  background-color: #333;
+}
+.pop-over.board-color-moderndark .header-title {
+  /* font-family: Poppins; */
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  color: #ccc;
+}
+.pop-over.board-color-moderndark .pop-over-list li > a:hover {
+  background-color: rgba(255,255,255,0.2);
+}
+
+/* Transparent moderndark scrollbar - moderndark*/
+.board-color-moderndark .board-canvas {
+  scrollbar-width: thin;
+  scrollbar-color: #343434f2 #999999f2;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-moderndark .sidebar .sidebar-content {
+  scrollbar-width: thin;
+  scrollbar-color: #343434f2 #999999f2;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-moderndark .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-moderndark .list-body {
+ margin-top: 8px;
+}
+
+/* === END ModernDark THEME === */
+
+
+/* ===============
+THEME - Exodark
+=================*/
+
+.board-color-exodark#header,
+.board-color-exodark#header-quick-access,
+.board-color-exodark.sk-spinner div,
+.board-backgrounds-list .board-color-exodark.background-box,
+.public-board-row.board-color-exodark,
+.board-list li.board-color-exodark,
+.board-color-exodark .setting-content .content-body .side-menu ul li.active,
+.board-color-exodark .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #222;
+}
+.board-color-exodark .is-selected .minicard {
+  border-inline-start: 3px solid #222;
+}
+.board-color-exodark .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+}
+.board-color-exodark button[type=submit].primary,
+.board-color-exodark input[type=submit].primary,
+.board-color-exodark .sidebar .sidebar-content .sidebar-btn,
+.board-color-exodark .selected-calendar-picker button.primary {
+  background-color: #1b1b1b;
+  border-radius: 7px;
+}
+.board-color-exodark.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-exodark .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-exodark .sidebar-list li a:hover {
+  background-color: #383838;
+}
+.board-color-exodark#header ul li.current,
+.board-color-exodark#header-quick-access ul li.current {
+  border-bottom: 2px solid #383838;
+}
+.board-color-exodark#header-quick-access {
+  color: #fff;
+}
+.board-color-exodark#header #header-main-bar .board-header-btn.emphasis {
+  background: #222;
+}
+.board-color-exodark#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-exodark#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: #1f1f1f;
+}
+.board-color-exodark#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: #1b1b1b;
+}
+.board-color-exodark .materialCheckBox.is-checked {
+  border-bottom: 2px solid #dbdbdb!important;/*Fix contrast of checkbox*/
+  border-right: 2px solid #dbdbdb!important;
+}
+.board-color-exodark .checklist-progress-bar {
+  background-color: #cccccc !important;
+}
+.board-color-exodark .checklist-progress-bar .checklist-progress {
+  background-color: #222 !important;
+}
+.board-color-exodark .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #e9e9e9;
+}
+.board-color-exodark .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #f8f8f8;
+}
+.board-color-exodark .toggle-label:after {
+  background-color: #1b1b1b;
+}
+.board-color-exodark .toggle-switch:checked ~ .toggle-label {
+  background-color: #4e4e4e;
+}
+.board-color-exodark .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #1b1b1b;
+}
+@media screen and (max-width: 800px) {
+  .board-color-exodark.pop-over .header {
+    background: #222;
+    color: #fff;
+  }
+}
+.board-color-exodark#header ul li.current,
+.board-color-exodark#header-quick-access ul li.current {
+  border-bottom: 4px solid #4e4e4e;
+}
+.board-color-exodark body {
+  background: #222;
+}
+/* Uncomment to fix change color selected checkmark not visible
+.board-color-exodark i {
+  color: #fff !important;
+}
+*/
+.board-color-exodark.board-wrapper {
+  background: #222;
+  /* font-family: Poppins; */
+}
+.board-color-exodark .swimlane {
+  background: #222;
+}
+.board-color-exodark .list {
+  margin: 10px 0;
+  color: #fff;
+  border-radius: 15px;
+  background-color: #1c1c1c;
+  border: none;
+}
+.board-color-exodark .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /*Added 10px margin to prevent butting up against edge of screen */
+  border-inline-start: none;
+}
+.board-color-exodark .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-exodark .list.list-composer.js-list-composer {
+  transition: all 0.3s ease;
+  min-width: 0;
+}
+.board-color-exodark .list-header {
+  border-top-right-radius: 15px;
+  border-top-left-radius: 15px;
+  background: #222;
+  box-shadow: inset 15px 15px 37px #1c1c1c, inset -15px -15px 37px #282828;
+}
+.board-color-exodark .list-header-menu a {
+  color: #00897b !important;
+}
+.board-color-exodark .is-selected .minicard {
+  color: #fff;
+  background: #2b2b2b;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .minicard {
+  color: #fff;
+  background: #2b2b2b;
+}
+.board-color-exodark .list-body .open-minicard-composer:hover {
+  background: #2b2b2b;
+  border: 1px solid #00897b;
+  border-radius: 10px;
+}
+.board-color-exodark .badges {
+  color: #fff;
+}
+.board-color-exodark .minicard textarea {
+  color: #fff;
+}
+.board-color-exodark .minicard .minicard-description {
+  background: #2b2b2b;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .minicard:hover:not(.minicard-composer) {
+  border: 1px solid #00897b;
+  background: #2b2b2b;
+  padding: 9px 9px 3px 9px; /*because of the 1px border we need to reduce padding by 1px*/
+}
+.board-color-exodark .card-details {
+  background: #2b2b2b !important;
+  color: #fff;
+}
+.board-color-exodark .card-details .comment-text {
+  color:#2b2b2b
+} /*Fixes issue with comment text colour blending into background*/
+.board-color-exodark .card-details .card-details-header {
+  background: #2b2b2b;
+  color: #fff;
+}
+.board-color-exodark .sidebar-content {
+  background: #2b2b2b;
+  color: #fff;
+}
+.board-color-exodark .card-details,
+.board-color-exodark .sidebar-content {
+  box-shadow: 0 0 7px 0 #00897b;
+}
+.board-color-exodark .attachments-gallery .attachment-item {
+  background: #2b2b2b;
+}
+.board-color-exodark .attachments-gallery .attachment-item:hover {
+  border: 1px solid #00897b;
+  background: #2b2b2b;
+}
+.board-color-exodark .checklist {
+  background: #2b2b2b;
+}
+.board-color-exodark .checklist .checklist-item {
+  background: #2b2b2b;
+}
+.board-color-exodark .checklist .checklist-item:hover {
+  background: #2b2b2b;
+}
+.board-color-exodark .add-checklist-item.js-open-inlined-form:hover {
+  background: #2b2b2b;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .add-checklist.js-open-inlined-form:hover {
+  background: #2b2b2b;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .card-details > h1,
+.board-color-exodark h2,
+.board-color-exodark h3,
+.board-color-exodark h4,
+.board-color-exodark h5,
+.board-color-exodark h6,
+/* Below added .card-details > to p/a/span to fix white swimlane text not visible
+   https://github.com/wekan/wekan/issues/4451
+*/
+.board-color-exodark .card-details > p,
+.board-color-exodark .card-details > a,
+.board-color-exodark .card-details > span {
+  color: #fff !important;
+}
+.board-color-exodark .activity-desc {
+  background-color: #2b2b2b !important;
+}
+.board-color-exodark .activity-checklist {
+  background: #2b2b2b !important;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .activity-comment {
+  background: #2b2b2b !important;
+  border: 1px solid #00897b;
+}
+.board-color-exodark .toggle-switch:checked ~ .toggle-label {
+  background-color: #fff !important;
+}
+.pop-over.board-color-exodark {
+  background: #2b2b2b;
+  color: #fff;
+}
+.pop-over.board-color-exodark .header {
+  background: #2b2b2b;
+  color: #fff;
+}
+
+/* Transparent modern scrollbar - Exodark*/
+.board-color-exodark .list-body {
+  scrollbar-color: #e4e4e4d4 #202020ba;
+}
+
+.board-color-exodark .list {
+  overflow: hidden;
+}
+
+.board-color-exodark .board-canvas {
+  scrollbar-color: #e4e4e4d4 #202020ba;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-exodark .sidebar .sidebar-content {
+  scrollbar-color: #e4e4e4d4 #202020ba;
+}
+
+/* === END Exodark THEME === */
+
+/* ===============
+THEME - Clean Dark
+=================*/
+
+.board-color-cleandark#header ul li,
+.board-color-cleandark#header-quick-access ul li {
+  color: rgba(255, 255, 255, 50%);
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+}
+
+.board-color-cleandark#header-main-bar h1 {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1)) !important;
+  color: rgba(255, 255, 255, 1);
+}
+
+.board-color-cleandark#header ul li.current,
+.board-color-cleandark#header-quick-access ul li.current {
+  color: rgba(255, 255, 255, 85%);
+}
+
+.board-color-cleandark .swimlane-header {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 1);
+}
+
+.board-color-cleandark.board-wrapper {
+  background: #0A0A14;
+}
+
+.board-color-cleandark .sidebar {
+  background: rgba(35, 35, 43, 1) !important;
+  box-shadow: none;
+}
+
+.board-color-cleandark .sidebar hr {
+  background:rgba(255, 255, 255, 0.05);
+}
+
+.board-color-cleandark .sidebar .tab-item {
+  border-radius: 16px;
+  padding: 4px 12px 4px 12px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(57, 57, 71, 1);
+}
+
+.board-color-cleandark .sidebar .tab-item.active {
+  background: rgba(255, 255, 255, 1);
+  color: rgba(10, 10, 20, 1);
+  border: none;
+  padding: 4px 12px 4px 12px !important;
+}
+
+.board-color-cleandark .sidebar .tabs-content-container {
+  border: none;
+}
+
+.board-color-cleandark .card-details {
+  background: #23232B;
+  scrollbar-color: #ffffff #2e2e39;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.board-color-cleandark .card-details-item a {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.board-color-cleandark .add-assignee {
+  box-shadow: none !important;
+}
+
+.board-color-cleandark .add-assignee:hover {
+  background: #444455;
+  border-radius: 8px;
+}
+
+.board-color-cleandark .add-checklist-top {
+  display: none !important;
+}
+
+.board-color-cleandark .add-checklist {
+  padding: 8px;
+  width: min-content !important;
+}
+
+.board-color-cleandark .add-checklist:hover {
+  background: #444455 !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleandark .add-checklist:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .add-assignee:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .card-time.card-label-green {
+  background: #009B64;
+  width: min-content;
+  color: #FFFFFF;
+  padding-inline-start: 8px;
+  padding-inline-end: 8px;
+  border-radius: 8px;
+  margin-inline-start: 4px;
+}
+
+.board-color-cleandark .card-details hr {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.board-color-cleandark .card-details-canvas {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleandark.pop-over {
+  border-radius: 12px;
+  border: none;
+  background: rgba(46, 46, 57, 1);
+}
+
+.board-color-cleandark.pop-over .pop-over-list,
+.board-color-cleandark.pop-over .content {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 1);
+}
+
+.board-color-cleandark.pop-over .pop-over-list a:hover {
+  background: #393947 !important;
+}
+
+.board-color-cleandark .member {
+  box-shadow: none !important;
+}
+
+.board-color-cleandark .add-member:hover {
+  background: #444455;
+  border-radius: 8px;
+}
+
+.board-color-cleandark .add-member:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .add-label {
+  box-shadow: none !important;
+}
+
+.board-color-cleandark .add-label:hover {
+  background: #444455;
+  border-radius: 8px;
+}
+
+.board-color-cleandark .add-label:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark.pop-over .content kbd {
+  background: rgba(46, 46, 57, 1);
+}
+
+.board-color-cleandark .full-name {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleandark .username {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.board-color-cleandark .attachment-item:hover {
+  background: rgba(46, 46, 57, 1);
+}
+
+.board-color-cleandark .checklist {
+  background: none;
+  color: #FFFFFF;
+}
+
+.board-color-cleandark .checklist-item {
+  background: none;
+}
+
+.board-color-cleandark .checklist-item:hover {
+  background: rgba(46, 46, 57, 1) !important;
+}
+
+.board-color-cleandark .add-checklist-item {
+  width: min-content !important;
+  padding: 8px;
+}
+
+.board-color-cleandark .add-checklist-item:hover {
+  background: #444455 !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleandark .add-checklist-item:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .add-attachment {
+  border-radius: 12px;
+}
+
+.board-color-cleandark .add-attachment:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .attachment-actions i,
+.board-color-cleandark .attachment-actions a {
+  font-size: 1em !important;
+}
+
+.board-color-cleandark .activity-desc {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.board-color-cleandark .activity-desc .activity-member {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleandark .comments .comment .comment-desc .comment-text {
+  background: transparent;
+}
+
+.board-color-cleandark .activity-checklist,
+.board-color-cleandark .activity-comment {
+  background: none !important;
+  color: #FFFFFF;
+  border: 1px solid rgba(0, 155, 100, 1);
+  border-radius: 12px !important;
+}
+
+.board-color-cleandark button[type=submit].primary,
+.board-color-cleandark input[type=submit].primary,
+.board-color-cleandark .selected-calendar-picker button.primary {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  border-radius: 12px;
+  padding: 6px 12px 6px 12px;
+  background: #FFFFFF;
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleandark textarea {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 1);
+  background: rgba(57, 57, 71, 1) !important;
+  border: none !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleandark textarea::placeholder {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.board-color-cleandark input {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.85) !important;
+  background: rgba(57, 57, 71, 1) !important;
+  border-radius: 12px !important;
+  border: none !important;
+}
+
+.board-color-cleandark input::placeholder {
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleandark select {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(57, 57, 71, 1);
+  border-radius: 12px;
+  border: none;
+}
+
+.board-color-cleandark button.primary {
+  padding: 6px 12px 6px 12px;
+  border-radius: 12px;
+  border: none;
+  background: #FFFFFF;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleandark button.primary:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleandark button.negate {
+  padding: 6px 12px 6px 12px;
+  border-radius: 12px;
+  border: none;
+  background: #cc003a;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: #FFFFFF;
+}
+
+.board-color-cleandark button.negate:hover {
+  background: rgba(204, 0, 58, 0.77);
+}
+
+.board-color-cleandark .card-details .checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-color-cleandark .card-details .check-box.materialCheckBox {
+  border-radius: 4px;
+  border: none;
+  background: #393947;
+  height: 24px;
+  width: 24px;
+}
+
+.board-color-cleandark .card-details .check-box.materialCheckBox.is-checked {
+  border-bottom: 2px solid #FFFFFF;
+  border-right: 2px solid #FFFFFF;
+  width: 11px;
+  height: 19px;
+  border-radius: 0;
+  background: none;
+}
+
+.board-color-cleandark .sidebar .sidebar-content h3,
+.board-color-cleandark .sidebar .sidebar-content h2,
+.board-color-cleandark .sidebar .sidebar-content h1 {
+  color: #FFFFFF;
+}
+
+.board-color-cleandark #cards span {
+  color: #FFFFFF;
+}
+
+.board-color-cleandark #cards .materialCheckBox {
+  border-radius: 4px;
+  border: none;
+  background: #393947;
+  height: 18px;
+  width: 18px;
+}
+
+.board-color-cleandark .sidebar-list-item-description {
+  color: #FFFFFF;
+}
+
+.board-color-cleandark #cards .materialCheckBox.is-checked {
+  border-bottom: 2px solid #FFFFFF;
+  border-right: 2px solid #FFFFFF;
+  width: 5px;
+  height: 13px;
+  border-radius: 0;
+  background: none;
+  margin-left: 3px;
+  margin-top: 3px;
+}
+.board-color-cleandark .checklist-progress-bar {
+  background-color: #6b6b78 !important;
+}
+.board-color-cleandark .checklist-progress-bar .checklist-progress {
+  background-color: #23232B !important;
+}
+
+.board-color-cleandark .allBoards {
+  white-space: nowrap;
+}
+
+.board-color-cleandark#header-quick-access ul.header-quick-access-list li {
+  display: inline-flex;
+  align-items: center;
+  padding-bottom: 4px;
+  padding-top: 4px;
+  margin-inline-end: 10px;
+}
+
+.board-color-cleandark#header-quick-access ul.header-quick-access-list {
+  display: flex;
+  align-items: center;
+}
+
+/* Transparent modern scrollbar - cleandark*/
+.board-color-cleandark .board-canvas {
+  scrollbar-color: #23232be6 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-cleandark .sidebar .sidebar-content {
+  scrollbar-color: #ff6d00 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-cleandark .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-cleandark .list-body {
+ margin-top: 8px;
+}
+
+.board-color-cleandark.background-box {
+  background-color:#23232B;
+} /*Fixes contrast issues with background box in theme selection list*/
+/* ===============
+THEME - Clean Light
+=================*/
+/* Please note Clean Light theme elements also contain references to some cleandark theme elements so if unable to find code you're looking for under CleanDark it might be here. This should probably be cleaned up*/
+.board-color-cleanlight.background-box {
+  background-color:#e0e0e0;
+  color:#010101!important;
+} /*Fixes issues with text colour/background box being similar no contrast */
+
+.board-color-cleanlight {
+  background: #E0E0E0;
+}
+
+.board-color-cleanlight .board-header-btn {
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight .board-header-btn i {
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight .board-header-btns a {
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight .header-user-bar-name {
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight#header ul li,
+.board-color-cleanlight#header-quick-access ul li {
+  /* 0.85, the shade the rest of this theme's text uses. It was 0.5, which put
+     the top bar's buttons at one darkness and the two icons that are not in a
+     `ul li` - the house and the bell - at another, and left the labels paler
+     than the board title beside them. One bar, one shade. */
+  color: rgba(10, 10, 20, 0.85) !important;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+}
+
+.board-color-cleanlight#header ul li:hover,
+.board-color-cleanlight#header-quick-access ul li:hover {
+  background: rgba(190, 190, 190, 1) !important;
+  border-radius: 8px;
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight #header-main-bar h1 {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1)) !important;
+  color: rgba(10, 10, 20, 1) !important;
+}
+
+.board-color-cleanlight#header ul li.current,
+.board-color-cleanlight#header-quick-access ul li.current {
+  /* The current entry used to be told apart by being darker than its
+     neighbours - 0.85 against their 0.5. They are 0.85 now, so it is told apart
+     by being full black and heavier instead, which is a difference that still
+     reads when everything around it is dark. */
+  color: rgba(10, 10, 20, 1) !important;
+  font-weight: 500;
+}
+
+.board-color-cleanlight .swimlane-header {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleanlight.board-wrapper {
+  background: #FFFFFF;
+}
+
+.board-color-cleanlight .fa {
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleandark .fa {
+  color: #FFFFFF;
+}
+
+/*fdsfdsfdsfdsfsdddddddddd */
+
+.board-color-cleanlight .list,
+.board-color-cleandark .list {
+  background: none !important;
+  border-inline-start: none !important;
+}
+
+.board-color-cleanlight .list .list-header,
+.board-color-cleandark .list .list-header {
+  border-bottom: none !important;
+  display: flex !important;
+  justify-content: space-between;
+  align-items: center;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  background: none !important;
+  background-color: transparent !important;
+}
+
+.board-color-cleanlight .list .list-header div:has(.list-header-name),
+.board-color-cleandark .list .list-header div:has(.list-header-name) {
+  display: contents;
+}
+
+.board-color-cleanlight .list .list-header-name {
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleandark .list .list-header-name {
+  color: #FFFFFF;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu,
+.board-color-cleandark .list .list-header .list-header-menu {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu .js-open-list-menu ,
+.board-color-cleandark .list .list-header .list-header-menu .js-open-list-menu {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1)) !important;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu a,
+.board-color-cleandark .list .list-header .list-header-menu a {
+  margin: 0 !important;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu .list-header-plus-top,
+.board-color-cleandark .list .list-header .list-header-menu .list-header-plus-top {
+  color: #FFFFFF;
+  background: #FF6D00;
+  padding: 8px;
+  border-radius: 12px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1)) !important;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu .list-header-plus-top:hover,
+.board-color-cleandark .list .list-header .list-header-menu .list-header-plus-top:hover {
+  background: #d25b02;
+}
+
+.board-color-cleanlight .list .list-header .list-header-menu .js-collapse,
+.board-color-cleandark .list .list-header .list-header-menu .js-collapse {
+  /* Make collapse button visible in Clean Light / Clean Dark themes.
+     Previously this was hidden which caused the missing Collapse button
+     when using these themes. Use inline-block so it lines up with other
+     header controls. */
+  display: inline-block;
+  vertical-align: middle;
+  color: inherit;
+}
+
+.board-color-cleanlight .list-header-add,
+.board-color-cleandark .list-header-add {
+  border-radius: 12px;
+  margin-top: 18px;
+  padding: 8px;
+  margin-inline-end: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: 10px;
+}
+
+.board-color-cleanlight .list-header-add:hover {
+  background: rgba(227, 227, 230, 1);
+  color: rgba(10, 10, 20, 1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.board-color-cleandark .list-header-add:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.board-color-cleanlight .list-header-add a:hover i {
+  color: #FFFFFF !important;
+}
+
+.board-color-cleandark .list-header-add {
+  background: #23232B !important;
+  color: #FFFFFF !important;
+}
+
+.board-color-cleanlight .card-label,
+.board-color-cleandark .card-label {
+  border-radius: 18px;
+  margin-top: 6px;
+  margin-inline-end: 8px;
+  border: none;
+  padding: 4px 12px;
+}
+
+.board-color-cleanlight .swimlane,
+.board-color-cleandark .swimlane {
+  background: none;
+}
+
+.board-color-cleanlight .swimlane-height-apply,
+.board-color-cleandark .swimlane-height-apply {
+  border-radius: 12px !important;
+}
+
+.board-color-cleandark .swimlane-height-apply {
+  background: #FFFFFF !important;
+  color: #0A0A14 !important;
+}
+
+.board-color-cleanlight .swimlane-height-apply {
+  background: rgba(23, 23, 28, 1) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.board-color-cleandark .swimlane-height-apply:hover {
+  background: rgba(255, 255, 255, 0.85) !important;
+}
+
+.board-color-cleanlight .swimlane-height-apply:hover {
+  background: rgba(227, 227, 230, 1) !important;
+}
+
+.board-color-cleanlight .swimlane .swimlane-header-wrap .swimlane-header,
+.board-color-cleandark .swimlane .swimlane-header-wrap .swimlane-header,
+.board-color-cleanlight .swimlane .swimlane-header-wrap .swimlane-header-menu .fa,
+.board-color-cleandark .swimlane .swimlane-header-wrap .swimlane-header-menu .fa {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1)) !important;
+}
+
+.board-color-cleanlight .swimlane .swimlane-header-wrap {
+  background-color: #F1F1F3;
+}
+
+.board-color-cleandark .swimlane .swimlane-header-wrap {
+  background-color: #2E2E39;
+}
+
+.board-color-cleanlight .swimlane .swimlane-header-wrap .swimlane-header-plus-icon,
+.board-color-cleandark .swimlane .swimlane-header-wrap .swimlane-header-plus-icon {
+  margin-inline-start: 14px;
+}
+
+.board-color-cleanlight .swimlane .swimlane-header-wrap .list-composer,
+.board-color-cleandark .swimlane .swimlane-header-wrap .list-composer {
+  display: flex;
+  gap: 12px;
+  margin-inline-start: 20px;
+}
+
+.board-color-cleanlight .swimlane .swimlane-header-wrap .swimlane-header .viewer p,
+.board-color-cleandark .swimlane .swimlane-header-wrap .swimlane-header .viewer p {
+  margin-bottom: 0;
+}
+
+.board-color-cleanlight .js-toggle-desktop-drag-handles,
+.board-color-cleandark .js-toggle-desktop-drag-handles {
+  display: none;
+}
+
+.board-color-cleanlight .sidebar {
+  background: rgba(248, 248, 249, 1) !important;
+  box-shadow: none;
+}
+
+.board-color-cleanlight .sidebar hr {
+  background: rgba(23, 23, 28, 0.05);
+}
+
+.board-color-cleanlight .sidebar .tab-item {
+  border-radius: 16px;
+  padding: 4px 12px 4px 12px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.85);
+  background: rgba(234, 234, 237, 1);
+}
+
+.board-color-cleanlight .sidebar .tab-item.active {
+  background: rgba(23, 23, 28, 1);
+  color: rgba(255, 255, 255, 1);
+  border: none;
+  padding: 4px 12px 4px 12px !important;
+}
+
+.board-color-cleanlight .sidebar .tabs-content-container {
+  border: none;
+}
+
+.board-color-cleanlight .card-details {
+  background: rgba(248, 248, 249, 1);
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.board-color-cleanlight .card-details-item a {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.5);
+}
+
+.board-color-cleanlight .card-details-header,
+.board-color-cleandark .card-details-header {
+  font-size: calc(24px * var(--wekan-ui-font-scale, 1)) !important;
+  font-weight: 600;
+  line-height: calc(28px * var(--wekan-ui-font-scale, 1));
+  border-bottom: none !important;
+  padding: 12px 20px !important;
+}
+
+.board-color-cleanlight .card-details-header {
+  background: rgba(241, 241, 243, 1);
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleandark .card-details-header {
+  background: #2E2E39 !important;
+  color: #FFF !important;
+}
+
+.board-color-cleanlight .card-details-header .card-details-title,
+.board-color-cleandark .card-details-header .card-details-title {
+  font-size: calc(24px * var(--wekan-ui-font-scale, 1)) !important;
+}
+
+.board-color-cleanlight .card-details .card-details-item-title,
+.board-color-cleandark .card-details .card-details-item-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+}
+
+.board-color-cleanlight .card-details .card-details-item-title {
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleandark .card-details .card-details-item-title {
+  color: rgba(255, 255, 255, 1);
+}
+
+.board-color-cleanlight .add-assignee {
+  box-shadow: none !important;
+}
+
+.board-color-cleanlight .add-assignee:hover {
+  background: rgba(227, 227, 230, 1);
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .add-assignee:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight .add-checklist-top {
+  display: none !important;
+}
+
+.board-color-cleanlight .add-checklist {
+  padding: 8px;
+  width: min-content !important;
+}
+
+.board-color-cleanlight .add-checklist:hover {
+  background: rgba(227, 227, 230, 1) !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleanlight .add-checklist:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight .card-time.card-label-green {
+  background: #009B64;
+  width: min-content;
+  color: #FFFFFF;
+  padding-inline-start: 8px;
+  padding-inline-end: 8px;
+  border-radius: 8px;
+  margin-inline-start: 4px;
+}
+
+.board-color-cleanlight .card-details hr {
+  background: rgba(23, 23, 28, 0.05);
+}
+
+.board-color-cleanlight .card-details-canvas {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.5);
+}
+
+.board-color-cleanlight.pop-over {
+  border-radius: 12px;
+  border: none;
+  background: rgba(241, 241, 243, 1);
+}
+
+.board-color-cleanlight.pop-over .header,
+.board-color-cleandark.pop-over .header {
+  border-radius: 12px 12px 0 0;
+  border-bottom: none;
+  background: inherit;
+
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+}
+
+.board-color-cleanlight.pop-over .header {
+  color: rgba(10, 10, 20, 1);
+}
+
+
+.board-color-cleandark.pop-over .header {
+  color: rgba(255, 255, 255, 1);;
+}
+
+.board-color-cleanlight.pop-over .pop-over-list,
+.board-color-cleanlight.pop-over .content {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.8);
+}
+
+.board-color-cleanlight.pop-over .pop-over-list a:hover {
+  background: #393947 !important;
+}
+
+.board-color-cleanlight .member {
+  box-shadow: none !important;
+}
+
+.board-color-cleanlight .add-member:hover {
+  background: rgba(227, 227, 230, 1);
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .add-member:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight .add-label {
+  box-shadow: none !important;
+}
+
+.board-color-cleanlight .add-label:hover {
+  background: rgba(227, 227, 230, 1);
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .add-label:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight.pop-over .content kbd {
+  background: rgba(180, 180, 180, 1);
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .full-name {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight .username {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+
+  color: rgba(10, 10, 20, 0.5) !important;
+}
+
+.board-color-cleanlight .attachment-item:hover {
+  background: rgba(227, 227, 230, 1);
+}
+
+.board-color-cleanlight .checklist {
+  background: none;
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleanlight .checklist-item {
+  background: none;
+}
+
+.board-color-cleanlight .checklist-item:hover {
+  background: rgba(227, 227, 230, 1) !important;
+}
+
+.board-color-cleanlight .add-checklist-item {
+  width: min-content !important;
+  padding: 8px;
+}
+
+.board-color-cleanlight .add-checklist-item:hover {
+  background: rgba(227, 227, 230, 1) !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleanlight .add-checklist-item:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight .add-attachment {
+  background: rgba(248, 248, 249, 1) !important;
+  border-radius: 12px;
+  border-color: rgba(197, 197, 200, 1);
+}
+
+.board-color-cleanlight .add-attachment:hover {
+  background: rgba(227, 227, 230, 1) !important;
+}
+
+.board-color-cleanlight .add-attachment:hover i {
+  color: #000000 !important;
+}
+
+.board-color-cleanlight .attachment-actions i,
+.board-color-cleanlight .attachment-actions a {
+  font-size: 1em !important;
+}
+
+.board-color-cleanlight .activity-desc {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.5);
+}
+
+.board-color-cleanlight .activity-desc .activity-member {
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleanlight .activity-checklist,
+.board-color-cleanlight .activity-comment {
+  background: none !important;
+  color: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(0, 155, 100, 1);
+  border-radius: 12px !important;
+}
+
+.board-color-cleanlight button[type=submit].primary,
+.board-color-cleanlight input[type=submit].primary,
+.board-color-cleanlight .selected-calendar-picker button.primary {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  border-radius: 12px;
+  padding: 6px 12px 6px 12px;
+  background: rgba(23, 23, 28, 1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleanlight input.primary {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  border-radius: 12px;
+  padding: 6px 12px 6px 12px;
+  background: rgba(23, 23, 28, 1) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.board-color-cleanlight input.primary:hover {
+  background: #444455 !important;
+}
+
+.board-color-cleanlight textarea {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.85);
+  background: rgba(234, 234, 237, 1);
+  border: none !important;
+  border-radius: 12px !important;
+}
+
+.board-color-cleanlight textarea::placeholder {
+  color: rgba(10, 10, 20, 0.5) !important;
+}
+
+.board-color-cleanlight textarea:focus,
+.board-color-cleandark textarea:focus {
+  border: none !important;
+  box-shadow: none;
+}
+
+.board-color-cleanlight input {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.85) !important;
+  background: rgba(234, 234, 237, 1) !important;
+  border-radius: 12px !important;
+  border: none !important;
+}
+
+.board-color-cleanlight input::placeholder {
+  color: rgba(10, 10, 20, 0.5) !important;
+}
+
+.board-color-cleanlight input:focus,
+.board-color-cleandark input:focus {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.board-color-cleanlight select {
+  font-size:  calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(10, 10, 20, 0.85);
+  background: rgba(234, 234, 237, 1);
+  border-radius: 12px;
+  border: none;
+}
+
+.board-color-cleanlight button.primary {
+  padding: 6px 12px 6px 12px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(23, 23, 28, 1);
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.board-color-cleanlight button.primary:hover {
+  background: #444455;
+}
+
+.board-color-cleanlight button.negate {
+  padding: 6px 12px 6px 12px;
+  border-radius: 12px;
+  border: none;
+  background: #cc003a;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: #FFFFFF;
+}
+
+.board-color-cleanlight button.negate:hover {
+  background: rgba(204, 0, 58, 0.77);
+}
+
+.board-color-cleanlight .card-details .checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-color-cleanlight .card-details .check-box.materialCheckBox {
+  border-radius: 4px;
+  border: none;
+  background: rgba(234, 234, 237, 1);
+  height: 24px;
+  width: 24px;
+}
+
+.board-color-cleanlight .card-details .check-box.materialCheckBox.is-checked {
+  border-bottom: 2px solid #000000;
+  border-right: 2px solid #000000;
+  width: 11px;
+  height: 19px;
+  border-radius: 0;
+  background: none;
+}
+
+.board-color-cleanlight .sidebar-list-item-description {
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleanlight .sidebar .sidebar-content h3,
+.board-color-cleanlight .sidebar .sidebar-content h2,
+.board-color-cleanlight .sidebar .sidebar-content h1 {
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleanlight #cards span {
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleanlight #cards .materialCheckBox {
+  border-radius: 4px;
+  border: none;
+  background: rgba(234, 234, 237, 1);
+  height: 18px;
+  width: 18px;
+}
+
+.board-color-cleanlight #cards .materialCheckBox.is-checked {
+  border-bottom: 2px solid #000000;
+  border-right: 2px solid #000000;
+  width: 5px;
+  height: 13px;
+  border-radius: 0;
+  background: none;
+  margin-left: 3px;
+  margin-top: 3px;
+}
+.board-color-cleanlight .checklist-progress-bar {
+  background-color: #f5f5f5 !important;
+}
+.board-color-cleanlight .checklist-progress-bar .checklist-progress {
+  background-color: #c0c0c0 !important;
+  color: #010101 !important;
+}
+
+.board-color-cleanlight .allBoards {
+  white-space: nowrap;
+}
+
+.board-color-cleanlight#header-quick-access,
+.board-color-cleandark#header-quick-access {
+  padding: 10px 20px;
+  padding-top: 12px !important;
+  gap: 20px;
+}
+
+.board-color-cleandark#header-quick-access {
+  background: #2E2E39 !important;
+}
+
+.board-color-cleanlight#header-quick-access {
+  background: #F1F1F3 !important;
+  color: rgba(10, 10, 20, 0.85);
+}
+
+/* EVERY icon in the top bar, in the one shade the bar's text uses.
+   header.css paints them white by id - `#header-quick-access i.fa` - which is
+   right on the fifteen dark themes and invisible on this one's #F1F1F3. The
+   buttons inside a `ul li` escaped that by a more specific `color: inherit`
+   and so took the theme's text colour, while the house
+   (`.home-icon .header-home-link`) and the bell
+   (`#notifications .notifications-drawer-toggle`, notifications.css) are in no
+   `ul li` and stayed white - a bell whose own LABEL was readable beside a bell
+   that was not there, which is how this was noticed.
+   The theme class sits on the bar element itself, so these selectors carry one
+   class more than the rules they override and no !important is needed. */
+.board-color-cleanlight#header i.fa,
+.board-color-cleanlight#header-quick-access i.fa,
+.board-color-cleanlight#header .home-icon .header-home-link,
+.board-color-cleanlight#header-quick-access .home-icon .header-home-link,
+.board-color-cleanlight#header #notifications .notifications-drawer-toggle,
+.board-color-cleanlight#header-quick-access #notifications .notifications-drawer-toggle {
+  color: rgba(10, 10, 20, 0.85);
+}
+/* The dividers between the bar's groups, drawn white too - `background:
+   rgba(255, 255, 255, 0.4)` in the first bar and a white `border-inline-start`
+   in the second - so on this theme the seam that separates the page's controls
+   from your own account was not there at all.
+   They keep the DIVIDER's own weight rather than the 0.85 the labels use: a
+   hairline as dark as the text beside it stops being a seam and becomes a
+   stroke, so this is the same 0.3 the dark themes draw, in ink instead of
+   white. */
+.board-color-cleanlight#header-quick-access .separator {
+  background: rgba(10, 10, 20, 0.3);
+}
+.board-color-cleanlight#header #header-main-bar .separator {
+  border-inline-start-color: rgba(10, 10, 20, 0.3);
+}
+
+/* Except the bell that has something to report: that one is a white glyph on
+   the red `.alert` circle, and dark ink on red is the opposite fix. */
+.board-color-cleanlight#header #notifications .notifications-drawer-toggle.alert,
+.board-color-cleanlight#header #notifications .notifications-drawer-toggle.alert i.fa,
+.board-color-cleanlight#header-quick-access #notifications .notifications-drawer-toggle.alert,
+.board-color-cleanlight#header-quick-access #notifications .notifications-drawer-toggle.alert i.fa {
+  color: #fff;
+}
+/* And their hover, which was a white veil on a near-white bar. */
+.board-color-cleanlight#header .home-icon .header-home-link:hover,
+.board-color-cleanlight#header-quick-access .home-icon .header-home-link:hover {
+  background-color: rgba(10, 10, 20, 0.08);
+}
+/* Hovering an icon LIGHTENS it by default - `#header-quick-access i.fa:hover`
+   goes to #ccc - which on a dark bar means "brighter, so you know you are on
+   it" and on this one means the house fades towards the bar it sits on. Here it
+   goes the other way: full black, which is the same message read the right way
+   round for a light bar. */
+.board-color-cleanlight#header i.fa:hover,
+.board-color-cleanlight#header-quick-access i.fa:hover,
+.board-color-cleanlight#header .home-icon .header-home-link:hover,
+.board-color-cleanlight#header-quick-access .home-icon .header-home-link:hover,
+.board-color-cleanlight#header .home-icon .header-home-link:hover i.fa,
+.board-color-cleanlight#header-quick-access .home-icon .header-home-link:hover i.fa {
+  color: rgba(10, 10, 20, 1);
+}
+
+.board-color-cleanlight#header-quick-access ul.header-quick-access-list li a .viewer,
+.board-color-cleandark#header-quick-access ul.header-quick-access-list li a .viewer {
+  max-width: 400px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+}
+
+.board-color-cleanlight#header-quick-access ul.header-quick-access-list li a .viewer p,
+.board-color-cleandark#header-quick-access ul.header-quick-access-list li a .viewer p {
+  margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-color-cleanlight#header-quick-access ul.header-quick-access-list li {
+  display: inline-flex;
+  align-items: center;
+  padding-bottom: 4px;
+  padding-top: 4px;
+  margin-inline-end: 10px;
+}
+
+.board-color-cleanlight#header-quick-access ul.header-quick-access-list {
+  display: flex;
+  align-items: center;
+}
+
+.board-color-cleanlight #header-main-bar,
+.board-color-cleanlight#header,
+.board-color-cleanlight .setting-content .content-body .side-menu ul li.active,
+.board-color-cleanlight .setting-content .content-body .side-menu ul li.active:hover {
+  background: #F1F1F3 !important;
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+/* A board tile in All Boards and a row on the Public Boards page, the same
+   colour as this theme's header bar. Every other theme paints its tile from its
+   own rule above; these two had none, so their boards fell back to the default
+   grey. The text that goes on this one is set with the other LIGHT tiles, in
+   the Apple Glass Pastel section - one block holds them all. */
+.board-list li.board-color-cleanlight,
+.public-board-row.board-color-cleanlight {
+  background: #F1F1F3;
+}
+
+.board-color-cleandark #header-main-bar,
+.board-color-cleandark#header,
+.board-color-cleandark#header-quick-access,
+.board-color-cleandark .setting-content .content-body .side-menu ul li.active,
+.board-color-cleandark .setting-content .content-body .side-menu ul li.active:hover {
+  background: #2E2E39 !important;
+  color: #FFFFFF;
+}
+
+/* And this theme's tile, and its row on the Public Boards page, the same way. */
+.board-list li.board-color-cleandark,
+.public-board-row.board-color-cleandark {
+  background: #2E2E39;
+}
+
+.board-color-cleanlight .list-body .open-minicard-composer,
+.board-color-cleandark .list-body .open-minicard-composer {
+  display: none !important;
+}
+
+.board-color-cleanlight .minicard,
+.board-color-cleandark .minicard {
+  border-radius: 12px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  padding: 12px;
+}
+
+.board-color-cleanlight .minicard {
+  background: rgba(248, 248, 249, 1);
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleandark .minicard {
+  color: #FFFFFF;
+  background: #23232B;
+}
+
+.board-color-cleanlight .minicard .minicard-details-menu,
+.board-color-cleandark .minicard .minicard-details-menu {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1)) !important;
+}
+
+.board-color-cleanlight .minicard .date,
+.board-color-cleandark .minicard .date,
+.board-color-cleanlight .minicard .end-date,
+.board-color-cleandark .minicard .end-date {
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  margin-bottom: 10px;
+}
+
+.board-color-cleanlight .minicard .date a,
+.board-color-cleandark .minicard .date a,
+.board-color-cleanlight .minicard .end-date,
+.board-color-cleandark .minicard .end-date,
+.board-color-cleanlight .card-details .card-date,
+.board-color-cleandark .card-details .card-date {
+  padding: 4px 8px 4px 8px;
+  font-size: calc(16px * var(--wekan-ui-font-scale, 1));
+  font-weight: 400;
+  line-height: calc(24px * var(--wekan-ui-font-scale, 1));
+  color: rgba(255, 255, 255, 1);
+}
+
+.board-color-cleanlight .minicard .end-date,
+.board-color-cleandark .minicard .end-date,
+.board-color-cleanlight .minicard .due-date,
+.board-color-cleandark .minicard .due-date,
+.board-color-cleanlight .card-details .card-date,
+.board-color-cleandark .card-details .card-date {
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .minicard .end-date,
+.board-color-cleanlight .minicard .due-date,
+.board-color-cleanlight .card-details .card-date {
+  background: rgba(227, 227, 230, 1);
+  color: rgba(10, 10, 20, 1) !important;
+}
+
+.board-color-cleandark .minicard .end-date,
+.board-color-cleandark .minicard .due-date,
+.board-color-cleandark .card-details .card-date {
+  background: #444455;
+}
+
+.board-color-cleandark .minicard .end-date:hover,
+.board-color-cleandark .minicard .due-date:hover,
+.board-color-cleandark .card-details .card-date:hover {
+  background: rgba(68, 68, 85, 0.73);
+}
+
+.board-color-cleanlight .minicard .end-date:hover,
+.board-color-cleanlight .minicard .due-date:hover,
+.board-color-cleanlight .card-details .card-date:hover {
+  background: rgba(207, 207, 210, 1);
+}
+
+.board-color-cleanlight .minicard .date .current,
+.board-color-cleandark .minicard .date .current,
+.board-color-cleanlight .minicard .current,
+.board-color-cleandark .minicard .current,
+.board-color-cleanlight .card-details .current,
+.board-color-cleandark .card-details .current {
+  background: #009B64;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleandark .minicard .date .current:hover,
+.board-color-cleanlight .minicard .date .current:hover,
+.board-color-cleandark .minicard .current:hover,
+.board-color-cleanlight .minicard .current:hover,
+.board-color-cleandark .card-details .current:hover,
+.board-color-cleanlight .card-details .current:hover {
+  background: rgba(0, 155, 100, 0.73);
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleanlight .minicard .date .due,
+.board-color-cleandark .minicard .date .due,
+.board-color-cleanlight .minicard .due,
+.board-color-cleandark .minicard .due,
+.board-color-cleanlight .card-details .due,
+.board-color-cleandark .card-details .due {
+  background: #CC003A;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleanlight .card-details .due:hover,
+.board-color-cleanlight .minicard .date .due:hover,
+.board-color-cleanlight .minicard .due:hover,
+.board-color-cleandark .minicard .due:hover,
+.board-color-cleandark .minicard .date .due:hover,
+.board-color-cleandark .card-details .due:hover {
+  background: rgba(204, 0, 58, 0.73);
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleanlight .minicard-assignees,
+.board-color-cleandark .minicard-assignees {
+  border-bottom: none !important;
+}
+
+.board-color-cleanlight .minicard-composer-textarea {
+  background: #f8f8f9 !important;
+}
+
+.board-color-cleandark .minicard-composer-textarea {
+  background: #23232B !important;
+}
+
+.board-color-cleanlight .minicard-composer:hover {
+  background: #f8f8f9 !important;
+}
+
+.board-color-cleandark .minicard-composer:hover {
+  background: #23232B !important;
+}
+
+.board-color-cleanlight .minicard .badges .badge.is-finished,
+.board-color-cleandark .minicard .badges .badge.is-finished {
+  background: #009B64 !important;
+  border-radius: 8px;
+}
+
+.board-color-cleanlight .minicard .badges .badge.is-finished .badge-icon {
+  color: #FFFFFF;
+}
+
+.board-color-cleanlight .card-details-item-customfield:has(.checklist-item),
+.board-color-cleandark .card-details-item-customfield:has(.checklist-item) {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-color-cleanlight .card-details-item-customfield:has(.checklist-item) div,
+.board-color-cleandark .card-details-item-customfield:has(.checklist-item) div {
+  padding-inline-end: 0 !important;
+}
+
+.board-color-cleanlight .card-details .card-details-items .card-details-item.custom-fields,
+.board-color-cleanlight .card-details .card-details-items .card-details-item.custom-fields {
+  margin-inline-start: auto;
+  flex-grow: 0;
+  border-radius: 12px;
+}
+
+.board-color-cleanlight .card-details-item-customfield:has(.checklist-item) h3,
+.board-color-cleandark .card-details-item-customfield:has(.checklist-item) h3 {
+  width: min-content !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+}
+
+.board-color-cleanlight .new-description .fa,
+.board-color-cleandark .new-description .fa {
+  display: none;
+}
+
+.board-color-cleanlight .card-details-left .viewer p {
+  color: rgba(10, 10, 20, 0.85);
+}
+
+.board-color-cleandark .card-details-left .viewer p {
+  color: #FFFFFF;
+}
+
+.board-color-cleanlight .new-comment .fa,
+.board-color-cleandark .new-comment .fa {
+  display: none;
+}
+
+.board-color-cleanlight .pop-over-list li > a,
+.board-color-cleandark .pop-over-list li > a {
+  font-weight: 500;
+}
+
+.board-color-cleandark .pop-over-list li > a {
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+.board-color-cleanlight .pop-over-list li > a {
+  color: rgba(10, 10, 20, 0.85) !important;
+}
+
+.board-color-cleanlight .pop-over-list li > a i,
+.board-color-cleandark .pop-over-list li > a i {
+  margin-inline-end: 6px !important;
+}
+
+.board-color-cleanlight .pop-over .quiet {
+  margin-inline-start: 100px !important;
+}
+
+.board-color-cleandark .minicard:hover:not(.minicard-composer),
+.board-color-cleandark .is-selected .minicard, .draggable-hover-card .minicard {
+  background: #23232B;
+}
+
+/* Transparent modern scrollbar - cleanlight*/
+.board-color-cleanlight .board-canvas {
+  scrollbar-color: #0a0a14d1 #e4e4e400;
+}
+
+
+/* Apply scrollbar to sidebar content*/
+.board-color-cleanlight .sidebar .sidebar-content {
+  scrollbar-color: #0a0a14d1 #e4e4e400;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-cleanlight .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-cleanlight .list-body {
+ margin-top: 8px;
+}
+
+/* === END CleanDark/Light THEME === */
+
+/* ===============
+THEME - cleargreen
+
+A colour SLIDE, like clearblue: #8ad59f down to #4bbf6b.
+The base is limegreen's own colour, so the flat theme and the slide theme are
+the same colour family and a reader picking either gets what they expected.
+
+The rest of the palette is arithmetic on that base, the same arithmetic
+clearblue uses on its own: the border under the bar is base x 0.8, the one
+above it base x 0.6, the current tab base x 1.15, a selected minicard the
+base mixed toward white. Derived rather than hand-picked so a sixth slide
+theme is one line in the generator and not a page of guessed hexes.
+docs/Features/General/Theme/Change-Color.md
+=================*/
+
+
+.board-color-cleargreen.sk-spinner div,
+.board-backgrounds-list .board-color-cleargreen.background-box,
+.public-board-row.board-color-cleargreen,
+.board-list li.board-color-cleargreen {
+  background: linear-gradient(180deg, #8ad59f 0%, #4bbf6b 100%);
+}
+.board-color-cleargreen .is-selected .minicard {
+  border-inline-start: 3px solid #8ad59f;
+}
+.board-color-cleargreen.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-cleargreen .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-cleargreen .sidebar-list li a:hover {
+  background-color: #97daa9;
+}
+.board-color-cleargreen#header ul li.current,
+.board-color-cleargreen#header-quick-access ul li.current {
+  border-bottom: 4px solid #56dc7b;
+}
+.board-color-cleargreen#header-quick-access {
+  color: #fff;
+}
+
+.board-color-cleargreen#header-quick-access #header-new-board-icon,
+.board-color-cleargreen#header-quick-access #header-user-bar,
+.board-color-cleargreen#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-cleargreen#header,
+.board-color-cleargreen#header-quick-access,
+.board-color-cleargreen .setting-content .content-body .side-menu ul li.active,
+.board-color-cleargreen .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #4bbf6b;
+  border-bottom: 1px solid #3c9956;
+  border-top: 1px solid #2d7340;
+}
+
+.board-color-cleargreen#header #header-main-bar,
+.board-color-cleargreen#header-quick-access,
+.board-color-cleargreen .setting-content .content-body .side-menu ul li.active,
+.board-color-cleargreen .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-cleargreen .boards-left-menu .menu-item.active a,
+.board-color-cleargreen .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #8ad59f 0%, #4bbf6b 100%);
+}
+.board-color-cleargreen#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-cleargreen#header #header-main-bar .board-header-btn.emphasis {
+  background: #56dc7b;
+}
+.board-color-cleargreen#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-cleargreen#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-cleargreen#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-cleargreen .materialCheckBox.is-checked {
+  border-bottom: 2px solid #8ad59f;
+  border-right: 2px solid #8ad59f;
+}
+.board-color-cleargreen .checklist-progress-bar {
+  background-color: #e9f7ed !important;
+}
+.board-color-cleargreen .checklist-progress-bar .checklist-progress {
+  background-color: #8ad59f !important;
+}
+.board-color-cleargreen .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #f1faf3;
+}
+.board-color-cleargreen .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fafdfb;
+}
+.board-color-cleargreen .toggle-switch:checked ~ .toggle-label {
+  background-color: #a9e0b8;
+}
+.board-color-cleargreen .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #42a85e;
+}
+.board-color-cleargreen.board-wrapper {
+  background: linear-gradient(135deg, #8ad59f 0%, #4bbf6b 100%);
+}
+.board-color-cleargreen .swimlane {
+  background: none;
+}
+.board-color-cleargreen .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-cleargreen .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-cleargreen .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-cleargreen .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-cleargreen .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-cleargreen .list.list-composer .open-list-composer:hover i,
+.board-color-cleargreen .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-cleargreen .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-cleargreen .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-cleargreen .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-cleargreen .list-body {
+  padding: 11px;
+}
+.board-color-cleargreen .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-cleargreen .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-cleargreen .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-cleargreen .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-cleargreen button[type=submit].primary,
+.board-color-cleargreen input[type=submit].primary,
+.board-color-cleargreen .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-cleargreen button[type="submit"].primary:hover,
+.board-color-cleargreen input[type="submit"].primary:hover,
+.board-color-cleargreen .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-cleargreen .quiet,
+.board-color-cleargreen .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-cleargreen .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-cleargreen a.fa,
+.board-color-cleargreen a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-cleargreen a:not(.disabled).is-active.fa,
+.board-color-cleargreen a:not(.disabled).is-active i.fa,
+.board-color-cleargreen a:not(.disabled):hover.fa,
+.board-color-cleargreen a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-cleargreen input[type="email"],
+.board-color-cleargreen input[type="password"],
+.board-color-cleargreen input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-cleargreen .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #4bbf6b;
+}
+.board-color-cleargreen .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-cleargreen .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-cleargreen .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-cleargreen .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-cleargreen .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-cleargreen .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-cleargreen .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-cleargreen .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-cleargreen .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-cleargreen .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-cleargreen .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-cleargreen .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-cleargreen .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-cleargreen .list.ui-sortable-helper,
+.board-color-cleargreen .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-cleargreen .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - cleargreen*/
+.board-color-cleargreen .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-cleargreen .list-body {
+  scrollbar-width: thin;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-cleargreen .sidebar .sidebar-content {
+   scrollbar-color: #4bbf6b #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-cleargreen .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-cleargreen .list-body {
+ margin-top: 8px;
+}
+
+/* === END cleargreen THEME === */
+
+/* ===============
+THEME - clearorange
+
+A colour SLIDE, like clearblue: #efab6f down to #e67e22.
+The base is pumpkin's own colour, so the flat theme and the slide theme are
+the same colour family and a reader picking either gets what they expected.
+
+The rest of the palette is arithmetic on that base, the same arithmetic
+clearblue uses on its own: the border under the bar is base x 0.8, the one
+above it base x 0.6, the current tab base x 1.15, a selected minicard the
+base mixed toward white. Derived rather than hand-picked so a sixth slide
+theme is one line in the generator and not a page of guessed hexes.
+docs/Features/General/Theme/Change-Color.md
+=================*/
+
+
+.board-color-clearorange.sk-spinner div,
+.board-backgrounds-list .board-color-clearorange.background-box,
+.public-board-row.board-color-clearorange,
+.board-list li.board-color-clearorange {
+  background: linear-gradient(180deg, #efab6f 0%, #e67e22 100%);
+}
+.board-color-clearorange .is-selected .minicard {
+  border-inline-start: 3px solid #efab6f;
+}
+.board-color-clearorange.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-clearorange .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-clearorange .sidebar-list li a:hover {
+  background-color: #f1b47f;
+}
+.board-color-clearorange#header ul li.current,
+.board-color-clearorange#header-quick-access ul li.current {
+  border-bottom: 4px solid #ff9127;
+}
+.board-color-clearorange#header-quick-access {
+  color: #fff;
+}
+
+.board-color-clearorange#header-quick-access #header-new-board-icon,
+.board-color-clearorange#header-quick-access #header-user-bar,
+.board-color-clearorange#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-clearorange#header,
+.board-color-clearorange#header-quick-access,
+.board-color-clearorange .setting-content .content-body .side-menu ul li.active,
+.board-color-clearorange .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #e67e22;
+  border-bottom: 1px solid #b8651b;
+  border-top: 1px solid #8a4c14;
+}
+
+.board-color-clearorange#header #header-main-bar,
+.board-color-clearorange#header-quick-access,
+.board-color-clearorange .setting-content .content-body .side-menu ul li.active,
+.board-color-clearorange .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-clearorange .boards-left-menu .menu-item.active a,
+.board-color-clearorange .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #efab6f 0%, #e67e22 100%);
+}
+.board-color-clearorange#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-clearorange#header #header-main-bar .board-header-btn.emphasis {
+  background: #ff9127;
+}
+.board-color-clearorange#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-clearorange#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearorange#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearorange .materialCheckBox.is-checked {
+  border-bottom: 2px solid #efab6f;
+  border-right: 2px solid #efab6f;
+}
+.board-color-clearorange .checklist-progress-bar {
+  background-color: #fcf0e4 !important;
+}
+.board-color-clearorange .checklist-progress-bar .checklist-progress {
+  background-color: #efab6f !important;
+}
+.board-color-clearorange .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #fdf5ed;
+}
+.board-color-clearorange .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fefbf8;
+}
+.board-color-clearorange .toggle-switch:checked ~ .toggle-label {
+  background-color: #f3c195;
+}
+.board-color-clearorange .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #ca6f1e;
+}
+.board-color-clearorange.board-wrapper {
+  background: linear-gradient(135deg, #efab6f 0%, #e67e22 100%);
+}
+.board-color-clearorange .swimlane {
+  background: none;
+}
+.board-color-clearorange .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-clearorange .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-clearorange .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-clearorange .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-clearorange .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-clearorange .list.list-composer .open-list-composer:hover i,
+.board-color-clearorange .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearorange .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-clearorange .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-clearorange .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearorange .list-body {
+  padding: 11px;
+}
+.board-color-clearorange .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-clearorange .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-clearorange .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-clearorange .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearorange button[type=submit].primary,
+.board-color-clearorange input[type=submit].primary,
+.board-color-clearorange .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-clearorange button[type="submit"].primary:hover,
+.board-color-clearorange input[type="submit"].primary:hover,
+.board-color-clearorange .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-clearorange .quiet,
+.board-color-clearorange .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-clearorange .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-clearorange a.fa,
+.board-color-clearorange a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearorange a:not(.disabled).is-active.fa,
+.board-color-clearorange a:not(.disabled).is-active i.fa,
+.board-color-clearorange a:not(.disabled):hover.fa,
+.board-color-clearorange a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-clearorange input[type="email"],
+.board-color-clearorange input[type="password"],
+.board-color-clearorange input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-clearorange .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #e67e22;
+}
+.board-color-clearorange .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-clearorange .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearorange .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-clearorange .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-clearorange .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearorange .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearorange .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-clearorange .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-clearorange .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-clearorange .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-clearorange .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-clearorange .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-clearorange .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-clearorange .list.ui-sortable-helper,
+.board-color-clearorange .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-clearorange .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - clearorange*/
+.board-color-clearorange .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-clearorange .list-body {
+  scrollbar-width: thin;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-clearorange .sidebar .sidebar-content {
+   scrollbar-color: #e67e22 #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-clearorange .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-clearorange .list-body {
+ margin-top: 8px;
+}
+
+/* === END clearorange THEME === */
+
+/* ===============
+THEME - clearpink
+
+A colour SLIDE, like clearblue: #df94b8 down to #cd5a91.
+The base is moderatepink's own colour, so the flat theme and the slide theme are
+the same colour family and a reader picking either gets what they expected.
+
+The rest of the palette is arithmetic on that base, the same arithmetic
+clearblue uses on its own: the border under the bar is base x 0.8, the one
+above it base x 0.6, the current tab base x 1.15, a selected minicard the
+base mixed toward white. Derived rather than hand-picked so a sixth slide
+theme is one line in the generator and not a page of guessed hexes.
+docs/Features/General/Theme/Change-Color.md
+=================*/
+
+
+.board-color-clearpink.sk-spinner div,
+.board-backgrounds-list .board-color-clearpink.background-box,
+.public-board-row.board-color-clearpink,
+.board-list li.board-color-clearpink {
+  background: linear-gradient(180deg, #df94b8 0%, #cd5a91 100%);
+}
+.board-color-clearpink .is-selected .minicard {
+  border-inline-start: 3px solid #df94b8;
+}
+.board-color-clearpink.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-clearpink .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-clearpink .sidebar-list li a:hover {
+  background-color: #e29fbf;
+}
+.board-color-clearpink#header ul li.current,
+.board-color-clearpink#header-quick-access ul li.current {
+  border-bottom: 4px solid #ec67a7;
+}
+.board-color-clearpink#header-quick-access {
+  color: #fff;
+}
+
+.board-color-clearpink#header-quick-access #header-new-board-icon,
+.board-color-clearpink#header-quick-access #header-user-bar,
+.board-color-clearpink#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-clearpink#header,
+.board-color-clearpink#header-quick-access,
+.board-color-clearpink .setting-content .content-body .side-menu ul li.active,
+.board-color-clearpink .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #cd5a91;
+  border-bottom: 1px solid #a44874;
+  border-top: 1px solid #7b3657;
+}
+
+.board-color-clearpink#header #header-main-bar,
+.board-color-clearpink#header-quick-access,
+.board-color-clearpink .setting-content .content-body .side-menu ul li.active,
+.board-color-clearpink .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-clearpink .boards-left-menu .menu-item.active a,
+.board-color-clearpink .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #df94b8 0%, #cd5a91 100%);
+}
+.board-color-clearpink#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-clearpink#header #header-main-bar .board-header-btn.emphasis {
+  background: #ec67a7;
+}
+.board-color-clearpink#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-clearpink#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearpink#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearpink .materialCheckBox.is-checked {
+  border-bottom: 2px solid #df94b8;
+  border-right: 2px solid #df94b8;
+}
+.board-color-clearpink .checklist-progress-bar {
+  background-color: #f9ebf2 !important;
+}
+.board-color-clearpink .checklist-progress-bar .checklist-progress {
+  background-color: #df94b8 !important;
+}
+.board-color-clearpink .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #fbf2f6;
+}
+.board-color-clearpink .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fefafc;
+}
+.board-color-clearpink .toggle-switch:checked ~ .toggle-label {
+  background-color: #e7b0ca;
+}
+.board-color-clearpink .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #b44f80;
+}
+.board-color-clearpink.board-wrapper {
+  background: linear-gradient(135deg, #df94b8 0%, #cd5a91 100%);
+}
+.board-color-clearpink .swimlane {
+  background: none;
+}
+.board-color-clearpink .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-clearpink .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-clearpink .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-clearpink .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-clearpink .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-clearpink .list.list-composer .open-list-composer:hover i,
+.board-color-clearpink .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpink .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-clearpink .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-clearpink .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpink .list-body {
+  padding: 11px;
+}
+.board-color-clearpink .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-clearpink .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-clearpink .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-clearpink .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpink button[type=submit].primary,
+.board-color-clearpink input[type=submit].primary,
+.board-color-clearpink .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-clearpink button[type="submit"].primary:hover,
+.board-color-clearpink input[type="submit"].primary:hover,
+.board-color-clearpink .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-clearpink .quiet,
+.board-color-clearpink .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-clearpink .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-clearpink a.fa,
+.board-color-clearpink a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearpink a:not(.disabled).is-active.fa,
+.board-color-clearpink a:not(.disabled).is-active i.fa,
+.board-color-clearpink a:not(.disabled):hover.fa,
+.board-color-clearpink a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-clearpink input[type="email"],
+.board-color-clearpink input[type="password"],
+.board-color-clearpink input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-clearpink .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #cd5a91;
+}
+.board-color-clearpink .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-clearpink .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearpink .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-clearpink .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-clearpink .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearpink .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearpink .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-clearpink .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-clearpink .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-clearpink .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-clearpink .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-clearpink .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-clearpink .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-clearpink .list.ui-sortable-helper,
+.board-color-clearpink .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-clearpink .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - clearpink*/
+.board-color-clearpink .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-clearpink .list-body {
+  scrollbar-width: thin;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-clearpink .sidebar .sidebar-content {
+   scrollbar-color: #cd5a91 #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-clearpink .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-clearpink .list-body {
+ margin-top: 8px;
+}
+
+/* === END clearpink THEME === */
+
+/* ===============
+THEME - clearpurple
+
+A colour SLIDE, like clearblue: #b685ca down to #8e44ad.
+The base is wisteria's own colour, so the flat theme and the slide theme are
+the same colour family and a reader picking either gets what they expected.
+
+The rest of the palette is arithmetic on that base, the same arithmetic
+clearblue uses on its own: the border under the bar is base x 0.8, the one
+above it base x 0.6, the current tab base x 1.15, a selected minicard the
+base mixed toward white. Derived rather than hand-picked so a sixth slide
+theme is one line in the generator and not a page of guessed hexes.
+docs/Features/General/Theme/Change-Color.md
+=================*/
+
+
+.board-color-clearpurple.sk-spinner div,
+.board-backgrounds-list .board-color-clearpurple.background-box,
+.public-board-row.board-color-clearpurple,
+.board-list li.board-color-clearpurple {
+  background: linear-gradient(180deg, #b685ca 0%, #8e44ad 100%);
+}
+.board-color-clearpurple .is-selected .minicard {
+  border-inline-start: 3px solid #b685ca;
+}
+.board-color-clearpurple.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-clearpurple .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-clearpurple .sidebar-list li a:hover {
+  background-color: #bd93cf;
+}
+.board-color-clearpurple#header ul li.current,
+.board-color-clearpurple#header-quick-access ul li.current {
+  border-bottom: 4px solid #a34ec7;
+}
+.board-color-clearpurple#header-quick-access {
+  color: #fff;
+}
+
+.board-color-clearpurple#header-quick-access #header-new-board-icon,
+.board-color-clearpurple#header-quick-access #header-user-bar,
+.board-color-clearpurple#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-clearpurple#header,
+.board-color-clearpurple#header-quick-access,
+.board-color-clearpurple .setting-content .content-body .side-menu ul li.active,
+.board-color-clearpurple .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #8e44ad;
+  border-bottom: 1px solid #72368a;
+  border-top: 1px solid #552968;
+}
+
+.board-color-clearpurple#header #header-main-bar,
+.board-color-clearpurple#header-quick-access,
+.board-color-clearpurple .setting-content .content-body .side-menu ul li.active,
+.board-color-clearpurple .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-clearpurple .boards-left-menu .menu-item.active a,
+.board-color-clearpurple .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #b685ca 0%, #8e44ad 100%);
+}
+.board-color-clearpurple#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-clearpurple#header #header-main-bar .board-header-btn.emphasis {
+  background: #a34ec7;
+}
+.board-color-clearpurple#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-clearpurple#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearpurple#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearpurple .materialCheckBox.is-checked {
+  border-bottom: 2px solid #b685ca;
+  border-right: 2px solid #b685ca;
+}
+.board-color-clearpurple .checklist-progress-bar {
+  background-color: #f1e9f5 !important;
+}
+.board-color-clearpurple .checklist-progress-bar .checklist-progress {
+  background-color: #b685ca !important;
+}
+.board-color-clearpurple .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #f6f0f8;
+}
+.board-color-clearpurple .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fcf9fd;
+}
+.board-color-clearpurple .toggle-switch:checked ~ .toggle-label {
+  background-color: #c9a5d8;
+}
+.board-color-clearpurple .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #7d3c98;
+}
+.board-color-clearpurple.board-wrapper {
+  background: linear-gradient(135deg, #b685ca 0%, #8e44ad 100%);
+}
+.board-color-clearpurple .swimlane {
+  background: none;
+}
+.board-color-clearpurple .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-clearpurple .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-clearpurple .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-clearpurple .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-clearpurple .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-clearpurple .list.list-composer .open-list-composer:hover i,
+.board-color-clearpurple .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpurple .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-clearpurple .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-clearpurple .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpurple .list-body {
+  padding: 11px;
+}
+.board-color-clearpurple .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-clearpurple .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-clearpurple .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-clearpurple .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearpurple button[type=submit].primary,
+.board-color-clearpurple input[type=submit].primary,
+.board-color-clearpurple .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-clearpurple button[type="submit"].primary:hover,
+.board-color-clearpurple input[type="submit"].primary:hover,
+.board-color-clearpurple .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-clearpurple .quiet,
+.board-color-clearpurple .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-clearpurple .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-clearpurple a.fa,
+.board-color-clearpurple a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearpurple a:not(.disabled).is-active.fa,
+.board-color-clearpurple a:not(.disabled).is-active i.fa,
+.board-color-clearpurple a:not(.disabled):hover.fa,
+.board-color-clearpurple a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-clearpurple input[type="email"],
+.board-color-clearpurple input[type="password"],
+.board-color-clearpurple input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-clearpurple .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #8e44ad;
+}
+.board-color-clearpurple .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-clearpurple .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearpurple .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-clearpurple .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-clearpurple .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearpurple .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearpurple .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-clearpurple .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-clearpurple .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-clearpurple .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-clearpurple .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-clearpurple .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-clearpurple .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-clearpurple .list.ui-sortable-helper,
+.board-color-clearpurple .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-clearpurple .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - clearpurple*/
+.board-color-clearpurple .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-clearpurple .list-body {
+  scrollbar-width: thin;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-clearpurple .sidebar .sidebar-content {
+   scrollbar-color: #8e44ad #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-clearpurple .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-clearpurple .list-body {
+ margin-top: 8px;
+}
+
+/* === END clearpurple THEME === */
+
+/* ===============
+THEME - clearred
+
+A colour SLIDE, like clearblue: #d67e75 down to #c0392b.
+The base is pomegranate's own colour, so the flat theme and the slide theme are
+the same colour family and a reader picking either gets what they expected.
+
+The rest of the palette is arithmetic on that base, the same arithmetic
+clearblue uses on its own: the border under the bar is base x 0.8, the one
+above it base x 0.6, the current tab base x 1.15, a selected minicard the
+base mixed toward white. Derived rather than hand-picked so a sixth slide
+theme is one line in the generator and not a page of guessed hexes.
+docs/Features/General/Theme/Change-Color.md
+=================*/
+
+
+.board-color-clearred.sk-spinner div,
+.board-backgrounds-list .board-color-clearred.background-box,
+.public-board-row.board-color-clearred,
+.board-list li.board-color-clearred {
+  background: linear-gradient(180deg, #d67e75 0%, #c0392b 100%);
+}
+.board-color-clearred .is-selected .minicard {
+  border-inline-start: 3px solid #d67e75;
+}
+.board-color-clearred.pop-over .pop-over-list li a:not(.disabled):hover,
+.board-color-clearred .sidebar .sidebar-content .sidebar-btn:hover,
+.board-color-clearred .sidebar-list li a:hover {
+  background-color: #da8c84;
+}
+.board-color-clearred#header ul li.current,
+.board-color-clearred#header-quick-access ul li.current {
+  border-bottom: 4px solid #dd4231;
+}
+.board-color-clearred#header-quick-access {
+  color: #fff;
+}
+
+.board-color-clearred#header-quick-access #header-new-board-icon,
+.board-color-clearred#header-quick-access #header-user-bar,
+.board-color-clearred#header-quick-access ul li {
+  color: #fff;
+}
+.board-color-clearred#header,
+.board-color-clearred#header-quick-access,
+.board-color-clearred .setting-content .content-body .side-menu ul li.active,
+.board-color-clearred .setting-content .content-body .side-menu ul li.active:hover {
+  background-color: #c0392b;
+  border-bottom: 1px solid #9a2e22;
+  border-top: 1px solid #73221a;
+}
+
+.board-color-clearred#header #header-main-bar,
+.board-color-clearred#header-quick-access,
+.board-color-clearred .setting-content .content-body .side-menu ul li.active,
+.board-color-clearred .setting-content .content-body .side-menu ul li.active:hover,
+.board-color-clearred .boards-left-menu .menu-item.active a,
+.board-color-clearred .boards-left-menu .menu-item.active a:hover {
+  background: linear-gradient(180deg, #d67e75 0%, #c0392b 100%);
+}
+.board-color-clearred#header #header-main-bar p {
+  margin-bottom: 6px;
+}
+.board-color-clearred#header #header-main-bar .board-header-btn.emphasis {
+  background: #dd4231;
+}
+.board-color-clearred#header #header-main-bar .board-header-btn.emphasis:hover,
+.board-color-clearred#header #header-main-bar .board-header-btn.emphasis .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearred#header #header-main-bar .board-header-btn.emphasis:hover .board-header-btn-close {
+  background: rgba(0,0,0,0.2);
+}
+.board-color-clearred .materialCheckBox.is-checked {
+  border-bottom: 2px solid #d67e75;
+  border-right: 2px solid #d67e75;
+}
+.board-color-clearred .checklist-progress-bar {
+  background-color: #f7e7e6 !important;
+}
+.board-color-clearred .checklist-progress-bar .checklist-progress {
+  background-color: #d67e75 !important;
+}
+.board-color-clearred .is-multiselection-active .multi-selection-checkbox.is-checked + .minicard {
+  background: #faefee;
+}
+.board-color-clearred .is-multiselection-active .multi-selection-checkbox:not(.is-checked) + .minicard:hover:not(.minicard-composer) {
+  background: #fdf9f9;
+}
+.board-color-clearred .toggle-switch:checked ~ .toggle-label {
+  background-color: #e1a099;
+}
+.board-color-clearred .toggle-switch:checked ~ .toggle-label:after {
+  background-color: #a93226;
+}
+.board-color-clearred.board-wrapper {
+  background: linear-gradient(135deg, #d67e75 0%, #c0392b 100%);
+}
+.board-color-clearred .swimlane {
+  background: none;
+}
+.board-color-clearred .swimlane .list:first-child {
+  min-width: 20px;
+  margin-inline-start: 10px; /* Added 10px margin left to stop lists being butted up against the edge of the screen */
+  border-inline-start: none;
+}
+.board-color-clearred .swimlane .list:nth-child {
+  flex: 0 0 265px;
+}
+.board-color-clearred .list {
+  background: rgba(255,255,255,0.35);
+  margin: 10px 0;
+  border: 0;
+  border-radius: 14px;
+}
+.board-color-clearred .list.list-composer {
+  background: rgba(255,255,255,0.1);
+  height: min-content;
+  flex: unset;
+  padding-bottom: 16px;
+  min-width: 20px;
+  margin-inline-start: 0px;
+  border-inline-start: none;
+}
+.board-color-clearred .list.list-composer .open-list-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  padding: 7px 10px;
+  display: block;
+}
+.board-color-clearred .list.list-composer .open-list-composer:hover i,
+.board-color-clearred .list.list-composer .open-list-composer:hover {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearred .list-header {
+  background-color: rgb(255 255 255 / 68%);
+  border-radius: 14px 14px 0 0;
+}
+.board-color-clearred .list-header:not([class*="list-header-"]) {
+  border-bottom: 6px solid rgba(255,255,255,0);
+}
+.board-color-clearred .list-header .list-header-name {
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearred .list-body {
+  padding: 11px;
+}
+.board-color-clearred .minicard {
+  border-radius: 7px;
+  padding: 10px 10px 4px 10px;
+  box-shadow: 2px 2px 4px 0px rgba(0,0,0,0.15);
+  color: #222;
+}
+.board-color-clearred .card-details {
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 7px 0 rgba(0,0,0,0.5);
+  margin-inline-start: -10px;
+}
+.board-color-clearred .list-body .open-minicard-composer {
+  border-radius: 7px;
+  color: rgba(0,0,0,0.3);
+  margin-bottom: 11px;
+}
+.board-color-clearred .list-body .open-minicard-composer:hover {
+  background: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.6);
+}
+.board-color-clearred button[type=submit].primary,
+.board-color-clearred input[type=submit].primary,
+.board-color-clearred .selected-calendar-picker button.primary {
+  box-shadow: none;
+  background-color: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  border-radius: 7px;
+  border: 0;
+}
+.board-color-clearred button[type="submit"].primary:hover,
+.board-color-clearred input[type="submit"].primary:hover,
+.board-color-clearred .selected-calendar-picker button.primary:hover {
+  background-color: rgba(255,255,255,0.7);
+  color: rgba(0,0,0,0.8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  border-radius: 7px;
+}
+.board-color-clearred .quiet,
+.board-color-clearred .quiet a {
+  color: rgba(0,0,0,0.4);
+}
+.board-color-clearred .list-header .list-header-watch-icon {
+  color: rgba(0,0,0,0.5);
+  position: absolute;
+  margin-top: -34px;
+  margin-inline-start: -11px;
+}
+.board-color-clearred a.fa,
+.board-color-clearred a i.fa {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearred a:not(.disabled).is-active.fa,
+.board-color-clearred a:not(.disabled).is-active i.fa,
+.board-color-clearred a:not(.disabled):hover.fa,
+.board-color-clearred a:not(.disabled):hover i.fa {
+  color: rgba(0,0,0,0.6);
+  border-radius: 7px;
+}
+.board-color-clearred input[type="email"],
+.board-color-clearred input[type="password"],
+.board-color-clearred input[type="text"] {
+  border: 0;
+  border-radius: 7px;
+}
+.board-color-clearred .sidebar-shadow {
+  box-shadow: none;
+  border-inline-start: 9px solid #c0392b;
+}
+.board-color-clearred .is-open .sidebar-shadow {
+  box-shadow: -10px 0 8px rgba(0,0,0,0.3);
+}
+.board-color-clearred .list.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearred .minicard-wrapper.placeholder {
+  background: rgba(0,0,0,0.1);
+}
+.board-color-clearred .minicard-wrapper.ui-sortable-helper {
+  transform: rotate(0deg);
+  opacity: 0.8;
+}
+.board-color-clearred .list-body .open-minicard-composer {
+  color: rgba(0,0,0,0.3);
+}
+.board-color-clearred .swimlane.ui-sortable-helper {
+  transform: rotate(0deg);
+}
+.board-color-clearred .swimlane .swimlane-header-wrap {
+  background: linear-gradient(0deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.25) 100%);
+}
+.board-color-clearred .swimlane-header-wrap .inlined-form {
+  width: 100%;
+}
+.board-color-clearred .swimlane-header-wrap .list-composer {
+  text-align: center;
+  margin: 5px;
+}
+.board-color-clearred .swimlane-header-wrap .list-name-input.full-line {
+  margin: 0;
+  display: inline-block;
+  width: 270px;
+}
+.board-color-clearred .swimlane-header-wrap .edit-controls {
+  display: inline-block;
+  vertical-align: middle;
+}
+.board-color-clearred .swimlane-header-wrap .primary.confirm {
+  margin-inline-end: 0;
+}
+.board-color-clearred .swimlane-header-wrap .fa.fa-times-thin {
+  margin-top: 2px;
+}
+.board-color-clearred .list.ui-sortable-helper,
+.board-color-clearred .list.ui-sortable-helper .list-header.ui-sortable-handle,
+.board-color-clearred .list.ui-sortable-helper .viewer {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+/* Transparent modern scrollbar - clearred*/
+.board-color-clearred .board-canvas {
+  scrollbar-color: #ffffffdb #ffffff00;
+  scrollbar-width: thin;
+}
+
+.board-color-clearred .list-body {
+  scrollbar-width: thin;
+}
+
+/* Apply scrollbar to sidebar content*/
+.board-color-clearred .sidebar .sidebar-content {
+   scrollbar-color: #c0392b #ffffff00;
+}
+
+/* Remove margins in between columns/fix spacing */
+
+.board-color-clearred .list {
+  border-inline-start: none;
+  padding-bottom: 8px;
+}
+
+.board-color-clearred .list-body {
+ margin-top: 8px;
+}
+
+/* === END clearred THEME === */

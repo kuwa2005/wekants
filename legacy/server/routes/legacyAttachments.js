@@ -1,0 +1,150 @@
+import { Meteor } from 'meteor/meteor';
+import { WebApp } from 'meteor/webapp';
+import { getUserIdFromRequest } from '/server/lib/requestUser';
+import { mayReadBoardAttachment } from '/server/lib/assignedOnlyAttachments';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { getAttachmentWithBackwardCompatibility, getOldAttachmentStream } from '/models/lib/attachmentBackwardCompatibility';
+import { canReadBoard } from '/models/lib/boardVisibility';
+const { sanitizeDownloadFileName } = require('/imports/lib/fileNameDisplay');
+const { fileResponsePolicy } = require('/models/lib/fileResponseSafety');
+
+// Ensure this file is loaded
+if (process.env.DEBUG === 'true') {
+  console.log('Legacy attachments route loaded');
+}
+
+/**
+ * Helper function to properly encode a filename for the Content-Disposition header
+ * Removes invalid characters (control chars, newlines, etc.) that would break HTTP headers.
+ * For non-ASCII filenames, uses RFC 5987 encoding to preserve the original filename.
+ * This prevents ERR_INVALID_CHAR errors when filenames contain control characters.
+ */
+function sanitizeFilenameForHeader(filename) {
+  if (!filename || typeof filename !== 'string') {
+    return 'download';
+  }
+
+  // Decode a URL-encoded name and REMOVE all invisible/format characters (incl.
+  // control chars, zero-width, bidi, BOM) so the downloaded file gets a clean,
+  // unambiguous name — matching how filenames are shown in the UI.
+  let sanitized = sanitizeDownloadFileName(filename);
+
+  // If the filename is all ASCII printable characters (0x20-0x7E), use it directly
+  if (/^[\x20-\x7E]*$/.test(sanitized)) {
+    // Escape any quotes and backslashes in the filename
+    sanitized = sanitized.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return sanitized;
+  }
+
+  // For non-ASCII filenames, provide a fallback and RFC 5987 encoded version
+  const fallback = sanitized.replace(/[^\x20-\x7E]/g, '_').slice(0, 100) || 'download';
+  const encoded = encodeURIComponent(sanitized);
+
+  // Return special marker format that will be handled by buildContentDispositionHeader
+  // Format: "fallback|RFC5987:encoded"
+  return `${fallback}|RFC5987:${encoded}`;
+}
+
+/**
+ * Helper function to build a complete Content-Disposition header value with RFC 5987 support
+ * Handles the special format returned by sanitizeFilenameForHeader for non-ASCII filenames
+ */
+function buildContentDispositionHeader(disposition, sanitizedFilename) {
+  if (sanitizedFilename.includes('|RFC5987:')) {
+    const [fallback, encoded] = sanitizedFilename.split('|RFC5987:');
+    return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+  }
+  return `${disposition}; filename="${sanitizedFilename}"`;
+}
+
+/**
+ * Legacy attachment download route for CollectionFS compatibility
+ * Handles downloads from old CollectionFS structure
+ */
+
+if (Meteor.isServer) {
+  // Handle legacy attachment downloads
+  WebApp.handlers.use('/cfs/files/attachments', async (req, res, next) => {
+    // Downloads only: other methods reached this duplicate route after the
+    // universal file server passed them on (CacheBleed sibling, 2026-10-02).
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const attachmentId = req.url.split('/').pop();
+
+    if (!attachmentId) {
+      res.writeHead(404);
+      res.end('Attachment not found');
+      return;
+    }
+
+    try {
+      // Try to get attachment with backward compatibility
+      const attachment = await getAttachmentWithBackwardCompatibility(attachmentId);
+
+      if (!attachment) {
+        res.writeHead(404);
+        res.end('Attachment not found');
+        return;
+      }
+
+      // Check permissions
+      const board = await ReactiveCache.getBoard(attachment.meta.boardId);
+      if (!board) {
+        res.writeHead(404);
+        res.end('Board not found');
+        return;
+      }
+
+      // Check if user has permission to download
+      // From the REQUEST, not Meteor.userId(): this is a WebApp handler, where
+      // that throws rather than returning null (see server/lib/requestUser.js).
+      const userId = await getUserIdFromRequest(req);
+      // Membership is not enough: an assigned-only member reads only their
+      // own cards' files (AssignedBleed, GHSA-3cgr-47wm-9cc9).
+      if (!canReadBoard(userId, board) ||
+          !(await mayReadBoardAttachment(board, userId, attachment, 'legacy-attachments:download'))) {
+        res.writeHead(403);
+        res.end('Access denied');
+        return;
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Length', attachment.size || 0);
+      // CacheBleed: served after an access check, so never shared-cacheable.
+      require('/models/lib/fileCacheHeaders').setPrivateFileCacheHeaders(res);
+
+      // Treat every browser-executable MIME type like SVG: serve it as an
+      // opaque download under a sandbox, regardless of untrusted stored type.
+      const isSvgFile = attachment.name && attachment.name.toLowerCase().endsWith('.svg');
+      const policy = fileResponsePolicy(attachment.type, isSvgFile);
+      res.setHeader('Content-Type', policy.contentType);
+      res.setHeader('Content-Disposition', buildContentDispositionHeader('attachment', sanitizeFilenameForHeader(attachment.name)));
+      for (const [name, value] of Object.entries(policy.headers)) {
+        res.setHeader(name, value);
+      }
+
+      // Get GridFS stream for legacy attachment
+      const fileStream = await getOldAttachmentStream(attachmentId);
+      // An SVG is sent whole and sanitized - this route always serves a
+      // download, and a saved file opened from the disk must run nothing either.
+      if (fileStream && require('/server/lib/svgResponse').isSvg(attachment.type, attachment.name)) {
+        await require('/server/lib/svgResponse').sendInlineSvg(res, fileStream, {
+          download: true, fileName: attachment.name,
+          downloadHeaders: () => {},
+        });
+        return;
+      }
+      if (fileStream) {
+        res.writeHead(200);
+        fileStream.pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('File not found in GridFS');
+      }
+
+    } catch (error) {
+      console.error('Error serving legacy attachment:', error);
+      res.writeHead(500);
+      res.end('Internal server error');
+    }
+  });
+}

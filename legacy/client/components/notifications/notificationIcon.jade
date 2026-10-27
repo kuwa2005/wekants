@@ -1,0 +1,70 @@
+template(name='notificationIcon')
+  if($in activityType 'deleteAttachment' 'addAttachment')
+    span.activity-type(title="attachment")
+      i.fa.fa-paperclip
+  else if($in activityType 'createBoard' 'importBoard')
+    span.activity-type(title="board")
+      i.fa.fa-folder-open
+
+  else if($in activityType 'createCard' 'importCard' 'moveCard')
+    +cardNotificationIcon
+  else if($in activityType 'moveCardBoard' 'archivedCard' 'restoredCard')
+    +cardNotificationIcon
+    //- $in can only handle up to 3 cases so we have to break this case over 2 cases... use a simple template to keep it
+    //- DRY and consistant
+
+  else if($in activityType 'addChecklist' 'removedChecklist' 'completeChecklist')
+    +checklistNotificationIcon
+  else if($in activityType 'uncompleteChecklist')
+    +checklistNotificationIcon
+    //- $in can only handle up to 3 cases so we have to break this case over 2 cases... use a simple template to keep it
+    //- DRY and consistant
+
+  else if($in activityType 'checkedItem' 'uncheckedItem' 'addChecklistItem' 'removedChecklistItem')
+    span.activity-type(title="checklist item")
+      i.fa.fa-check-square-o
+  else if($in activityType 'addComment')
+    span.activity-type.hidden(title="comment")
+  else if($in activityType 'createCustomField' 'setCustomField' 'unsetCustomField')
+    span.activity-type(title="custom field")
+      i.fa.fa-puzzle-piece
+  else if($in activityType 'addedLabel' 'removedLabel')
+    span.activity-type(title="label")
+      i.fa.fa-tag
+  else if($in activityType 'a-startAt' 'a-receivedAt')
+    span.activity-type(title="date")
+      i.fa.fa-clock-o
+  else if($in activityType 'a-dueAt' 'a-endAt')
+    span.activity-type(title="date")
+      i.fa.fa-clock-o
+
+  else if($in activityType 'createList' 'removeList' 'archivedList')
+    +listNotificationIcon
+  else if($in activityType 'importList')
+    +listNotificationIcon
+    //- $in can only handle up to 3 cases so we have to break this case over 2 cases... use a simple template to keep it
+    //- DRY and consistant
+
+    //- elswhere in the app we use fa-trello to indicate lists...
+    //- i personally like fa-columns a bit better
+  else if($in activityType 'unjoinMember' 'addBoardMember' 'joinMember' 'removeBoardMember')
+    span.activity-type(title="member")
+      i.fa.fa-user
+  else if($in activityType 'createSwimlane' 'archivedSwimlane')
+    span.activity-type(title="swimlane")
+      i.fa.fa-compass
+  else
+    span.activity-type(title="can't find icon for #{activityType}")
+      i.fa.fa-bug
+
+template(name='cardNotificationIcon')
+  span.activity-type(title="card")
+    i.fa.fa-sticky-note-o
+
+template(name='checklistNotificationIcon')
+  span.activity-type(title="checklist")
+    i.fa.fa-list-ul
+
+template(name='listNotificationIcon')
+  span.activity-type(title="list")
+    i.fa.fa-columns

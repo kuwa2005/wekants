@@ -1,0 +1,15 @@
+{
+  "name": "@wekants/wekan-core-node",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "wekan-core-node.node"
+  ],
+  "scripts": {
+    "build": "cargo build -p wekan-core-node --release && node copy-native.mjs"
+  }
+}

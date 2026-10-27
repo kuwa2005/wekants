@@ -1,0 +1,3489 @@
+import { filterSubtasksOf } from '/client/lib/filterSubtasks';
+import { backIfOwnPopup } from '/client/lib/popupBack';
+import { canEditCardDependenciesHere } from '/client/lib/dependencyLayers';
+import { relativeCardSort } from '/client/lib/relativeCardPosition';
+import { Random } from 'meteor/random';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { currentUserWith } from '/client/lib/currentUserWith';
+import { TAPi18n } from '/imports/i18n';
+import { ReactiveDict } from 'meteor/reactive-dict';
+import { FlowRouter } from 'meteor/ostrio:flow-router-extra';
+import { ReactiveVar } from 'meteor/reactive-var';
+import { resolveShowCardLabelText } from '/client/lib/minicardLabelText';
+const { isCardFieldHiddenOnBoard } = require('/models/lib/cardFieldVisibility');
+import { cardBoardView } from '/client/components/cards/cardAddFields';
+import { hasUnreadComments } from '/models/lib/unreadComments';
+import {
+  DEPENDENCY_TYPES,
+  DEPENDENCY_ICON_CHOICES,
+  DEFAULT_DEPENDENCY_COLOR,
+  DEFAULT_DEPENDENCY_ICON,
+} from '/models/metadata/dependencies';
+import { canArchiveCard } from '/client/lib/archivePermission';
+import { isTextSelectionInsideCard } from '/client/lib/cardCloseGuard';
+import { placeCardDetailsX, MARGIN } from '/client/lib/cardDetailsPlacement';
+import { dueFromTitle } from '/client/components/forms/titleDueHint';
+import { riskOf } from '/client/lib/cardRiskOf';
+import { suggestedMembersFor } from '/client/lib/suggestedMembers';
+import '/client/components/cards/similarCards';
+
+// Which dependency the icon picker should apply its choice to. The icon popup's
+// own data context is the dependency row (not the source card), so we capture
+// the source card + target id here when the picker is opened.
+let editingDependencyTargetId = null;
+let editingDependencyCard = null;
+import {
+  setupDatePicker,
+  datePickerRendered,
+  datePickerHelpers,
+} from '/client/lib/datepicker';
+import {
+  formatDateTime,
+  formatDate,
+  formatTime,
+  getISOWeek,
+  isValidDate,
+  isBefore,
+  isAfter,
+  isSame,
+  add,
+  subtract,
+  startOf,
+  endOf,
+  format,
+  parseDate,
+  now,
+  createDate,
+  fromNow,
+  calendar
+} from '/imports/lib/dateUtils';
+import Cards from '/models/cards';
+import Boards from '/models/boards';
+import Checklists from '/models/checklists';
+import Integrations from '/models/integrations';
+import Users from '/models/users';
+import Lists from '/models/lists';
+import CardComments from '/models/cardComments';
+import { ALLOWED_COLORS } from '/config/const';
+import { CARD_RECURRENCE_INTERVALS } from '/models/lib/cardRecurrenceSchedule';
+import { isHexColor, isAllowedCardColor, toHex, contrastText, customColorsInUse } from '/models/lib/contrastColor';
+import { uniqBy } from '/imports/lib/collectionHelpers';
+import { memberTargetBoardId } from '/models/lib/linkedCardMembers';
+import { isSubmitKey } from '/models/lib/editorSubmitKey';
+import { Filter } from '/client/lib/filter';
+import { BoardSwimlaneListCardDialog } from '/client/lib/dialogWithBoardSwimlaneListCard';
+import { handleFileUpload } from './attachments';
+import { InfiniteScrolling } from '/client/lib/infiniteScrolling';
+import {
+  getCurrentCardIdFromContext,
+  getCurrentCardFromContext,
+} from '/client/lib/currentCard';
+import { isLazyCards } from '/client/lib/lazyCards';
+import uploadProgressManager from '../../lib/uploadProgressManager';
+import { CSSEvents } from '/client/lib/cssEvents';
+import { UnsavedEdits } from '/client/lib/unsavedEdits';
+import { EscapeActions } from '/client/lib/escapeActions';
+import { MultiSelection } from '/client/lib/multiSelection';
+import { errorMessage } from '/client/lib/errorMessage';
+import { Utils } from '/client/lib/utils';
+import autosize from 'autosize';
+import { caretClassFor } from '/client/lib/sectionCaret';
+import { restoreArchivedCard } from '/client/components/sidebar/sidebarArchives';
+const { openCardIsUnavailable } = require('/models/lib/openCardPresence');
+
+// Id of the location currently being edited in the cardLocationsPopup; null
+// when adding a new location.
+const editingLocationId = new ReactiveVar(null);
+
+// The "open in map" link builder and the Chinese datum conversions it needs.
+// Shared with Admin Panel, which links the places accounts log in from the same
+// way - models/lib/mapLink.js.
+const { mapLinkFor, GCJ } = require('/models/lib/mapLink');
+
+
+
+// Parse coordinates (and, when present, a place name / address) out of a map
+// link from common providers, grouped by region:
+//   USA:    Google Maps, Bing Maps, Apple Maps, Waze
+//   Europe: OpenStreetMap, HERE WeGo, Yandex Maps, Mapy.cz, 2GIS
+//   Asia:   Baidu Maps, Amap (Gaode)
+// plus generic `?q=lat,lon` / `?ll=lat,lon` links. Returns whatever it can find
+// as { latitude, longitude, name, address }.
+function parseMapLink(url) {
+  const result = {};
+  if (!url) return result;
+  const s = String(url).trim();
+
+  let lat;
+  let lon;
+  const setCoords = (la, lo) => {
+    if (lat !== undefined) return;
+    const a = parseFloat(la);
+    const o = parseFloat(lo);
+    if (!isNaN(a) && !isNaN(o) && Math.abs(a) <= 90 && Math.abs(o) <= 180) {
+      lat = a;
+      lon = o;
+    }
+  };
+
+  const N = '(-?\\d+(?:\\.\\d+)?)';
+  // Coordinates are matched against a normalized copy where percent-encoded
+  // commas/slashes are decoded, since copied URLs often arrive as `%2C`/`%2F`
+  // (e.g. Waze `ll=45.69%2C-120.81`, Yandex `ll=37.6%2C55.7`).
+  const sd = s.replace(/%2c/gi, ',').replace(/%2f/gi, '/');
+  let m;
+  // Provider-specific forms that use lon,lat order must be handled before the
+  // generic lat,lon patterns below, since setCoords keeps only the first match.
+  // Yandex Maps: ?ll=<lon>,<lat> or ?pt=<lon>,<lat>[,style]
+  if (/yandex\./i.test(sd) && (m = sd.match(new RegExp(`[?&](?:ll|pt)=${N},${N}`)))) setCoords(m[2], m[1]);
+  // Mapy.cz: ?x=<lon>&y=<lat>
+  if (/mapy\./i.test(sd) && (m = sd.match(new RegExp(`[?&]y=${N}`)))) {
+    const mx = sd.match(new RegExp(`[?&]x=${N}`));
+    if (mx) setCoords(m[1], mx[1]);
+  }
+  // 2GIS: /geo/<lon>,<lat> or ?m=<lon>,<lat>[/zoom]
+  if (/2gis\./i.test(sd) && (m = sd.match(new RegExp(`(?:/geo/|[?&]m=)${N},${N}`)))) setCoords(m[2], m[1]);
+  // Amap (Gaode): ?position=<lon>,<lat> in GCJ-02 datum -> WGS-84.
+  if (/amap\./i.test(sd) && (m = sd.match(new RegExp(`[?&]position=${N},${N}`)))) {
+    const [wLat, wLon] = GCJ.gcj2wgs(parseFloat(m[2]), parseFloat(m[1]));
+    setCoords(wLat, wLon);
+  }
+  // Baidu Maps: ?location=<lat>,<lon> in BD-09 datum -> WGS-84.
+  if (/baidu\./i.test(sd) && (m = sd.match(new RegExp(`[?&]location=${N},${N}`)))) {
+    const [wLat, wLon] = GCJ.bd2wgs(parseFloat(m[1]), parseFloat(m[2]));
+    setCoords(wLat, wLon);
+  }
+  // HERE WeGo: ?map=<lat>,<lon>,<zoom> or share path /l/<lat>,<lon>
+  if (/here\./i.test(sd) && (m = sd.match(new RegExp(`(?:[?&]map=|/l/)${N},${N}`)))) setCoords(m[1], m[2]);
+  // Google Maps place marker in the data part: !3d<lat>!4d<lon> (most precise).
+  if ((m = sd.match(new RegExp(`!3d${N}!4d${N}`)))) setCoords(m[1], m[2]);
+  // Google Maps view/place: @<lat>,<lon>
+  if ((m = sd.match(new RegExp(`@${N},${N}`)))) setCoords(m[1], m[2]);
+  // OpenStreetMap marker: ?mlat=..&mlon=..
+  if ((m = sd.match(new RegExp(`[?&#]mlat=${N}`)))) {
+    const mlon = sd.match(new RegExp(`[?&#]mlon=${N}`));
+    if (mlon) setCoords(m[1], mlon[1]);
+  }
+  // OpenStreetMap map hash: #map=z/lat/lon
+  if ((m = sd.match(new RegExp(`[#&]map=\\d+(?:\\.\\d+)?/${N}/${N}`)))) setCoords(m[1], m[2]);
+  // Bing Maps: cp=lat~lon
+  if ((m = sd.match(new RegExp(`[?&]cp=${N}~${N}`)))) setCoords(m[1], m[2]);
+  // Apple Maps / Waze and generic ll=lat,lon
+  if ((m = sd.match(new RegExp(`[?&]ll=${N},${N}`)))) setCoords(m[1], m[2]);
+  // Generic q=lat,lon (Google/Apple query form)
+  if ((m = sd.match(new RegExp(`[?&]q=${N},${N}`)))) setCoords(m[1], m[2]);
+  // Generic center=lat,lon
+  if ((m = sd.match(new RegExp(`[?&]center=${N},${N}`)))) setCoords(m[1], m[2]);
+  // A coordinate pair copied directly from a map or GPS application. Anchor
+  // the complete input so unrelated prose containing two numbers is not
+  // silently treated as a location.
+  if ((m = sd.match(new RegExp(`^\\s*${N}\\s*,\\s*${N}\\s*$`)))) {
+    setCoords(m[1], m[2]);
+  }
+
+  if (lat !== undefined) {
+    result.latitude = lat;
+    result.longitude = lon;
+  }
+
+  const decode = (raw) => {
+    try {
+      return decodeURIComponent(raw.replace(/\+/g, ' ')).trim();
+    } catch (e) {
+      return raw.replace(/\+/g, ' ').trim();
+    }
+  };
+  const isCoordText = (t) => /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(t);
+
+  // Place name from Google Maps /place/<Name>/
+  if ((m = s.match(/\/place\/([^/@?]+)/))) {
+    const name = decode(m[1]);
+    if (name && !isCoordText(name)) result.name = name;
+  }
+  // Address from a textual q=/query=/destination= parameter.
+  if ((m = s.match(/[?&](?:q|query|destination)=([^&]+)/))) {
+    const q = decode(m[1]);
+    if (q && !isCoordText(q)) result.address = q;
+  }
+
+  return result;
+}
+
+
+// SubsManager removed for Meteor 3 migration
+const { calculateIndexData } = Utils;
+
+function getCardId() {
+  return getCurrentCardIdFromContext();
+}
+
+function getBoardBodyInstance() {
+  const boardBodyEl = document.querySelector('.board-body');
+  if (boardBodyEl) {
+    const view = Blaze.getView(boardBodyEl);
+    if (view && view.templateInstance) return view.templateInstance();
+  }
+  return null;
+}
+
+function getCardDetailsElement(cardId) {
+  if (!cardId) {
+    return null;
+  }
+
+  const cardDetailsElements = document.querySelectorAll('.js-card-details');
+  for (const element of cardDetailsElements) {
+    if (Blaze.getData(element)?._id === cardId) {
+      return element;
+    }
+  }
+
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// #6465: dock the desktop card-details window BESIDE the minicard it was opened
+// from, on whichever side has more room, and always fully inside the viewport.
+//
+// The window used to cover the middle of the board; docking it to the end edge
+// stopped that but left it nowhere near its card — open a card in the first list
+// of a wide board and its details are a screen away. The decision is
+// client/lib/cardDetailsPlacement.js; this is the DOM half.
+//
+// X ONLY. The Y geometry — the staggered `top` and the `bottom: 8px` that makes
+// the window full height — is already right, so `top`, `bottom` and `height` are
+// never written here.
+//
+// The one Y side effect that has to be paid for: the stylesheet's default-
+// position rule is `:not([style*="left"]):not([style*="top"])`, so writing an
+// inline `left` switches it off — and it carried the `top` for any window past
+// the five staggered `nth-of-type` rules. cardDetails.css restores exactly that
+// `top` for anchored windows, ahead of the stagger so cards 1-5 keep theirs.
+// ────────────────────────────────────────────────────────────────────────────
+
+// Set on the element once the user drags the window: from then on it stays where
+// they put it, and only the viewport clamp still applies.
+const USER_MOVED_ATTR = 'data-wekan-user-moved';
+
+function markCardDetailsUserMoved($card) {
+  const el = $card && $card.get(0);
+  if (el) el.setAttribute(USER_MOVED_ATTR, '1');
+}
+
+function anchorCardDetailsX(el) {
+  if (!el || !el.isConnected) return;
+
+  // Only the desktop floating window is placed here. The popup form (Board Table
+  // view, search results, mini-screen lists) and the mini-screen full-screen card
+  // have their own geometry, and the maximized window's insets are !important, so
+  // writing inline styles for it would be a silent no-op at best.
+  if (!document.body.classList.contains('desktop-mode')) return;
+  if (el.classList.contains('card-details-popup')) return;
+  if (el.classList.contains('card-details-maximized')) return;
+
+  const rect = el.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+
+  // A window the user dragged stays where they put it: only the "must be in the
+  // visible area" half still applies, so a viewport that shrank cannot leave it
+  // hanging off the edge. Its width is left alone — the drag did not change it.
+  if (el.getAttribute(USER_MOVED_ATTR) === '1') {
+    const maxLeft = viewportWidth - MARGIN - rect.width;
+    const left = Math.min(Math.max(rect.left, MARGIN), Math.max(MARGIN, maxLeft));
+    if (Math.round(left) !== Math.round(rect.left)) {
+      el.style.left = `${Math.round(left)}px`;
+      el.style.right = 'auto';
+    }
+    return;
+  }
+
+  const cardId = Blaze.getData(el)?._id;
+  const minicard = cardId
+    ? document.querySelector(`.js-minicard[data-card-id="${cardId}"]`)
+    : null;
+  // Nothing to anchor to — the card was opened from a URL or from search, or its
+  // list is scrolled out of view. Leave the stylesheet's dock alone.
+  if (!minicard) return;
+
+  // Hand the geometry back to the stylesheet before measuring, so what is
+  // measured is the width the stylesheet WANTS rather than whatever this function
+  // wrote last time. Without it, a run on a narrow viewport would clamp the width
+  // and every later run would re-measure that clamp, so widening the browser
+  // again would never give the window its full width back. Nothing is painted
+  // between the reset and the write below, so there is nothing to see.
+  el.style.left = '';
+  el.style.right = '';
+  el.style.width = '';
+
+  const placement = placeCardDetailsX({
+    anchor: minicard.getBoundingClientRect(),
+    panelWidth: el.getBoundingClientRect().width,
+    viewportWidth,
+    rtl: document.documentElement.dir === 'rtl',
+  });
+  if (!placement) return;
+
+  // `right: auto` because the stylesheet docks the window with an
+  // inset-inline-end, and an explicit width because the rule that carried the
+  // width is the one this inline `left` switches off.
+  el.style.left = `${placement.left}px`;
+  el.style.right = 'auto';
+  el.style.width = `${placement.width}px`;
+}
+
+// Every open window, re-placed. Used on resize: the request is that the card is
+// in the visible area, and a viewport that shrank is the other way to lose it.
+function anchorAllCardDetailsX() {
+  document
+    .querySelectorAll('.card-details:not(.card-details-popup)')
+    .forEach(anchorCardDetailsX);
+}
+
+let cardDetailsResizeBound = false;
+function bindCardDetailsResize() {
+  if (cardDetailsResizeBound || typeof window === 'undefined') return;
+  cardDetailsResizeBound = true;
+  let scheduled = false;
+  window.addEventListener('resize', () => {
+    // Coalesced into one frame: a drag-resize of the browser window fires this
+    // continuously, and each run measures layout.
+    if (scheduled) return;
+    scheduled = true;
+    window.requestAnimationFrame(() => {
+      scheduled = false;
+      anchorAllCardDetailsX();
+    });
+  });
+}
+
+Template.cardDetails.onCreated(function () {
+  this.currentBoard = Utils.getCurrentBoard();
+  this.isLoaded = new ReactiveVar(false);
+  this.infiniteScrolling = new InfiniteScrolling();
+  const openedCardId = this.data?._id;
+  const openedBoardId = this.data?.boardId;
+  const cardSubscription = openedCardId ? this.subscribe('card', openedCardId) : null;
+
+  // #3114: another client can delete/archive this card or move it to another
+  // board. Minimongo then removed the data while the mobile details view kept
+  // rendering an empty shell. Observe the card that created this instance and
+  // close every way it can be open as soon as it no longer belongs here.
+  this.autorun(() => {
+    if (!openedCardId || !openedBoardId) return;
+    // A same-tab card link can render the details before the destination card
+    // publication arrives. Only a ready subscription can prove it is gone.
+    if (!cardSubscription?.ready()) return;
+    const card = ReactiveCache.getCard(openedCardId);
+    if (!openCardIsUnavailable(card, openedBoardId)) return;
+
+    Session.set(
+      'openCards',
+      (Session.get('openCards') || []).filter(id => id !== openedCardId),
+    );
+    if (Session.get('currentCard') === openedCardId) {
+      Session.set('currentCard', null);
+    }
+    if (Session.get('popupCardId') === openedCardId) {
+      Session.set('popupCardId', null);
+      Session.set('popupCardBoardId', null);
+      Popup.close();
+    }
+
+    const routeCardId = FlowRouter.current()?.params?.cardId;
+    if (routeCardId === openedCardId) {
+      Utils.goBoardId(openedBoardId);
+    }
+  });
+
+  // #6686: a sub-popup opened from this card (Labels, Members, ...) is a
+  // global singleton (client/lib/popup.js) that is not tied to this card
+  // details instance. Closing this card, or switching to another card,
+  // destroys this template instance without ever calling Popup.close()/back(),
+  // so the popup stayed open and, when re-opened on the next card, could still
+  // be operating on the closed card's stale data. Remember which card this
+  // instance was opened for so onDestroyed (below) can close a popup that is
+  // still showing this card's data.
+  this.openedCardId = openedCardId;
+
+  // #3078: opening a card is what clears its minicard "unread comments"
+  // highlight - reusing this existing open trigger rather than a new
+  // tracking mechanism. Record the current user's own last-viewed
+  // timestamp for this card; see models/users.js setCardLastViewed and the
+  // minicard helper in client/components/cards/minicard.js.
+  if (openedCardId) {
+    const currentUser = ReactiveCache.getCurrentUser();
+    if (currentUser) {
+      currentUser.setCardLastViewed(openedCardId);
+    }
+  }
+
+  const boardBody = getBoardBodyInstance();
+  if (boardBody !== null) {
+    // Only show overlay in mobile mode, not in desktop mode
+    const isMobile = Utils.getMobileMode();
+    if (isMobile) {
+      boardBody.showOverlay.set(true);
+    }
+    boardBody.mouseHasEnterCardDetails = false;
+  }
+
+  this.calculateNextPeak = () => {
+    const cardElement = this.find('.js-card-details');
+    if (cardElement) {
+      const altitude = cardElement.scrollHeight;
+      this.infiniteScrolling.setNextPeak(altitude);
+    }
+  };
+
+  this.reachNextPeak = () => {
+    const activitiesEl = this.find('.activities');
+    if (activitiesEl) {
+      const view = Blaze.getView(activitiesEl);
+      if (view && view.templateInstance) {
+        const activitiesTpl = view.templateInstance();
+        if (activitiesTpl && activitiesTpl.loadNextPage) {
+          activitiesTpl.loadNextPage();
+        }
+      }
+    }
+  };
+
+  // #6745: the template's own subscription, stopped when the card closes. A
+  // bare Meteor.subscribe here is in no computation, so nothing ever stopped
+  // it: every card open added one more live 'unsaved-edits' publication.
+  this.subscribe('unsaved-edits');
+
+  // Surface legacy CollectionFS attachments for the current board so they show
+  // up in the card's attachment gallery and can be read in place (without
+  // migrating them to Meteor-Files first).
+  // #6745: only this card's legacy attachments, not the whole board's.
+  this.autorun(() => {
+    const boardId = Utils.getCurrentBoardId();
+    const data = Template.currentData();
+    const cardId = data && data._id;
+    if (boardId && cardId) {
+      Meteor.subscribe('legacyBoardAttachments', boardId, cardId);
+    }
+  });
+
+  // In lazy (windowed) card loading the board/window publications only ship the
+  // children of cards in the visible window, so an open card that scrolled out of
+  // — or was just added to — a window could miss its own comments/attachments/
+  // checklists. Subscribe to the open card's OWN live children so the card detail
+  // is always complete and reactive, independent of the window (#6480). No-op in
+  // 'all' mode, where the board publication already ships everything.
+  this.autorun(() => {
+    const cardId = Session.get('currentCard');
+    if (cardId && isLazyCards()) {
+      Meteor.subscribe('openCardData', cardId);
+    }
+  });
+});
+
+Template.cardDetails.onRendered(function () {
+  // A reactive re-render (e.g. a card moving between the inline swimlane render
+  // and the draggable openCards popup) can create and then remove this instance
+  // within the same flush. If our DOM range is already gone, calling this.$()
+  // below throws "Can't select in removed DomRange", so bail out early.
+  if (this.view && this.view.isDestroyed) return;
+
+  // #6465: place the window beside its minicard (X only) once it has been laid
+  // out, so the width measured here is the one the stylesheet gave it.
+  const $cardDetails = this.$('.card-details').first();
+  if ($cardDetails.length) {
+    Tracker.afterFlush(() => {
+      const element = $cardDetails.get(0);
+      try {
+        anchorCardDetailsX(element);
+      } finally {
+        // The desktop window must never paint at the stylesheet's fallback
+        // dock before its minicard-relative geometry has been measured.
+        element.classList.remove('card-details-position-pending');
+      }
+    });
+  }
+  bindCardDetailsResize();
+
+  this.calculateNextPeak();
+  if (Meteor.settings.public.CARD_OPENED_WEBHOOK_ENABLED) {
+    // Send Webhook but not create Activities records ---
+    const card = Template.currentData();
+    const userId = Meteor.userId();
+    const params = {
+      userId,
+      cardId: card._id,
+      boardId: card.boardId,
+      listId: card.listId,
+      user: ReactiveCache.getCurrentUser().username,
+      url: '',
+    };
+
+    const integrations = ReactiveCache.getIntegrations({
+      boardId: { $in: [card.boardId, Integrations.Const.GLOBAL_WEBHOOK_ID] },
+      enabled: true,
+      activities: { $in: ['CardDetailsRendered', 'all'] },
+    });
+
+    if (integrations.length > 0) {
+      integrations.forEach((integration) => {
+        Meteor.call(
+          'outgoingWebhooks',
+          integration,
+          'CardSelected',
+          params,
+          () => { },
+        );
+      });
+    }
+    //-------------
+  }
+
+  const $checklistsDom = this.$('.card-checklist-items');
+
+  $checklistsDom.sortable({
+    tolerance: 'pointer',
+    helper: 'clone',
+    handle: '.checklist-title',
+    items: '.js-checklist',
+    placeholder: 'checklist placeholder',
+    distance: 7,
+    start(evt, ui) {
+      ui.placeholder.height(ui.helper.height());
+      EscapeActions.clickExecute(evt.target, 'inlinedForm');
+    },
+    stop(evt, ui) {
+      let prevChecklist = ui.item.prev('.js-checklist').get(0);
+      if (prevChecklist) {
+        prevChecklist = Blaze.getData(prevChecklist).checklist;
+      }
+      let nextChecklist = ui.item.next('.js-checklist').get(0);
+      if (nextChecklist) {
+        nextChecklist = Blaze.getData(nextChecklist).checklist;
+      }
+      const sortIndex = calculateIndexData(prevChecklist, nextChecklist, 1);
+
+      $checklistsDom.sortable('cancel');
+      const checklist = Blaze.getData(ui.item.get(0)).checklist;
+
+      Checklists.update(checklist._id, {
+        $set: {
+          sort: sortIndex.base,
+        },
+      });
+    },
+  });
+
+  const $subtasksDom = this.$('.card-subtasks-items');
+
+  $subtasksDom.sortable({
+    tolerance: 'pointer',
+    helper: 'clone',
+    handle: '.subtask-title',
+    items: '.js-subtasks',
+    placeholder: 'subtasks placeholder',
+    distance: 7,
+    start(evt, ui) {
+      ui.placeholder.height(ui.helper.height());
+      EscapeActions.executeUpTo('popup-close');
+    },
+    stop(evt, ui) {
+      let prevSubtask = ui.item.prev('.js-subtasks').get(0);
+      if (prevSubtask) {
+        prevSubtask = Blaze.getData(prevSubtask).subtask;
+      }
+      let nextSubtask = ui.item.next('.js-subtasks').get(0);
+      if (nextSubtask) {
+        nextSubtask = Blaze.getData(nextSubtask).subtask;
+      }
+      const sortIndex = calculateIndexData(prevSubtask, nextSubtask, 1);
+
+      $subtasksDom.sortable('cancel');
+      const subtask = Blaze.getData(ui.item.get(0)).subtask;
+
+      Cards.updateAsync(subtask._id, {
+        $set: {
+          sort: sortIndex.base,
+        },
+      });
+    },
+  });
+
+  function userIsMember() {
+    return ReactiveCache.getCurrentUser()?.isBoardMember();
+  }
+
+  // Disable sorting if the current user is not a board member
+  this.autorun(() => {
+    const disabled = !userIsMember();
+    if (
+      $checklistsDom.data('uiSortable') ||
+      $checklistsDom.data('sortable')
+    ) {
+      $checklistsDom.sortable('option', 'disabled', disabled || !Utils.canDragBoardObject('checklist'));
+      if (Utils.isTouchScreenOrShowDesktopDragHandles()) {
+        $checklistsDom.sortable({ handle: '.checklist-handle' });
+      }
+    }
+    if ($subtasksDom.data('uiSortable') || $subtasksDom.data('sortable')) {
+      $subtasksDom.sortable('option', 'disabled', disabled || !Utils.canDragBoardObject('subtask'));
+    }
+  });
+});
+
+Template.cardDetails.onDestroyed(function () {
+  const boardBody = getBoardBodyInstance();
+  if (boardBody !== null) {
+    boardBody.showOverlay.set(false);
+  }
+
+  // #6686: see the comment in onCreated above. Only close a popup that is
+  // still showing THIS card's data at the base of its stack - a popup opened
+  // for an unrelated card/context must not be touched.
+  const openedCardId = this.openedCardId;
+  if (openedCardId && Popup.isOpen()) {
+    const baseStackEntry = Popup._stack?.[0];
+    if (baseStackEntry?.dataContext?._id === openedCardId) {
+      Popup.close();
+    }
+  }
+
+  // #2111 / #1604: closing the card counts as having seen it, so the
+  // member's own edits made while it was open do not mark it unread.
+  if (this.openedCardId) {
+    const closingUser = ReactiveCache.getCurrentUser();
+    if (closingUser && closingUser.profile && closingUser.profile.unreadChangesSince) {
+      closingUser.setCardLastViewed(this.openedCardId);
+    }
+  }
+});
+
+// The following are used from one of the cardFieldSection* templates
+// (cardDetails.jade), cardDetailsActionsPopup, or activities.jade - each a
+// SEPARATE template from cardDetails, where a template-local helper
+// (Template.cardDetails.helpers) is invisible, exactly like isDateFormat
+// above. Registered globally so every template that needs them can see
+// them.
+// Board Settings / Card, Show on Card (2026-10-02): the opened card's side of
+// the rows that were only on the minicard. Global helpers, like the others
+// here, because each section of the card is a template of its own.
+Template.registerHelper('hiddenCardLabelText', function hiddenCardLabelText() {
+  return !resolveShowCardLabelText(Utils.getCurrentBoard());
+});
+Template.registerHelper('cardCommentCountShown', function cardCommentCountShown() {
+  const board = Utils.getCurrentBoard();
+  if (!board || board.allowsCommentCountOnCard !== true || typeof this.comments !== 'function') return null;
+  const comments = this.comments();
+  const count = Array.isArray(comments) ? comments.length : (comments && comments.count ? comments.count() : 0);
+  return count || null;
+});
+Template.registerHelper('cardHasUnreadComments', function cardHasUnreadComments() {
+  if (!this._id) return false;
+  const user = currentUserWith([`profile.cardLastViews.${this._id}`]);
+  if (!user) return false;
+  const comments = ReactiveCache.getCardComments({ cardId: this._id }) || [];
+  return comments.length > 0 && hasUnreadComments(comments, user.getCardLastViewedAt(this._id));
+});
+Template.registerHelper('cardListTitle', function cardListTitle() {
+  const list = typeof this.list === 'function' ? this.list() : null;
+  return list && list.title;
+});
+Template.registerHelper('cardSwimlaneTitle', function cardSwimlaneTitle() {
+  const swimlane = typeof this.swimlane === 'function' ? this.swimlane() : null;
+  return swimlane && swimlane.title;
+});
+
+// The Custom Fields section: on a card that has a custom field value, or that
+// ticked Custom Fields in "+ Add" (docs/Features/Cards/Card-Fields.md) - not on
+// every card, where it was an empty heading. "+ Add" is how a card with none
+// gets the section, and its hamburger then adds the fields.
+Template.registerHelper('canShowCustomFieldsOnCard', function canShowCustomFieldsOnCard() {
+  const { cardShowsField } = require('/client/components/cards/cardAddFields');
+  const board = this?.board?.();
+  return Utils.canModifyCard(this) && board?.allowsCustomFields !== false && cardShowsField(this, 'customFields');
+});
+
+Template.registerHelper('stickers', function stickers() {
+  const card = Template.currentData();
+  return card && typeof card.getStickers === 'function' ? card.getStickers() : [];
+});
+
+Template.registerHelper('isWatching', function isWatching() {
+  const card = Template.currentData();
+  if (!card || typeof card.findWatcher !== 'function') return false;
+  const realCard = typeof card.getRealCard === 'function' ? card.getRealCard() : card;
+  return realCard.findWatcher(Meteor.userId());
+});
+
+// #6081: number of times this card's due date has been changed, for
+// accountability. Returns 0 when unavailable so the template can hide it.
+Template.registerHelper('dueDateChangeCount', function dueDateChangeCount() {
+  const card = Template.currentData();
+  if (!card || typeof card.getDueDateChangeCount !== 'function') return 0;
+  return card.getDueDateChangeCount();
+});
+
+// Returns the card's locations (multiple supported), each enriched with the
+// coordinate flag and OpenStreetMap link used by the template.
+Template.registerHelper('getLocations', function getLocations() {
+  const card = Template.currentData();
+  if (!card || !card.getLocations) return [];
+  const user = ReactiveCache.getCurrentUser();
+  const provider = user ? user.getMapProvider() : 'openstreetmap';
+  return card.getLocations().map(loc => {
+    const hasCoordinates =
+      typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
+    const mapUrl = hasCoordinates
+      ? mapLinkFor(provider, loc.latitude, loc.longitude)
+      : '';
+    return { ...loc, hasCoordinates, mapUrl };
+  });
+});
+
+// #3392: PI Program Board "Red Strings". Resolve this card's dependencies
+// into card objects (with relation type, color, icon and a relative link).
+Template.registerHelper('getDependencyCards', function getDependencyCards() {
+  const card = Template.currentData();
+  if (!card || typeof card.getDependencies !== 'function') return [];
+  return card
+    .getDependencies()
+    .map(dep => {
+      const target = ReactiveCache.getCard(dep.cardId);
+      if (!target) return null;
+      return {
+        card: target,
+        linkUrl: target.originRelativeUrl(),
+        type: dep.type,
+        color: dep.color,
+        icon: dep.icon,
+        typeLabel: `dependency-type-${dep.type}`,
+        // Per-row relation-type dropdown options with the current one marked.
+        typeOption: DEPENDENCY_TYPES.map(t => ({
+          id: t.id,
+          label: `dependency-type-${t.id}`,
+          selected: t.id === dep.type,
+        })),
+      };
+    })
+    .filter(Boolean);
+});
+
+Template.registerHelper('customFieldsGrid', function customFieldsGrid() {
+  return ReactiveCache.getCurrentUser().hasCustomFieldsGrid();
+});
+
+Template.registerHelper('showActivities', function showActivities() {
+  const card = Template.currentData();
+  const realCard = card && typeof card.getRealCard === 'function'
+    ? card.getRealCard()
+    : card;
+  return realCard && realCard.showActivities;
+});
+
+Template.registerHelper('showVotingButtons', function showVotingButtons() {
+  const card = Template.currentData();
+  // #6420: currentUser was referenced but never defined here, so the helper
+  // threw "ReferenceError: currentUser is not defined" on every card render and
+  // the voting buttons disappeared. Define it and guard the board-member call.
+  const currentUser = ReactiveCache.getCurrentUser();
+  return (
+    currentUser &&
+    (currentUser.isBoardMember() || card.voteAllowNonBoardMembers()) &&
+    !card.expiredVote()
+  );
+});
+
+Template.registerHelper('showPlanningPokerButtons', function showPlanningPokerButtons() {
+  const card = Template.currentData();
+  // #6420: same as showVotingButtons — currentUser was undefined here.
+  const currentUser = ReactiveCache.getCurrentUser();
+  return (
+    currentUser &&
+    (currentUser.isBoardMember() || card.pokerAllowNonBoardMembers()) &&
+    !card.expiredPoker()
+  );
+});
+
+Template.registerHelper('currentSwimlaneListsSorted', function currentSwimlaneListsSorted() {
+  const card = Template.currentData();
+  if (!card || !card.boardId) return [];
+  const board = ReactiveCache.getBoard(card.boardId);
+  if (!board) return [];
+  const swimlaneId = card.swimlaneId;
+  const selector = { boardId: card.boardId, archived: false };
+  if (swimlaneId) {
+    // Board-wide lists have no swimlaneId. They are shared by EVERY
+    // swimlane, not only by the first/default one. Restricting this fallback
+    // to the default swimlane made the List chooser (and move/copy chooser)
+    // empty for valid cards in every later swimlane (#6614/#6618).
+    selector.swimlaneId = { $in: [swimlaneId, null, ''] };
+  }
+  return ReactiveCache.getLists(selector, { sort: { sort: 1 } });
+});
+
+Template.registerHelper('isCurrentListId', function isCurrentListId(listId) {
+  let data = Template.currentData();
+  if (!data || typeof data.listId === 'undefined') {
+    data = Template.parentData(1);
+  }
+  if (!data || typeof data.listId === 'undefined') return false;
+  return data.listId == listId;
+});
+
+// #4448: the fields INSIDE a reorderable section (the four dates, the people
+// of Members, ...) render in the board's order too. One argument-less helper
+// per section, registered globally like isDateFormat above because each
+// section is its own template. The card is the data context (`each field in`
+// keeps it), so `this.board()` is the board. models/lib/cardFieldOrder.js
+{
+  const { orderedCardFieldsOf } = require('/models/lib/cardFieldOrder');
+  const sectionHelper = section => function orderedFields() {
+    const board = this?.board?.();
+    return orderedCardFieldsOf(board?.cardFieldOrder, section);
+  };
+  Template.registerHelper('orderedLabelsFields', sectionHelper('labels'));
+  Template.registerHelper('orderedDatesFields', sectionHelper('dates'));
+  Template.registerHelper('orderedMembersFields', sectionHelper('members'));
+  Template.registerHelper('orderedSortFields', sectionHelper('sort'));
+  Template.registerHelper('orderedVoteAndPokerFields', sectionHelper('voteAndPoker'));
+}
+
+// The card's sections in the board's order, less the Scrum fields this card
+// does not show - a Scrum field is its own section with no board flag in the
+// template to read (docs/Features/Cards/Card-Fields.md).
+function orderedSectionsOf(card) {
+  const board = card?.board?.();
+  let sections;
+  if (board && typeof board.getCardFieldOrder === 'function') {
+    sections = board.getCardFieldOrder();
+  } else {
+    const { applyCardFieldOrder } = require('/models/lib/cardFieldOrder');
+    sections = applyCardFieldOrder(board?.cardFieldOrder);
+  }
+  const { cardShowsField } = require('/client/components/cards/cardAddFields');
+  return sections.filter(s => !/^scrum[A-Z]/.test(s) || cardShowsField(card, s));
+}
+
+Template.cardFieldSectionSort.helpers({
+  // The card's own view of the board (docs/Features/Cards/Card-Fields.md), as
+  // the fields inside read it: reading the board itself drew the group's rule
+  // for fields the card does not show - an empty group, and a second line
+  // under "+ Add".
+  hasVisibleSortFields() {
+    const board = cardBoardView(this);
+    return !!(board && (
+      board.allowsCardSortingByNumber || board.allowsShowLists ||
+      board.allowsFlowtime || board.allowsPomodoro ||
+      // The card's own view already says whether Spent time is shown: with
+      // hours, or ticked "On this card" to be filled in.
+      board.allowsSpentTime
+    ));
+  },
+});
+
+Template.cardDetails.helpers({
+  // The cover image's session query, as the minicard has it (the
+  // Meteor-Files workaround for veliovgroup/Meteor-Files#763).
+  sess() {
+    return Meteor.connection && Meteor.connection._lastSessionId
+      ? Meteor.connection._lastSessionId
+      : null;
+  },
+  // #4448: the order the reorderable card-detail sections (Labels, Dates,
+  // Members, Dependencies, Sort, Custom Fields, Vote/Poker, Description)
+  // render in, resolved from the board's stored setting - the section order
+  // of the flat field order Board Settings / Card writes.
+  // models/lib/cardFieldOrder.js
+  orderedCardFieldSections() {
+    return orderedSectionsOf(this);
+  },
+  // The first Scrum field this card shows: where the one "Scrum settings"
+  // heading goes, over all of them (docs/Features/Cards/Card-Fields.md).
+  firstScrumSection() {
+    return orderedSectionsOf(this).find(s => /^scrum[A-Z]/.test(s)) || null;
+  },
+
+  cardMaximized() {
+    const currentUser = ReactiveCache.getCurrentUser();
+    const maximized = currentUser
+      ? currentUser.hasCardMaximized()
+      : window.localStorage.getItem('cardMaximized') === 'true';
+    return !Utils.getPopupCardId() && maximized;
+  },
+
+  // List title, Show on Card: the card's own choice, unless the
+  // administrator unticked List title in Admin Panel / Settings / Visibility /
+  // Features (models/lib/cardFieldVisibility.js). The card keeps its choice.
+  showListOnCard() {
+    const board = this?.board?.();
+    return Boolean(this?.showListOnCard) && !isCardFieldHiddenOnBoard(board, 'listTitle');
+  },
+  // Card color, Show on Card: the header's color, on unless turned off.
+  showCardColorOnCard() {
+    return Utils.getCurrentBoard()?.allowsCardColorOnCard !== false;
+  },
+  // Collapse, Show on Card: the header's collapse caret, on unless turned off.
+  allowsCardCollapse() {
+    return Utils.getCurrentBoard()?.allowsCardCollapse !== false;
+  },
+  // Labels title, Show on Card: the labels above the title, as on a minicard.
+  showLabelsAboveTitleOnCard() {
+    return Utils.getCurrentBoard()?.labelsAboveTitleOnCard === true;
+  },
+  // ...as long as the board shows labels at all.
+  labelsShownAboveTitle() {
+    return Utils.getCurrentBoard()?.allowsLabels !== false;
+  },
+  cardCollapsed() {
+    // A board that turned the caret off has no collapsed cards.
+    if (Utils.getCurrentBoard()?.allowsCardCollapse === false) return false;
+    const user = ReactiveCache.getCurrentUser();
+    if (user && user.profile) {
+      return !!user.profile.cardCollapsed;
+    }
+    if (Users.getPublicCardCollapsed) {
+      const stored = Users.getPublicCardCollapsed();
+      if (typeof stored === 'boolean') return stored;
+    }
+    return false;
+  },
+
+  presentParentTask() {
+    const tpl = Template.instance();
+    let result = tpl.currentBoard.presentParentTask;
+    if (result === null || result === undefined) {
+      result = 'no-parent';
+    }
+    return result;
+  },
+
+  linkForCard() {
+    const card = Template.currentData();
+    let result = '#';
+    if (card) {
+      const board = ReactiveCache.getBoard(card.boardId);
+      if (board) {
+        result = FlowRouter.path('card', {
+          boardId: card.boardId,
+          slug: board.slug,
+          cardId: card._id,
+        });
+      }
+    }
+    return result;
+  },
+
+  isVerticalScrollbars() {
+    const user = ReactiveCache.getCurrentUser();
+    return user && user.isVerticalScrollbars();
+  },
+
+  checklistSectionOpen() {
+    return ReactiveCache.getBoard(this.boardId)?.allowsChecklistTitle === false || isCardSectionOpen('checklists');
+  },
+
+  isLoaded() {
+    return Template.instance().isLoaded;
+  },
+});
+
+// WHICH SECTIONS OF A CARD ARE OPEN.
+//
+// Every section of an opened card - Labels, Date Format, Members, Dependencies,
+// Sort, Custom Fields, Description, Checklists, Subtasks, Attachments, Comments
+// and Activities - carries a caret that collapses it, and one rule above it.
+// Before this there was one caret for the whole card and an EYE on Activities
+// that showed and hid exactly what a caret would: two controls for one idea,
+// able to disagree with each other.
+//
+// The state is module-level, so it survives closing and reopening a card in the
+// same session: somebody who works with the description collapsed wants it
+// collapsed on the next card too, not just on this one.
+//
+// ACTIVITIES starts CLOSED and everything else open. A card is opened to read
+// the card; its history is the thing you go looking for.
+const CARD_SECTIONS = [
+  'labels', 'date-format', 'members', 'dependencies', 'sort', 'custom-fields',
+  'description', 'checklists', 'subtasks', 'attachments', 'comments', 'activities',
+];
+const COLLAPSED_BY_DEFAULT = ['activities'];
+
+const cardSectionState = new ReactiveDict();
+CARD_SECTIONS.forEach(section => {
+  cardSectionState.set(section, !COLLAPSED_BY_DEFAULT.includes(section));
+});
+
+function isCardSectionOpen(section) {
+  const state = cardSectionState.get(section);
+  // An unknown section is open: a new one must show up, not hide silently.
+  return state === undefined ? true : state;
+}
+
+Template.registerHelper('isSectionOpen', isCardSectionOpen);
+
+// "Attachments (3)" - the count the heading carried before it became a section,
+// and only when the board asks for it.
+Template.registerHelper('attachmentCount', function attachmentCount() {
+  const card = Utils.getCurrentCard();
+  const board = card && card.board && card.board();
+  if (!board || !board.allowsAttachmentCountOnCard) return '';
+  const attachments = card.attachments && card.attachments();
+  return attachments && attachments.length ? attachments.length : '';
+});
+
+// Which way the caret points. The rule - and the reason - is in
+// client/lib/sectionCaret.js, shared with the board sidebar's Activities, which
+// is the same control and must not point the other way in the same language.
+Template.registerHelper('sectionCaret', section =>
+  caretClassFor(isCardSectionOpen(section)));
+
+Template.cardSectionHeader.events({
+  // A hamburger at the end of a heading opens that section's settings. Neither
+  // may reach the heading itself: a click there folds the section, so opening
+  // the menu would close what you opened it from.
+  // Subtasks: Filter: Subtasks, and the subtask settings
+  // (docs/Features/Cards/Card-Fields.md).
+  'click .js-open-subtasks-menu'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    Popup.open('cardSubtasksMenu').call(Utils.getCurrentCard(), event);
+  },
+  // Scrum settings: Card kind - a Story or a Task (#2012).
+  'click .js-section-card-kind'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    Popup.open('cardKind').call(Utils.getCurrentCard(), event);
+  },
+  // Every custom field the board has, ticked when it is on this card, with a
+  // pencil each and "Add custom field" under a rule. The card is its data
+  // context, which is what the ticks and the toggle read.
+  // client/components/cards/cardCustomFields.jade
+  'click .js-open-custom-fields-settings'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    Popup.open('cardCustomFields').call(Utils.getCurrentCard(), event);
+  },
+
+  'click #toggleCustomFieldsGridButton'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    Meteor.call('toggleCustomFieldsGrid');
+  },
+
+  'click .js-toggle-card-section'(event) {
+    if (event.target.closest('#toggleCustomFieldsGridButton')) return;
+    event.preventDefault();
+    const section = event.currentTarget.dataset.section;
+    if (!section) return;
+    cardSectionState.set(section, !isCardSectionOpen(section));
+  },
+  // A heading that can be operated with the mouse can be operated with the
+  // keyboard: it carries role="button" and tabindex, so Enter and Space are
+  // what a screen reader user presses.
+  'keydown .js-toggle-card-section'(event) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const section = event.currentTarget.dataset.section;
+    if (section) cardSectionState.set(section, !isCardSectionOpen(section));
+  },
+});
+
+Template.cardDetails.events({
+  // #1591 folded each FIELD by its own title, storing a class per card in the
+  // profile. The section carets replaced it: one handle per section, on the
+  // heading, and every field lives in a section now. Both were still running,
+  // and they fought - clicking a section's caret also ran the old handler, so
+  // the field it was drawn on was left `is-collapsed` with nothing to open it
+  // again, and the Date Format select vanished for good. The old half is gone;
+  // the same store is still the CHECKLISTS' (client/components/cards/checklists.js),
+  // which is why it is not.
+  [`${CSSEvents.transitionend} .js-card-details`](event, tpl) {
+    tpl.isLoaded.set(true);
+  },
+  [`${CSSEvents.animationend} .js-card-details`](event, tpl) {
+    tpl.isLoaded.set(true);
+  },
+  'scroll .js-card-details'(event, tpl) {
+    tpl.infiniteScrolling.checkScrollPosition(event.currentTarget, () => {
+      tpl.reachNextPeak();
+    });
+  },
+  'click .js-card-collapse-toggle'(event, tpl) {
+    const user = ReactiveCache.getCurrentUser();
+    const currentState = user && user.profile ? !!user.profile.cardCollapsed : !!Users.getPublicCardCollapsed();
+    if (user) {
+      Meteor.call('setCardCollapsed', !currentState);
+    } else if (Users.setPublicCardCollapsed) {
+      Users.setPublicCardCollapsed(!currentState);
+    }
+  },
+  'mousedown .js-card-drag-handle'(event) {
+    event.preventDefault();
+    const $card = $(event.target).closest('.card-details');
+    // #6465: where the user put it wins over where the minicard is, so a later
+    // resize re-places every other window but only clamps this one into view.
+    markCardDetailsUserMoved($card);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startLeft = $card.offset().left;
+    const startTop = $card.offset().top;
+
+    const onMouseMove = (e) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      $card.css({
+        left: startLeft + deltaX + 'px',
+        top: startTop + deltaY + 'px'
+      });
+    };
+
+    const onMouseUp = () => {
+      $(document).off('mousemove', onMouseMove);
+      $(document).off('mouseup', onMouseUp);
+    };
+
+    $(document).on('mousemove', onMouseMove);
+    $(document).on('mouseup', onMouseUp);
+  },
+  'mousedown .js-card-title-drag-handle'(event) {
+    // The title bar drags the window. Don't interfere with text selection.
+    if (
+      $(event.target).closest(
+        'a, input, textarea, button, select, option, .js-card-details-title',
+      ).length > 0
+    ) {
+      // #6641: while the editor replaces the header, a textarea press still
+      // bubbles to this drag bar. Leave it to the browser so mouse dragging
+      // selects text instead of moving the card window.
+      return;
+    }
+    // ...and don't drag from the half that EDITS. The title is split like a
+    // minicard's: the leading half opens the editor, the trailing half is what
+    // you take hold of. With drag handles ON the zone covers the whole title
+    // (cardDetails.css), so the window is dragged by its handle alone - which is
+    // what turning handles on means.
+    if ($(event.target).closest('.card-details-title-edit-zone').length > 0) {
+      return;
+    }
+    // The drag handle has its own handler; without this both would run and the
+    // window would be moved twice by one press.
+    if ($(event.target).closest('.js-card-drag-handle').length > 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const $card = $(event.target).closest('.card-details');
+    // #6465: same as the drag handle above — a dragged window keeps its place.
+    markCardDetailsUserMoved($card);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startLeft = $card.offset().left;
+    const startTop = $card.offset().top;
+
+    const onMouseMove = (e) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      $card.css({
+        left: startLeft + deltaX + 'px',
+        top: startTop + deltaY + 'px'
+      });
+    };
+
+    const onMouseUp = () => {
+      $(document).off('mousemove', onMouseMove);
+      $(document).off('mouseup', onMouseUp);
+    };
+
+    $(document).on('mousemove', onMouseMove);
+    $(document).on('mouseup', onMouseUp);
+  },
+  'click .js-close-card-details'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // When the card is shown inside a popup (opened from the Board Table view,
+    // search results, or a mini-screen list), the redundant popup title header
+    // is hidden, so this is the only close button. Close the popup and clear its
+    // session state instead of running the board/route close flow below.
+    if (Popup.isOpen() && Utils.getPopupCardId()) {
+      Session.set('popupCardId', null);
+      Session.set('popupCardBoardId', null);
+      Popup.close();
+      return;
+    }
+
+    // Resolve card context defensively because cardDetails can be rendered
+    // from several parents (board, popup, gantt, etc.).
+    const card = getCurrentCardFromContext({ ignorePopupCard: true }) || Template.currentData();
+    const cardId = card?._id;
+    const boardId = card?.boardId || Session.get('currentBoard') || Utils.getCurrentBoardId();
+
+    // Desktop-sized layout uses the openCards session list.
+    if (!Utils.isMiniScreen()) {
+      if (cardId) {
+        const openCards = Session.get('openCards') || [];
+        const nextOpenCards = openCards.filter((id) => id !== cardId);
+        Session.set('openCards', nextOpenCards);
+
+        if (Session.get('currentCard') === cardId) {
+          Session.set('currentCard', null);
+        }
+
+        const route = FlowRouter.current();
+        const routeCardId = route?.params?.cardId;
+        if (routeCardId === cardId && boardId) {
+          Utils.goBoardId(boardId);
+          return;
+        }
+      }
+      return;
+    }
+
+    // Mini-screen/card-route flow: clear active card state and go back to board.
+    Session.set('currentCard', null);
+    Session.set('popupCardId', null);
+    Session.set('popupCardBoardId', null);
+
+    if (boardId) {
+      Utils.goBoardId(boardId);
+    }
+  },
+  'click .js-open-card-details-menu': Popup.open('cardDetailsActions'),
+  // Mobile: switch to desktop popup view (maximize)
+  'click .js-mobile-switch-to-desktop'(event) {
+    event.preventDefault();
+    // Switch global mode to desktop so the card appears as desktop popup
+    Utils.setMobileMode(false);
+  },
+  'click .js-card-zoom-in'(event) {
+    event.preventDefault();
+    const current = Utils.getCardZoom();
+    const newZoom = Math.min(3.0, current + 0.1);
+    Utils.setCardZoom(newZoom);
+  },
+  'click .js-card-zoom-out'(event) {
+    event.preventDefault();
+    const current = Utils.getCardZoom();
+    const newZoom = Math.max(0.5, current - 0.1);
+    Utils.setCardZoom(newZoom);
+  },
+  'click .js-card-mobile-desktop-toggle'(event) {
+    event.preventDefault();
+    const currentMode = Utils.getMobileMode();
+    Utils.setMobileMode(!currentMode);
+  },
+  async 'submit .js-card-description'(event, tpl) {
+    event.preventDefault();
+    const description = tpl.find('.js-new-description-input').value;
+    const card = Template.currentData();
+    // #5809: surface a visible error instead of failing silently — e.g. editing
+    // a linked card whose target is on a board the user cannot write to gets a
+    // permission denial that otherwise vanished with no feedback.
+    try {
+      await card.setDescription(description);
+      // #6455: a successful save means there is no unsaved draft anymore.
+      // Clear the record explicitly instead of relying on the inlined form's
+      // close-time draft/description comparison, which can run before the
+      // updated description is visible and leave a stale "You have an unsaved
+      // description" warning behind.
+      UnsavedEdits.reset({ fieldName: 'cardDescription', docId: card._id });
+    } catch (error) {
+      alert(errorMessage(error));
+    }
+  },
+  async 'submit .js-card-details-title'(event, tpl) {
+    event.preventDefault();
+    const titleInput = tpl.find('.js-edit-card-title');
+    const typed = titleInput ? titleInput.value.trim() : '';
+    const card = Template.currentData();
+    // A due date typed at the end of a CHANGED title; saving the title a card
+    // already had never dates it. docs/Features/Cards/Dates/Due-Date-From-Title.md
+    const fromTitle = typed && typed !== card.title
+      ? dueFromTitle(titleInput.closest('form'), typed, 'allowsDueFromTitleOnCard')
+      : null;
+    const title = fromTitle ? fromTitle.title : typed;
+    // #5809: surface a visible error instead of failing silently (see above).
+    try {
+      await card.setTitle(title || '');
+      if (fromTitle) await card.setDue(fromTitle.dueAt);
+    } catch (error) {
+      alert(errorMessage(error));
+    }
+  },
+  'submit .js-card-details-assigner'(event, tpl) {
+    event.preventDefault();
+    const assignerInput = tpl.find('.js-edit-card-assigner');
+    const assigner = assignerInput ? assignerInput.value.trim() : '';
+    const card = Template.currentData();
+    if (assigner) {
+      card.setAssignedBy(assigner);
+    } else {
+      card.setAssignedBy('');
+    }
+  },
+  'submit .js-card-details-requester'(event, tpl) {
+    event.preventDefault();
+    const requesterInput = tpl.find('.js-edit-card-requester');
+    const requester = requesterInput ? requesterInput.value.trim() : '';
+    const card = Template.currentData();
+    if (requester) {
+      card.setRequestedBy(requester);
+    } else {
+      card.setRequestedBy('');
+    }
+  },
+  'keydown input.js-edit-card-sort'(evt, tpl) {
+    // enter = save
+    if (evt.keyCode === 13) {
+      tpl.find('button[type=submit]').click();
+    }
+  },
+  async 'submit .js-card-details-sort'(event, tpl) {
+    event.preventDefault();
+    const sortInput = tpl.find('.js-edit-card-sort');
+    const sort = parseFloat(sortInput ? sortInput.value.trim() : '');
+    if (!Number.isNaN(sort)) {
+      let card = Template.currentData();
+      await card.move(card.boardId, card.swimlaneId, card.listId, sort);
+    }
+  },
+  async 'click .js-select-card-details-list-option'(event, tpl) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!Utils.canModifyCard()) return;
+    const listId = event.currentTarget.dataset.listId;
+    const card = tpl.data;
+    if (!card || !listId || listId === card.listId) return;
+    const picker = event.currentTarget.closest('details');
+    const minOrder = await card.getMinSort(listId, card.swimlaneId);
+    await card.move(card.boardId, card.swimlaneId, listId, minOrder - 1);
+    if (picker) {
+      picker.open = false;
+      picker.querySelector('summary')?.focus();
+    }
+  },
+  'keydown .card-details-list-picker'(event) {
+    const picker = event.currentTarget;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      picker.open = false;
+      picker.querySelector('summary')?.focus();
+      return;
+    }
+    const options = [...picker.querySelectorAll('[role="option"]')];
+    const current = options.indexOf(event.target.closest('[role="option"]'));
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      picker.open = true;
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 :
+        current < 0 ? (event.key === 'ArrowUp' ? options.length - 1 : 0) :
+          (current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      options[index]?.focus();
+    } else if (current >= 0 && ['Enter', ' '].includes(event.key)) {
+      event.preventDefault();
+      options[current].click();
+    }
+  },
+  'click .js-go-to-linked-card'() {
+    const card = Template.currentData();
+    Utils.goCardId(card.linkedId);
+  },
+  'click .js-add-dependency': Popup.open('cardDependencies'),
+  'click .js-remove-dependency'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!canEditCardDependenciesHere(Template.currentData())) return;
+    const targetId = event.currentTarget.dataset.targetId;
+    const card = Template.currentData();
+    if (card && targetId) {
+      card.removeDependency(targetId);
+    }
+  },
+  'change .js-dependency-type'(event) {
+    if (!canEditCardDependenciesHere(Template.currentData())) return;
+    const targetId = event.currentTarget.dataset.targetId;
+    const card = Template.currentData();
+    if (card && targetId) {
+      card.setDependencyProps(targetId, { type: event.currentTarget.value });
+    }
+  },
+  'change .js-dependency-color'(event) {
+    if (!canEditCardDependenciesHere(Template.currentData())) return;
+    const targetId = event.currentTarget.dataset.targetId;
+    const card = Template.currentData();
+    if (card && targetId) {
+      card.setDependencyProps(targetId, { color: event.currentTarget.value });
+    }
+  },
+  'click .js-dependency-icon'(event) {
+    if (!canEditCardDependenciesHere(Template.currentData())) return;
+    // Remember the source card + which dependency the picked icon applies to.
+    editingDependencyCard = Template.currentData();
+    editingDependencyTargetId = event.currentTarget.dataset.targetId;
+    Popup.open('cardDependencyIcon')(event);
+  },
+  'click .js-member': Popup.open('cardMember'),
+  'click .js-add-members': Popup.open('cardMembers'),
+  'click .js-select-requester': Popup.open('cardRequestedBy', { titleKey: 'requested-by' }),
+  'click .js-select-assigner': Popup.open('cardAssignedBy', { titleKey: 'assigned-by' }),
+  'click .js-assignee': Popup.open('cardAssignee'),
+  'click .js-add-assignees': Popup.open('cardAssignees'),
+  'click .js-add-labels': Popup.open('cardLabels'),
+  'click .js-add-stickers': Popup.open('cardStickers'),
+  'click .js-remove-sticker'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!Utils.canModifyCard()) return;
+    const index = parseInt(event.currentTarget.dataset.index, 10);
+    const card = Template.currentData();
+    if (card && !Number.isNaN(index)) {
+      card.removeStickerAt(index);
+    }
+  },
+  'click .js-add-location'(event) {
+    event.preventDefault();
+    if (!Utils.canModifyCard()) return;
+    const card = Template.currentData();
+    editingLocationId.set(null);
+    Popup.open('cardLocations')(event, {
+      dataContextIfCurrentDataIsUndefined: card,
+    });
+  },
+  'click .js-edit-location'(event) {
+    // Let the "Open in map" link work without also opening the edit popup.
+    if ($(event.target).closest('a.card-location-map').length) return;
+    event.preventDefault();
+    if (!Utils.canModifyCard()) return;
+    const card = Template.currentData();
+    editingLocationId.set(event.currentTarget.dataset.locationId || null);
+    Popup.open('cardLocations')(event, {
+      dataContextIfCurrentDataIsUndefined: card,
+    });
+  },
+  async 'click .js-remove-location'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!Utils.canModifyCard()) return;
+    const locationId = event.currentTarget.dataset.locationId;
+    // The X is rendered inside `each getLocations`, so Template.currentData()
+    // is the location row, not the surrounding card (#6644).
+    const card = getCurrentCardFromContext();
+    if (card && locationId) {
+      await card.removeLocation(locationId);
+    }
+  },
+  'click .js-received-date': Popup.open('editCardReceivedDate'),
+  'click .js-start-date': Popup.open('editCardStartDate'),
+  'click .js-due-date': Popup.open('editCardDueDate'),
+  'click .js-toggle-due-complete'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!Utils.canModifyCard()) return;
+    const card = Template.currentData();
+    card.setDueComplete(!card.getDueComplete());
+  },
+  'click .js-end-date': Popup.open('editCardEndDate'),
+  'click .js-show-positive-votes': Popup.open('positiveVoteMembers'),
+  'click .js-show-negative-votes': Popup.open('negativeVoteMembers'),
+  'mouseenter .js-card-details'(event, tpl) {
+    const boardBody = getBoardBodyInstance(tpl);
+    if (boardBody === null) return;
+    boardBody.showOverlay.set(true);
+    boardBody.mouseHasEnterCardDetails = true;
+  },
+  'mousedown .js-card-details'() {
+    Session.set('cardDetailsIsDragging', false);
+    Session.set('cardDetailsIsMouseDown', true);
+  },
+  'mousemove .js-card-details'() {
+    if (Session.get('cardDetailsIsMouseDown')) {
+      Session.set('cardDetailsIsDragging', true);
+    }
+  },
+  'mouseup .js-card-details'() {
+    Session.set('cardDetailsIsDragging', false);
+    Session.set('cardDetailsIsMouseDown', false);
+  },
+  async 'click #toggleHideCheckedChecklistItems'() {
+    const card = Template.currentData();
+    await card.toggleHideCheckedChecklistItems();
+  },
+  'click .js-maximize-card-details'() {
+    if (Meteor.userId()) {
+      Meteor.call('toggleCardMaximized');
+    } else {
+      window.localStorage.setItem('cardMaximized', 'true');
+    }
+    autosize($('.card-details'));
+  },
+  'click .js-minimize-card-details'() {
+    if (Meteor.userId()) {
+      Meteor.call('toggleCardMaximized');
+    } else {
+      window.localStorage.setItem('cardMaximized', 'false');
+    }
+    autosize($('.card-details'));
+  },
+  'click .js-vote'(e) {
+    const card = Template.currentData();
+    const forIt = $(e.target).hasClass('js-vote-positive');
+    let newState = null;
+    if (
+      card.voteState() === null ||
+      (card.voteState() === false && forIt) ||
+      (card.voteState() === true && !forIt)
+    ) {
+      newState = forIt;
+    }
+    // Use secure server method; direct client updates to vote are blocked
+    Meteor.call('cards.vote', card.getRealId(), newState);
+  },
+  'click .js-poker'(e) {
+    const card = Template.currentData();
+    let newState = null;
+    if ($(e.target).hasClass('js-poker-vote-one')) {
+      newState = 'one';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-two')) {
+      newState = 'two';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-three')) {
+      newState = 'three';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-five')) {
+      newState = 'five';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-eight')) {
+      newState = 'eight';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-thirteen')) {
+      newState = 'thirteen';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-twenty')) {
+      newState = 'twenty';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-forty')) {
+      newState = 'forty';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-one-hundred')) {
+      newState = 'oneHundred';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+    if ($(e.target).hasClass('js-poker-vote-unsure')) {
+      newState = 'unsure';
+      Meteor.call('cards.pokerVote', card.getRealId(), newState);
+    }
+  },
+  'click .js-poker-finish'(e) {
+    if ($(e.target).hasClass('js-poker-finish')) {
+      e.preventDefault();
+      const card = Template.currentData();
+      const now = new Date();
+      Meteor.call('cards.setPokerEnd', card.getRealId(), now);
+    }
+  },
+  'click .js-poker-replay'(e) {
+    if ($(e.target).hasClass('js-poker-replay')) {
+      e.preventDefault();
+      const currentCard = Template.currentData();
+      Meteor.call('cards.replayPoker', currentCard.getRealId());
+      Meteor.call('cards.unsetPokerEnd', currentCard.getRealId());
+      Meteor.call('cards.unsetPokerEstimation', currentCard.getRealId());
+    }
+  },
+  'click .js-poker-estimation'(event, tpl) {
+    event.preventDefault();
+    const card = Template.currentData();
+    const ruleTitle = tpl.find('#pokerEstimation').value;
+    if (ruleTitle !== undefined && ruleTitle !== '') {
+      tpl.find('#pokerEstimation').value = '';
+
+      if (ruleTitle) {
+        Meteor.call('cards.setPokerEstimation', card.getRealId(), parseInt(ruleTitle, 10));
+      } else {
+        Meteor.call('cards.unsetPokerEstimation', card.getRealId());
+      }
+    }
+  },
+  // Drag and drop file upload handlers
+  'dragover .js-card-details'(event) {
+    // Only prevent default for file drags to avoid interfering with other drag operations
+    const dataTransfer = event.originalEvent.dataTransfer;
+    if (dataTransfer && dataTransfer.types && dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  },
+  'dragenter .js-card-details'(event) {
+    const dataTransfer = event.originalEvent.dataTransfer;
+    if (dataTransfer && dataTransfer.types && dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = Template.currentData();
+      const board = card.board();
+      // Only allow drag-and-drop if user can modify card and board allows attachments
+      if (Utils.canModifyCard() && board && board.allowsAttachments) {
+        $(event.currentTarget).addClass('is-dragging-over');
+      }
+    }
+  },
+  'dragleave .js-card-details'(event) {
+    const dataTransfer = event.originalEvent.dataTransfer;
+    if (dataTransfer && dataTransfer.types && dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.stopPropagation();
+      $(event.currentTarget).removeClass('is-dragging-over');
+    }
+  },
+  'drop .js-card-details'(event) {
+    const dataTransfer = event.originalEvent.dataTransfer;
+    if (dataTransfer && dataTransfer.types && dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.stopPropagation();
+      $(event.currentTarget).removeClass('is-dragging-over');
+
+      const card = Template.currentData();
+      const board = card.board();
+
+      // Check permissions
+      if (!Utils.canModifyCard() || !board || !board.allowsAttachments) {
+        return;
+      }
+
+      // Check if this is a file drop (not a checklist item reorder)
+      if (!dataTransfer.files || dataTransfer.files.length === 0) {
+        return;
+      }
+
+      const files = dataTransfer.files;
+      if (files && files.length > 0) {
+        handleFileUpload(card, files);
+      }
+    }
+  },
+});
+
+
+// docs/Features/Cards/At-Risk.md: the opened card also counts moves back.
+Template.cardDetails.helpers({
+  cardAtRisk() {
+    return riskOf(Template.currentData(), { withMoves: true });
+  },
+});
+
+Template.cardDetails.helpers({
+  isPopup() {
+    let ret = !!Utils.getPopupCardId();
+    return ret;
+  },
+  // Upload progress helpers
+  hasActiveUploads() {
+    return uploadProgressManager.hasActiveUploads(this._id);
+  },
+  uploads() {
+    return uploadProgressManager.getUploadsForCard(this._id);
+  },
+  uploadCount() {
+    return uploadProgressManager.getUploadCountForCard(this._id);
+  }
+});
+Template.cardDetailsPopup.onDestroyed(() => {
+  Session.set('popupCardId', null);
+  Session.set('popupCardBoardId', null);
+});
+Template.cardDetailsPopup.helpers({
+  popupCard() {
+    const ret = Utils.getPopupCard();
+    return ret;
+  },
+});
+
+// #1173: the card export popup is client/components/boards/exportScope.js now -
+// one body, one field list and one url builder for the card, the list, the
+// swimlane and the board. What was here was a second copy of all three.
+
+// only allow number input
+Template.editCardSortOrderForm.onRendered(function () {
+  this.$('input').on("keypress paste", function (event) {
+    let keyCode = event.keyCode;
+    let charCode = String.fromCharCode(keyCode);
+    let regex = new RegExp('[-0-9.]');
+    let ret = regex.test(charCode);
+    // only working here, defining in events() doesn't handle the return value correctly
+    return ret;
+  });
+});
+
+// inlinedCardDescription extends the normal inlinedForm to support UnsavedEdits
+// draft feature for card descriptions.
+Template.inlinedCardDescription.onCreated(function () {
+  this.isOpen = new ReactiveVar(false);
+
+  this._getUnsavedEditKey = () => ({
+    fieldName: 'cardDescription',
+    docId: getCardId(),
+  });
+
+  this._getValue = () => {
+    const input = this.find('textarea,input[type=text]');
+    return this.isOpen.get() && input && input.value.replaceAll(/[ \f\r\t\v]+$/gm, '');
+  };
+
+  this._close = (isReset = false) => {
+    if (this.isOpen.get() && !isReset) {
+      // #6455: normalize BOTH sides the same way before comparing. The textarea
+      // value has per-line trailing whitespace stripped (_getValue), while
+      // getDescription() returns the raw stored text — or null for an empty
+      // description. Comparing them raw made the comparison permanently unequal
+      // for descriptions containing Markdown "  \n" hard breaks (or after
+      // emptying the description), re-creating the phantom draft on every save.
+      const normalize = (s) => (s || '').replaceAll(/[ \f\r\t\v]+$/gm, '').trim();
+      const draft = normalize(this._getValue());
+      const card = getCurrentCardFromContext();
+      if (card && draft !== normalize(card.getDescription())) {
+        UnsavedEdits.set(this._getUnsavedEditKey(), this._getValue());
+      } else {
+        // #6455: closing with the draft equal to the saved description must
+        // REMOVE any pre-existing unsaved-edits record. Previously this branch
+        // did nothing, so once a draft record existed, pressing Save ("View it"
+        // -> Save) could never clear the "You have an unsaved description"
+        // warning — only Discard could.
+        UnsavedEdits.reset(this._getUnsavedEditKey());
+      }
+    }
+    this.isOpen.set(false);
+  };
+
+  this._reset = () => {
+    UnsavedEdits.reset(this._getUnsavedEditKey());
+    this._close(true);
+  };
+});
+
+Template.inlinedCardDescription.helpers({
+  isOpen() {
+    return Template.instance().isOpen;
+  },
+});
+
+Template.inlinedCardDescription.events({
+  'click .js-close-inlined-form'(evt, tpl) {
+    tpl._reset();
+  },
+  'click .js-open-inlined-form'(evt, tpl) {
+    evt.preventDefault();
+    EscapeActions.clickExecute(evt.target, 'inlinedForm');
+    tpl.isOpen.set(true);
+  },
+  'keydown form textarea'(evt, tpl) {
+    // Ctrl/Cmd+Enter submits by default; plain Enter when the user enabled
+    // "submit on Enter" in Member Settings (Shift+Enter then makes a newline).
+    const submitOnEnter = !!ReactiveCache.getCurrentUser()?.hasSubmitOnEnter?.();
+    if (isSubmitKey(evt, { submitOnEnter })) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      tpl.find('button[type=submit]').click();
+    }
+  },
+  submit(evt, tpl) {
+    const data = Template.currentData();
+    if (data.autoclose !== false) {
+      Tracker.afterFlush(() => {
+        tpl._close();
+      });
+    }
+  },
+});
+
+Template.cardDetailsActionsPopup.helpers({
+  // The moving and copying items: for who may change the card, and - as they
+  // always were - for a member who is not read-only.
+  cardMenuWrites() {
+    if (Utils.canModifyCard(this)) return true;
+    const user = ReactiveCache.getCurrentUser();
+    return Boolean(user && !(user.isReadOnly && user.isReadOnly()) && !(user.isReadAssignedOnly && user.isReadAssignedOnly()));
+  },
+  isWatching() {
+    if (!this || typeof this.findWatcher !== 'function') return false;
+    return this.findWatcher(Meteor.userId());
+  },
+
+  isBoardAdmin() {
+    return ReactiveCache.getCurrentUser()?.isBoardAdmin();
+  },
+
+  showListOnMinicard() {
+    return this.showListOnMinicard;
+  },
+
+  // #1172: per-user star, same shape as boards/swimlanes/lists.
+  isCardItemStarred() {
+    const card = this.card || this;
+    const user = ReactiveCache.getCurrentUser();
+    return !!(card && card._id && user && user.hasStarredCard(card._id));
+  },
+});
+
+// The section hamburgers of the opened card (docs/Features/Cards/Card-Fields.md):
+// what the card's actions menu had, where the section is.
+Template.cardSubtasksMenuPopup.events({
+  'click .js-filter-subtasks'(event) {
+    event.preventDefault();
+    filterSubtasksOf(this.card || this);
+  },
+  'click .js-open-subtask-settings'(event) {
+    event.preventDefault();
+    Popup.open('boardSubtaskSettings')(event);
+  },
+});
+Template.cardFieldSectionVoteAndPoker.events({
+  'click .js-section-edit-voting': Popup.open('cardStartVoting'),
+  'click .js-section-edit-poker': Popup.open('cardStartPlanningPoker'),
+});
+Template.cardSpentTimeMenu.events({
+  'click .js-section-spent-time': Popup.open('editCardSpentTime'),
+});
+
+Template.cardDetailsActionsPopup.events({
+  // docs/Features/Cards/Action-Items.md: the description's action items.
+  'click .js-description-action-items': Popup.open('actionItems', { titleKey: 'action-items' }),
+  // History.md §7a: adding History to a menu is a menu item and this handler,
+  // opening the SAME historyTable every other scope opens.
+  'click .js-card-history'(event) {
+    const card = this.card || this;
+    // The scope has to travel as `dataContextIfCurrentDataIsUndefined`: the
+    // second argument to Popup.open()'s handler is OPTIONS, and the popup takes
+    // its data context from `this.currentData()` first - which in an event
+    // handler is undefined, so this key is the one that reaches the template.
+    // Passing a bare object there would have opened the History of the card
+    // menu's own data context instead of the scope asked for. (client/lib/popup.js)
+    Popup.open('history', { titleKey: 'history' })(event, {
+      dataContextIfCurrentDataIsUndefined: { scope: 'card', scopeId: card._id },
+    });
+  },
+  // Copy the card's address. This was an icon in the card's header with only a
+  // tooltip to name it - the one place a name cannot be read without hovering -
+  // and it is here now beside the swimlane's and the list's, so all three are
+  // copied the same way from the same kind of menu.
+  // docs/Features/General/Board-Item-Links.md
+  'click .js-card-qr-code': Popup.open('cardQrCode'),
+  'click .js-copy-card-link'(event, tpl) {
+    event.preventDefault();
+    const card = Template.currentData();
+    if (!card) return;
+    const url = card.absoluteUrl();
+    if (!url) return;
+    // #1188: inside a Sandstorm grain the address reaches nobody; Sandstorm's
+    // Share Access dialog makes a link that opens the grain at this card.
+    if (Meteor.settings?.public?.sandstorm && typeof window.sandstormShareUrl === 'function' &&
+        window.sandstormShareUrl(url)) return;
+    Utils.showCopied(Utils.copyTextToClipboard(url), tpl.$('.copied-tooltip'));
+  },
+  // #1172: star/unstar this card for the current user only.
+  async 'click .js-star-card-item'(event) {
+    event.preventDefault();
+    const card = this.card || this;
+    if (!card || !card._id) return;
+    await Meteor.callAsync('toggleCardStar', card._id);
+  },
+  // "Custom Fields" is ONE entry: it opens the picker for which of the board's
+  // fields are on THIS card, and that popup's own Settings cog opens the
+  // board's list of fields, where one is created, renamed or deleted. Two
+  // entries for the two halves put the general one above the particular one and
+  // made the menu ask which you wanted before you had seen either.
+  // client/components/cards/cardCustomFields.jade
+  'click .js-export-card': Popup.open('exportCard'),
+  'click .js-import-card': Popup.open('importCard'),
+  'click .js-members': Popup.open('cardMembers'),
+  'click .js-assignees': Popup.open('cardAssignees'),
+  'click .js-attachments': Popup.open('cardAttachments'),
+  'click .js-received-date': Popup.open('editCardReceivedDate'),
+  'click .js-start-date': Popup.open('editCardStartDate'),
+  'click .js-due-date': Popup.open('editCardDueDate'),
+  'click .js-end-date': Popup.open('editCardEndDate'),
+  'click .js-move-card': Popup.open('moveCard'),
+  'click .js-copy-card': Popup.open('copyCard'),
+  // #2209: "Create template from element" - save THIS card as a card template
+  // in the user's own Templates board, the reverse direction of the existing
+  // "insert a card FROM a template" flow (Template.searchElementPopup,
+  // client/components/lists/listBody.js). Server does the actual copy
+  // (server/models/cards.js saveCardAsTemplate), reusing the same lazy
+  // per-user Templates board #4205's default-template application already
+  // relies on.
+  async 'click .js-save-card-as-template'(event) {
+    event.preventDefault();
+    const cardId = getCardId();
+    if (!cardId) return;
+    try {
+      await Meteor.callAsync('saveCardAsTemplate', cardId);
+      Popup.back();
+    } catch (err) {
+      alert(errorMessage(err));
+    }
+  },
+  'click .js-set-card-recurrence-interval': Popup.open('cardRecurrenceInterval'),
+  'click .js-convert-checklist-item-to-card': Popup.open('convertChecklistItemToCard'),
+  'click .js-copy-checklist-cards': Popup.open('copyManyCards'),
+  'click .js-set-card-color': Popup.open('setCardColor'),
+  'click .js-card-drawing': Popup.open('cardDrawing'),
+  async 'click .js-move-card-to-top'(event) {
+    event.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    const minOrder = await card.getMinSort() || 0;
+    await card.move(card.boardId, card.swimlaneId, card.listId, minOrder - 1);
+    Popup.back();
+  },
+  async 'click .js-move-card-to-bottom'(event) {
+    event.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    const maxOrder = await card.getMaxSort() || 0;
+    await card.move(card.boardId, card.swimlaneId, card.listId, maxOrder + 1);
+    Popup.back();
+  },
+  'click .js-archive': Popup.afterConfirm('cardArchive', async function () {
+    if (!canArchiveCard({ canModifyCard: Utils.canModifyCard() })) return;
+    const card = Cards.findOne(getCardId());
+    Popup.close();
+    if (!card) return;
+    await card.archive();
+    // #6465 follow-up: archiving must also CLOSE the card's details window.
+    // The card id stayed in the openCards session list, so the floating window
+    // kept rendering above the board — and, docked to the right edge, exactly
+    // over the archives sidebar someone restoring the card would open next,
+    // intercepting its Restore/Delete clicks.
+    Session.set('openCards', (Session.get('openCards') || []).filter((id) => id !== card._id));
+    if (Session.get('currentCard') === card._id) {
+      Session.set('currentCard', null);
+    }
+    Utils.goBoardId(card.boardId);
+  }),
+  // #1504: restoring an archived card from the FULL card-detail view - the
+  // same target-list fallback the Archive sidebar's own "Restore" link uses
+  // (client/components/sidebar/sidebarArchives.js `.js-restore-card`), so a
+  // card whose list was itself archived/deleted still gets a place to land
+  // instead of `canBeRestored()` crashing on a missing list.
+  async 'click .js-restore-archived-card'(event) {
+    event.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+
+    // The same as the Archive sidebar's Restore: a missing list, or one a hard
+    // WIP limit has filled (#6772), asks which list to restore it to.
+    if (await restoreArchivedCard(event, card)) Popup.back();
+  },
+  'click .js-more': Popup.open('cardMore'),
+  'click .js-create-board-from-card': Popup.open('createBoardFromCard'),
+  'click .js-link-card-to-board': Popup.open('linkCardToBoard'),
+  'click .js-toggle-watch-card'() {
+    const currentCard = Cards.findOne(getCardId());
+    if (!currentCard) return;
+    const sourceCard = currentCard.getRealCard();
+    const level = sourceCard.findWatcher(Meteor.userId()) ? null : 'watching';
+    Meteor.call('watch', 'card', currentCard.getRealId(), level, (err, ret) => {
+      if (!err && ret) Popup.close();
+    });
+  },
+  'click .js-toggle-show-list-on-minicard'() {
+    const currentCard = Cards.findOne(getCardId());
+    if (!currentCard) return;
+    const newValue = !currentCard.getRealCard().showListOnMinicard;
+    Cards.update(currentCard.getRealId(), { $set: { showListOnMinicard: newValue } });
+    Popup.close();
+  },
+});
+
+Template.editCardTitleForm.onRendered(function () {
+  autosize(this.$('textarea.js-edit-card-title'));
+});
+
+Template.editCardTitleForm.events({
+  'click a.fa.fa-copy'(event, tpl) {
+    const $editor = tpl.$('textarea');
+    const promise = Utils.copyTextToClipboard($editor[0].value);
+
+    const $tooltip = tpl.$('.copied-tooltip');
+    Utils.showCopied(promise, $tooltip);
+  },
+  'keydown .js-edit-card-title'(event) {
+    // #4236: by default Ctrl/Cmd+Enter saves; plain Enter (and Shift+Enter)
+    // insert a new line. A user who turns on "submit on Enter" in Member
+    // Settings gets plain Enter to save (Shift+Enter for a newline) instead —
+    // the pre-#4236 fast title-editing workflow (#6480 email feedback).
+    const submitOnEnter = !!ReactiveCache.getCurrentUser()?.hasSubmitOnEnter?.();
+    if (isSubmitKey(event, { submitOnEnter })) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.closest('form')?.querySelector('.js-submit-edit-card-title-form')?.click();
+    }
+  },
+});
+
+Template.cardMembersPopup.onCreated(function () {
+  // #4965: only the filter term is stored reactively; the candidate list is
+  // derived reactively in the members() helper (via filterMembers, which reads
+  // board.activeMembers() on each call). Previously the list was snapshotted
+  // once here, so a member added to the board after the popup opened — or whose
+  // user document finished loading after open — was missing until the popup was
+  // reopened.
+  this.filterTerm = new ReactiveVar('');
+});
+
+Template.cardMembersPopup.events({
+  'click .js-select-member'(event) {
+    const card = getCurrentCardFromContext();
+    if (!card) return;
+    const memberId = this.userId;
+    card.toggleMember(memberId);
+    event.preventDefault();
+  },
+  'keyup .card-members-filter'(event) {
+    Template.instance().filterTerm.set(event.target.value);
+  }
+});
+
+Template.cardMembersPopup.helpers({
+  suggestedMembers() {
+    return suggestedMembersFor(getCurrentCardFromContext(), 'members');
+  },
+  isCardMember() {
+    const card = getCurrentCardFromContext();
+    if (!card) return false;
+    const cardMembers = card.getMembers();
+
+    return (cardMembers || []).includes(this.userId);
+  },
+
+  members() {
+    const members = filterMembers(Template.instance().filterTerm.get());
+    const uniqueMembers = uniqBy(members, 'userId');
+    return [...uniqueMembers].sort((a, b) => {
+      const userA = ReactiveCache.getUser(a.userId);
+      const userB = ReactiveCache.getUser(b.userId);
+      const nameA = userA ? userA.profile.fullname : '';
+      const nameB = userB ? userB.profile.fullname : '';
+      return nameA.localeCompare(nameB);
+    });
+  },
+  userData() {
+    return ReactiveCache.getUser(this.userId);
+  },
+});
+
+Template.cardIdentityPicker.onCreated(function () {
+  this.filterTerm = new ReactiveVar('');
+});
+
+Template.cardIdentityPicker.events({
+  'click .js-select-card-identity'(event, tpl) {
+    event.preventDefault();
+    const card = getCurrentCardFromContext();
+    const user = ReactiveCache.getUser(this.userId);
+    if (!card || !user) return;
+    if (tpl.data.field === 'requesters') card.toggleRequester(user._id);
+    if (tpl.data.field === 'assigners') card.toggleAssigner(user._id);
+  },
+  'keyup .card-identity-filter'(event) {
+    Template.instance().filterTerm.set(event.target.value);
+  },
+});
+
+Template.cardIdentityPicker.helpers({
+  members() {
+    return [...uniqBy(filterMembers(Template.instance().filterTerm.get()), 'userId')]
+      .sort((a, b) => {
+        const userA = ReactiveCache.getUser(a.userId);
+        const userB = ReactiveCache.getUser(b.userId);
+        const nameA = (userA && userA.profile && userA.profile.fullname) || '';
+        const nameB = (userB && userB.profile && userB.profile.fullname) || '';
+        return nameA.localeCompare(nameB);
+      });
+  },
+  userData() {
+    return ReactiveCache.getUser(this.userId);
+  },
+  isSelected() {
+    const card = getCurrentCardFromContext();
+    const user = ReactiveCache.getUser(this.userId);
+    if (!card || !user) return false;
+    const selected = Template.instance().data.field === 'requesters'
+      ? card.getRequesters() : card.getAssigners();
+    return (selected || []).includes(user._id);
+  },
+});
+
+// Popup that adds or edits a single card location (name, address, latitude,
+// longitude). Cards can hold multiple locations, like members.
+Template.cardLocationsPopup.onCreated(function () {
+  const data = Template.currentData();
+  this.cardId = data && data._id;
+  this.detectMsg = new ReactiveVar('');
+  this.mapSavedMsg = new ReactiveVar('');
+});
+
+Template.cardLocationsPopup.helpers({
+  location() {
+    const tpl = Template.instance();
+    const card = ReactiveCache.getCard(tpl.cardId);
+    const id = editingLocationId.get();
+    if (card && id) {
+      const found = card.getLocations().find(loc => loc._id === id);
+      if (found) return found;
+    }
+    return {};
+  },
+  detectMessage() {
+    return Template.instance().detectMsg.get();
+  },
+  mapSavedMessage() {
+    return Template.instance().mapSavedMsg.get();
+  },
+});
+
+Template.cardLocationsPopup.events({
+  'click .js-detect-location'(event) {
+    event.preventDefault();
+    const tpl = Template.instance();
+    const linkInput = tpl.find('.js-location-map-link');
+    const parsed = parseMapLink(linkInput ? linkInput.value : '');
+    let filled = false;
+    if (typeof parsed.latitude === 'number') {
+      tpl.find('.js-location-latitude').value = parsed.latitude;
+      tpl.find('.js-location-longitude').value = parsed.longitude;
+      filled = true;
+    }
+    if (parsed.name) {
+      tpl.find('.js-location-name').value = parsed.name;
+      filled = true;
+    }
+    if (parsed.address) {
+      tpl.find('.js-location-address').value = parsed.address;
+      filled = true;
+    }
+    tpl.detectMsg.set(
+      TAPi18n.__(filled ? 'location-detect-done' : 'location-detect-none'),
+    );
+  },
+  'submit .js-card-location-form'(event) {
+    event.preventDefault();
+    const tpl = Template.instance();
+    const card = ReactiveCache.getCard(tpl.cardId);
+    if (!card) {
+      Popup.back();
+      return;
+    }
+    const name = tpl.find('.js-location-name').value.trim();
+    const address = tpl.find('.js-location-address').value.trim();
+    const latRaw = tpl.find('.js-location-latitude').value.trim();
+    const lonRaw = tpl.find('.js-location-longitude').value.trim();
+    const latitude = latRaw === '' ? undefined : parseFloat(latRaw);
+    const longitude = lonRaw === '' ? undefined : parseFloat(lonRaw);
+    const data = { name, address, latitude, longitude };
+    const id = editingLocationId.get();
+    if (id) {
+      card.updateLocation(id, data);
+    } else {
+      card.addLocation(data);
+    }
+    Popup.back();
+  },
+  'click .js-delete-location'(event) {
+    event.preventDefault();
+    const tpl = Template.instance();
+    const card = ReactiveCache.getCard(tpl.cardId);
+    const id = editingLocationId.get();
+    if (card && id) {
+      card.removeLocation(id);
+    }
+    Popup.back();
+  },
+  'click .js-save-map-provider'(event) {
+    event.preventDefault();
+    const tpl = Template.instance();
+    const select = tpl.find('.js-map-provider');
+    const provider = select ? select.value : 'openstreetmap';
+    Meteor.call('setMapProvider', provider, err => {
+      tpl.mapSavedMsg.set(
+        TAPi18n.__(err ? 'server-error' : 'map-provider-saved'),
+      );
+    });
+  },
+});
+
+const filterMembers = (filterTerm) => {
+  // #5676: for a linked card the members live on the REAL card it points at,
+  // which may be on another board (that is what getMembers()/toggleMember() act
+  // on). Offer that board's members instead of the viewing board's, so the
+  // picker is consistent with where membership is actually stored. Falls back to
+  // the current board for normal cards or when the real card isn't loaded yet.
+  const card = getCurrentCardFromContext();
+  let currBoard = null;
+  if (card) {
+    const boardId = memberTargetBoardId(card, id => ReactiveCache.getCard(id));
+    if (boardId) {
+      currBoard = ReactiveCache.getBoard(boardId);
+    }
+  }
+  if (!currBoard) {
+    currBoard = Utils.getCurrentBoard();
+  }
+  if (!currBoard) {
+    return [];
+  }
+  let members = currBoard.activeMembers();
+
+  if (filterTerm) {
+    const searchTerm = filterTerm.toLowerCase();
+    members = members
+      .map(member => ({
+        member,
+        user: ReactiveCache.getUser(member.userId)
+      }))
+      .filter(({ user }) => {
+        // Check if user data is available
+        if (!user || !user.profile) {
+          return false;
+        }
+        const fullname = (user.profile.fullname || '').toLowerCase();
+        const username = (user.username || '').toLowerCase();
+        return fullname.indexOf(searchTerm) !== -1 || username.indexOf(searchTerm) !== -1;
+      })
+      .map(({ member }) => member);
+  }
+  return members;
+}
+
+Template.editCardRequesterForm.onRendered(function () {
+  autosize(this.$('.js-edit-card-requester'));
+});
+
+Template.editCardAssignerForm.onRendered(function () {
+  autosize(this.$('.js-edit-card-assigner'));
+});
+
+// The four selects of the move/copy dialogs, in one template. The dialog comes
+// from the popup that includes it and is kept on THIS instance: inside
+// `each boards` the data context is a board, so a helper reaching into the
+// context for it would find nothing there.
+Template.cardDestinationPicker.onCreated(function () {
+  this.pickerId = Random.id();
+  this.autorun(() => {
+    const data = Template.currentData();
+    this.dialog = data && data.dialog;
+  });
+});
+
+Template.cardDestinationPicker.helpers({
+  pickerFieldId(field) { return `${Template.instance().pickerId}-${field}`; },
+  destinationError() { return Template.instance().dialog.error.get(); },
+  destinationDisabled() {
+    const dialog = Template.instance().dialog;
+    return dialog.loading.get() || dialog.saving.get() || !dialog.selectedSwimlaneId.get() || !dialog.selectedListId.get();
+  },
+  boards() {
+    return Template.instance().dialog.boards();
+  },
+  swimlanes() {
+    return Template.instance().dialog.swimlanes();
+  },
+  lists() {
+    return Template.instance().dialog.lists();
+  },
+  cards() {
+    return Template.instance().dialog.cards();
+  },
+  isDialogOptionBoardId(boardId) {
+    return Template.instance().dialog.isDialogOptionBoardId(boardId);
+  },
+  isDialogOptionSwimlaneId(swimlaneId) {
+    return Template.instance().dialog.isDialogOptionSwimlaneId(swimlaneId);
+  },
+  isDialogOptionListId(listId) {
+    return Template.instance().dialog.isDialogOptionListId(listId);
+  },
+  isSelectedBoardId(boardId) {
+    return Template.instance().dialog.isSelectedBoardId(boardId);
+  },
+  isSelectedSwimlaneId(swimlaneId) {
+    return Template.instance().dialog.isSelectedSwimlaneId(swimlaneId);
+  },
+  isSelectedListId(listId) {
+    return Template.instance().dialog.isSelectedListId(listId);
+  },
+  isDialogOptionCardId(cardId) {
+    return Template.instance().dialog.isDialogOptionCardId(cardId);
+  },
+  isTitleDefault(title) {
+    return Template.instance().dialog.isTitleDefault(title);
+  },
+});
+
+/**
+ * Helper: register standard board/swimlane/list/card dialog helpers and events
+ * for a template that uses BoardSwimlaneListCardDialog.
+ */
+/**
+ * Helper: register standard board/swimlane/list/card dialog helpers and events
+ * for a template that uses BoardSwimlaneListCardDialog.
+ *
+ * The MARKUP those helpers feed is one template - `cardDestinationPicker` in
+ * cardDetails.jade, included by all four popups - so the helpers are registered
+ * on it, once, below. What each popup needs of its own is the `dialog` to hand
+ * that template, and the events: a change or a click inside the picker bubbles
+ * up to the popup that includes it, which is the one holding the dialog.
+ */
+function registerCardDialogTemplate(templateName) {
+  Template[templateName].helpers({
+    dialog() {
+      return Template.instance().dialog;
+    },
+  });
+
+  Template[templateName].events({
+    async 'click .js-done'(event, tpl) {
+      event.preventDefault();
+      const dialog = tpl.dialog;
+      if (dialog.loading.get() || dialog.saving.get()) return;
+      // Read the target board/swimlane/list from the dialog's live reactive
+      // selection rather than the DOM <select> elements.  A reactive re-render
+      // (e.g. the boards() helper transiently returning [] while a 'board'
+      // subscription re-resolves) can leave a <select> momentarily option-less,
+      // making selectedIndex -1 and the scraped id undefined — which then makes
+      // card.move()/copyCard() fail with a 403 "may only update documents by ID"
+      // validation error.  The reactive vars stay correct across those renders.
+      const boardId = dialog.selectedBoardId.get();
+      const swimlaneId = dialog.selectedSwimlaneId.get();
+      const listId = dialog.selectedListId.get();
+
+      const cardSelect = tpl.$('.js-select-cards')[0];
+      const cardId = cardSelect?.options?.length > 0
+        ? cardSelect.options[cardSelect.selectedIndex].value
+        : null;
+
+      if (!boardId || !swimlaneId || !listId) return;
+      if (cardId && !dialog.cards().some(card => card._id === cardId)) return;
+      dialog.error.set('');
+      dialog.saving.set(true);
+      const options = { boardId, swimlaneId, listId, cardId };
+      try {
+        await dialog.setDone(cardId, options);
+      } catch (e) {
+        console.error('Error in card dialog operation:', e);
+        dialog.error.set(e.reason || e.message || TAPi18n.__('server-error'));
+        return;
+      } finally {
+        dialog.saving.set(false);
+      }
+      Popup.back(2);
+    },
+    'change .js-select-boards'(event, tpl) {
+      tpl.dialog.getBoardData($(event.currentTarget).val());
+    },
+    'change .js-select-swimlanes'(event, tpl) {
+      tpl.dialog.selectedSwimlaneId.set($(event.currentTarget).val());
+      tpl.dialog.setFirstListId();
+      tpl.dialog.selectedCardId?.set('');
+    },
+    'change .js-select-lists'(event, tpl) {
+      tpl.dialog.selectedListId.set($(event.currentTarget).val());
+      if (tpl.dialog.selectedCardId) {
+        tpl.dialog.selectedCardId.set('');
+      }
+    },
+    'change .js-select-cards'(event, tpl) {
+      if (tpl.dialog.selectedCardId) {
+        tpl.dialog.selectedCardId.set($(event.currentTarget).val());
+      }
+    },
+  });
+}
+
+/** Move Card Dialog */
+Template.moveCardPopup.onCreated(function () {
+  this.dialog = new BoardSwimlaneListCardDialog(this, {
+    getDialogOptions() {
+      return ReactiveCache.getCurrentUser().getMoveAndCopyDialogOptions();
+    },
+    async setDone(cardId, options) {
+      const tpl = Template.instance();
+      const title = tpl.$('#move-card-title').val().trim();
+      const position = tpl.$('input[name="position"]:checked').val();
+      // #2719: optionally leave a linked-card mirror behind at the card's
+      // ORIGINAL board/swimlane/list once the move completes, reusing the
+      // same linked-card mechanism as #4281's "Link to board" action rather
+      // than inventing a new one. Unchecked (the default) leaves plain move
+      // behavior completely unchanged.
+      const leaveLinkAtOrigin = tpl.$('#js-leave-link-at-origin').is(':checked');
+
+      ReactiveCache.getCurrentUser().setMoveAndCopyDialogOption(this.currentBoardId, options);
+      const card = Template.currentData();
+      const originalBoardId = card.boardId;
+      const originalSwimlaneId = card.swimlaneId;
+      const originalListId = card.listId;
+      let sortIndex = 0;
+
+      if (cardId) {
+        const targetCard = ReactiveCache.getCard(cardId);
+        if (targetCard) {
+          sortIndex = await relativeCardSort(targetCard, position, card._id);
+        }
+      } else {
+        const maxSort = await card.getMaxSort(options.listId, options.swimlaneId);
+        sortIndex = (typeof maxSort === 'number' && !Number.isNaN(maxSort)) ? maxSort + 1 : 0;
+      }
+
+      await card.move(options.boardId, options.swimlaneId, options.listId, sortIndex,
+        tpl.$('#move-card-reason').val() || '');
+      if (title && title !== card.title) {
+        await card.setTitle(title);
+      }
+
+      if (leaveLinkAtOrigin) {
+        const linkCardId = await card.link(originalBoardId, originalSwimlaneId, originalListId);
+        if (linkCardId) {
+          Filter.addException(linkCardId);
+        }
+      }
+    },
+  });
+});
+registerCardDialogTemplate('moveCardPopup');
+
+/** Copy Card Dialog */
+Template.copyCardPopup.onCreated(function () {
+  this.dialog = new BoardSwimlaneListCardDialog(this, {
+    getDialogOptions() {
+      return ReactiveCache.getCurrentUser().getMoveAndCopyDialogOptions();
+    },
+    async setDone(cardId, options) {
+      const tpl = Template.instance();
+      const textarea = tpl.$('#copy-card-title');
+      const title = textarea.val().trim();
+      const position = tpl.$('input[name="position"]:checked').val();
+
+      ReactiveCache.getCurrentUser().setMoveAndCopyDialogOption(this.currentBoardId, options);
+      const card = Template.currentData();
+
+      if (title) {
+        const newCardId = await Meteor.callAsync('copyCard', card._id, options.boardId, options.swimlaneId, options.listId, true, {title: title});
+
+        if (newCardId) {
+          const newCard = ReactiveCache.getCard(newCardId);
+          if (newCard) {
+            let sortIndex = 0;
+
+            if (cardId) {
+              const targetCard = ReactiveCache.getCard(cardId);
+              if (targetCard) {
+                sortIndex = await relativeCardSort(targetCard, position, newCard._id);
+              }
+            } else {
+              const maxSort = await newCard.getMaxSort(options.listId, options.swimlaneId);
+              sortIndex = (typeof maxSort === 'number' && !Number.isNaN(maxSort)) ? maxSort + 1 : 0;
+            }
+
+            await newCard.move(options.boardId, options.swimlaneId, options.listId, sortIndex);
+          }
+        }
+
+        // In case the filter is active we need to add the newly inserted card in
+        // the list of exceptions -- cards that are not filtered. Otherwise the
+        // card will disappear instantly.
+        // See https://github.com/wekan/wekan/issues/80
+        Filter.addException(newCardId);
+      }
+    },
+  });
+});
+registerCardDialogTemplate('copyCardPopup');
+
+/**
+ * Link Card to Board Dialog (#4281) - creates a linked-card mirror of the
+ * current card on a different, existing board, reusing the same
+ * board/swimlane/list picker as Move/Copy and the existing linked-card
+ * mechanism (Cards.helpers().link(), models/cards.js) rather than inventing
+ * a new data model. The original card is never mutated.
+ */
+Template.linkCardToBoardPopup.onCreated(function () {
+  this.dialog = new BoardSwimlaneListCardDialog(this, {
+    getDialogOptions() {
+      return ReactiveCache.getCurrentUser().getMoveAndCopyDialogOptions();
+    },
+    async setDone(cardId, options) {
+      ReactiveCache.getCurrentUser().setMoveAndCopyDialogOption(this.currentBoardId, options);
+      const card = Template.currentData();
+      const tpl = Template.instance();
+      const position = tpl.$('input[name="position"]:checked').val();
+
+      const newCardId = await card.link(options.boardId, options.swimlaneId, options.listId);
+      if (newCardId) {
+        const newCard = ReactiveCache.getCard(newCardId);
+        if (newCard) {
+          let sortIndex = 0;
+
+          if (cardId) {
+            const targetCard = ReactiveCache.getCard(cardId);
+            if (targetCard) {
+              sortIndex = await relativeCardSort(targetCard, position, newCard._id);
+            }
+          } else {
+            const maxSort = await newCard.getMaxSort(options.listId, options.swimlaneId);
+            sortIndex = (typeof maxSort === 'number' && !Number.isNaN(maxSort)) ? maxSort + 1 : 0;
+          }
+
+          await newCard.move(options.boardId, options.swimlaneId, options.listId, sortIndex);
+        }
+
+        Filter.addException(newCardId);
+      }
+    },
+  });
+});
+registerCardDialogTemplate('linkCardToBoardPopup');
+
+/** Convert Checklist-Item to card dialog */
+Template.convertChecklistItemToCardPopup.onCreated(function () {
+  this.dialog = new BoardSwimlaneListCardDialog(this, {
+    getDialogOptions() {
+      return ReactiveCache.getCurrentUser().getMoveAndCopyDialogOptions();
+    },
+    async setDone(cardId, options) {
+      const tpl = Template.instance();
+      const textarea = tpl.$('#copy-card-title');
+      const title = textarea.val().trim();
+      const position = tpl.$('input[name="position"]:checked').val();
+
+      ReactiveCache.getCurrentUser().setMoveAndCopyDialogOption(this.currentBoardId, options);
+      const card = Template.currentData();
+
+      if (title) {
+        const _id = Cards.insert({
+          title: title,
+          listId: options.listId,
+          boardId: options.boardId,
+          swimlaneId: options.swimlaneId,
+          sort: 0,
+        });
+        const newCard = ReactiveCache.getCard(_id);
+
+        let sortIndex = 0;
+        if (cardId) {
+          const targetCard = ReactiveCache.getCard(cardId);
+          if (targetCard) {
+            sortIndex = await relativeCardSort(targetCard, position, newCard._id);
+          }
+        } else {
+          const maxSort = await newCard.getMaxSort(options.listId, options.swimlaneId);
+          sortIndex = (typeof maxSort === 'number' && !Number.isNaN(maxSort)) ? maxSort + 1 : 0;
+        }
+
+        await newCard.move(options.boardId, options.swimlaneId, options.listId, sortIndex);
+
+        Filter.addException(_id);
+      }
+    },
+  });
+});
+registerCardDialogTemplate('convertChecklistItemToCardPopup');
+
+/** Copy many cards dialog */
+Template.copyManyCardsPopup.onCreated(function () {
+  this.dialog = new BoardSwimlaneListCardDialog(this, {
+    getDialogOptions() {
+      return ReactiveCache.getCurrentUser().getMoveAndCopyDialogOptions();
+    },
+    async setDone(cardId, options) {
+      const tpl = Template.instance();
+      const textarea = tpl.$('#copy-card-title');
+      const title = textarea.val().trim();
+      const position = tpl.$('input[name="position"]:checked').val();
+
+      ReactiveCache.getCurrentUser().setMoveAndCopyDialogOption(this.currentBoardId, options);
+      const card = Template.currentData();
+
+      if (title) {
+        const titleList = JSON.parse(title);
+        for (const obj of titleList) {
+          const newCardId = await Meteor.callAsync('copyCard', card._id, options.boardId, options.swimlaneId, options.listId, false, {title: obj.title, description: obj.description});
+
+          if (newCardId) {
+            const newCard = ReactiveCache.getCard(newCardId);
+            let sortIndex = 0;
+
+            if (cardId) {
+              const targetCard = ReactiveCache.getCard(cardId);
+              if (targetCard) {
+                sortIndex = await relativeCardSort(targetCard, position, newCard._id);
+              }
+            } else {
+              const maxSort = await newCard.getMaxSort(options.listId, options.swimlaneId);
+              sortIndex = (typeof maxSort === 'number' && !Number.isNaN(maxSort)) ? maxSort + 1 : 0;
+            }
+
+            await newCard.move(options.boardId, options.swimlaneId, options.listId, sortIndex);
+            if (position === 'below') cardId = newCardId;
+          }
+
+          // In case the filter is active we need to add the newly inserted card in
+          // the list of exceptions -- cards that are not filtered. Otherwise the
+          // card will disappear instantly.
+          // See https://github.com/wekan/wekan/issues/80
+          Filter.addException(newCardId);
+        }
+      }
+    },
+  });
+});
+registerCardDialogTemplate('copyManyCardsPopup');
+
+Template.setCardColorPopup.onCreated(function () {
+  const cardId = getCardId();
+  this.currentCard = Cards.findOne(cardId);
+  this.currentColor = new ReactiveVar(this.currentCard?.color);
+});
+
+Template.setCardColorPopup.helpers({
+  colors() {
+    return ALLOWED_COLORS.map((color) => ({ color, name: '' }));
+  },
+
+  isSelected(color) {
+    const tpl = Template.instance();
+    if (tpl.currentColor.get() === null) {
+      return color === 'white';
+    }
+    return tpl.currentColor.get() === color;
+  },
+  // #5514: current color as a '#rrggbb' hex for the native color wheel <input>.
+  currentColorHex() {
+    return toHex(Template.instance().currentColor.get()) || '#0079bf';
+  },
+  customColors() {
+    return boardCustomCardColors(Template.instance().currentCard?.boardId);
+  },
+  selectedColor() {
+    return Template.instance().currentColor.get();
+  },
+});
+
+Template.setCardColorPopup.events({
+  'click .js-palette-color'(event, tpl) {
+    const paletteData = Blaze.getData(event.currentTarget);
+    tpl.currentColor.set(paletteData?.color);
+  },
+  'click .js-custom-palette-color'(event, tpl) {
+    const value = event.currentTarget.getAttribute('data-color');
+    if (isHexColor(value)) tpl.currentColor.set(value);
+  },
+  // #5514: picking from the native color wheel stores a custom hex.
+  'input .js-card-color-wheel'(event, tpl) {
+    const value = event.currentTarget.value;
+    if (isHexColor(value)) {
+      tpl.currentColor.set(value);
+    }
+  },
+  async 'click .js-submit'(event, tpl) {
+    event.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    await card.setColor(tpl.currentColor.get());
+    Popup.back();
+  },
+  async 'click .js-remove-color'(event) {
+    event.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    await card.setColor(null);
+    Popup.back();
+  },
+});
+
+// The custom '#rrggbb' colors already on this board's cards (both popups
+// offer them beside the palette). customColorsInUse keeps only strict hex.
+function boardCustomCardColors(boardId) {
+  if (!boardId) return [];
+  const cards = ReactiveCache.getCards(
+    { boardId, archived: false, color: { $regex: '^#' } },
+    { fields: { color: 1 } },
+  );
+  return customColorsInUse(cards.map(card => card.color));
+}
+
+Template.customCardColorSwatches.helpers({
+  contrastTextFor(hex) {
+    return contrastText(hex);
+  },
+});
+
+// Multi-Selection writes the color per card, through the same Card.setColor
+// and the same server allow rule as one card's popup. Cards the user may not
+// edit (Utils.canModifyCard - the client side of that rule, e.g. a linked card
+// whose source board is comment-only for them) are skipped rather than sent to
+// be refused, and one refusal no longer stops the rest of the selection.
+async function setColorOfSelectedCards(color) {
+  const cards = ReactiveCache.getCards(MultiSelection.getMongoSelector(), { sort: ['sort'] });
+  let failed = 0;
+  for (const card of cards) {
+    if (!Utils.canModifyCard(card)) continue;
+    try {
+      await card.setColor(color);
+    } catch (error) {
+      failed += 1;
+    }
+  }
+  return failed;
+}
+
+Template.setSelectionColorPopup.onCreated(function () {
+  const selectedCards = ReactiveCache.getCards(MultiSelection.getMongoSelector());
+  const uniqueColors = [...new Set(selectedCards.map(card => card.color || null))];
+  this.currentColor = new ReactiveVar(uniqueColors.length === 1 ? uniqueColors[0] : null);
+});
+
+Template.setSelectionColorPopup.helpers({
+  colors() {
+    return ALLOWED_COLORS.map((color) => ({ color, name: '' }));
+  },
+
+  isSelected(color) {
+    return Template.instance().currentColor.get() === color;
+  },
+  selectedColor() {
+    return Template.instance().currentColor.get();
+  },
+  currentColorHex() {
+    return toHex(Template.instance().currentColor.get()) || '#0079bf';
+  },
+  customColors() {
+    return boardCustomCardColors(Session.get('currentBoard'));
+  },
+});
+
+Template.setSelectionColorPopup.events({
+  'click .js-palette-color'(event, tpl) {
+    // Extract color from class name like "card-details-red"
+    const classes = $(event.currentTarget).attr('class').split(' ');
+    const colorClass = classes.find(cls => cls.startsWith('card-details-'));
+    const color = colorClass ? colorClass.replace('card-details-', '') : null;
+    tpl.currentColor.set(color);
+  },
+  'click .js-custom-palette-color'(event, tpl) {
+    const value = event.currentTarget.getAttribute('data-color');
+    if (isHexColor(value)) tpl.currentColor.set(value);
+  },
+  // The color wheel yields '#rrggbb'; anything else is ignored, as in one
+  // card's popup. The server schema refuses it regardless.
+  'input .js-selection-color-wheel, change .js-selection-color-wheel'(event, tpl) {
+    const value = event.currentTarget.value;
+    if (isHexColor(value)) tpl.currentColor.set(value.toLowerCase());
+  },
+  async 'submit form.edit-label'(event, tpl) {
+    event.preventDefault();
+    const color = tpl.currentColor.get();
+    if (!isAllowedCardColor(color, ALLOWED_COLORS)) return;
+    const failed = await setColorOfSelectedCards(color);
+    if (failed) {
+      alert(TAPi18n.__('server-error'));
+      return;
+    }
+    Popup.back();
+  },
+  async 'click .js-submit'(event, tpl) {
+    event.preventDefault();
+    await tpl.$('form.edit-label').trigger('submit');
+  },
+  async 'click .js-remove-color'(event) {
+    event.preventDefault();
+    const failed = await setColorOfSelectedCards(null);
+    if (failed) {
+      alert(TAPi18n.__('server-error'));
+      return;
+    }
+    Popup.back();
+  },
+});
+
+Template.cardMorePopup.onCreated(function () {
+  const cardId = getCardId();
+  this.currentCard = Cards.findOne(cardId);
+  this.parentBoard = new ReactiveVar(null);
+  // #3745: tracks whether the selected parent board's cards have finished
+  // loading. The card list stays empty until the subscription is ready, so it
+  // is no longer blank the first time another board is picked (the cards()
+  // helper queries minimongo, which was empty before the subscription arrived).
+  this.parentBoardReady = new ReactiveVar(true);
+  this.parentCard = this.currentCard?.parentCard();
+  if (this.parentCard) {
+    const list = $('.js-field-parent-card');
+    list.val(this.parentCard._id);
+    this.parentBoard.set(this.parentCard.board()._id);
+  } else {
+    this.parentBoard.set(null);
+  }
+
+  this.setParentCardId = (cardId) => {
+    if (cardId) {
+      this.parentCard = ReactiveCache.getCard(cardId);
+    } else {
+      this.parentCard = null;
+    }
+    const card = Cards.findOne(getCardId());
+    // #3626: only the primary parent changes; other parents stay.
+    if (card) card.setPrimaryParent(cardId === 'none' ? '' : cardId);
+  };
+});
+
+Template.cardMorePopup.helpers({
+  boards() {
+    // A user without a templates board has an undefined id here, and
+    // ReactiveCache keys - and re-reads - its selector through
+    // EJSON.stringify, which drops undefined: `{ $ne: undefined }` became
+    // `_id: {}` and matched NO board, so the list was empty. Exclude the
+    // templates board only when there is one.
+    const templatesBoardId = ReactiveCache.getCurrentUser()?.getTemplatesBoardId();
+    const ret = ReactiveCache.getBoards(
+      {
+        archived: false,
+        'members.userId': Meteor.userId(),
+        ...(templatesBoardId ? { _id: { $ne: templatesBoardId } } : {}),
+      },
+      {
+        sort: { sort: 1 /* boards default sorting */ },
+      },
+    );
+    return ret;
+  },
+
+  cards() {
+    const tpl = Template.instance();
+    const currentId = getCardId();
+    // #3745: don't list cards until the selected board's subscription is ready,
+    // otherwise the first open shows an empty list. Depending on parentBoardReady
+    // also re-runs this helper once the data has arrived.
+    if (tpl.parentBoard.get() && tpl.parentBoardReady.get()) {
+      const ret = ReactiveCache.getCards({
+        boardId: tpl.parentBoard.get(),
+        _id: { $ne: currentId },
+      });
+      return ret;
+    } else {
+      return [];
+    }
+  },
+
+  isParentBoard() {
+    const tpl = Template.instance();
+    const board = Template.currentData();
+    if (tpl.parentBoard.get()) {
+      return board._id === tpl.parentBoard.get();
+    }
+    return false;
+  },
+
+  isParentCard() {
+    const tpl = Template.instance();
+    const card = Template.currentData();
+    if (tpl.parentCard) {
+      return card._id === tpl.parentCard;
+    }
+    return false;
+  },
+  // #3626: the parents besides the primary one.
+  otherParents() {
+    const card = ReactiveCache.getCard(getCardId());
+    return card ? card.parentCards().slice(1) : [];
+  },
+});
+
+Template.cardMorePopup.events({
+  'change .js-field-add-parent-card'(event) {
+    const parentId = $(event.currentTarget).val();
+    $(event.currentTarget).val('none');
+    const card = ReactiveCache.getCard(getCardId());
+    if (!card || !parentId || parentId === 'none') return;
+    try {
+      card.addParent(parentId);
+    } catch (error) {
+      alert(errorMessage(error));
+    }
+  },
+  'click .js-remove-other-parent'(event) {
+    event.preventDefault();
+    const card = ReactiveCache.getCard(getCardId());
+    if (card) card.removeParent(event.currentTarget.dataset.id);
+  },
+  'click .js-copy-card-link-to-clipboard'(event, tpl) {
+    // #1188: on Sandstorm, share the card through the shell instead.
+    if (Meteor.settings?.public?.sandstorm && typeof window.sandstormShareUrl === 'function' &&
+        window.sandstormShareUrl(document.getElementById('cardURL').value)) return;
+    const promise = Utils.copyTextToClipboard(location.origin + document.getElementById('cardURL').value);
+
+    const $tooltip = tpl.$('.copied-tooltip');
+    Utils.showCopied(promise, $tooltip);
+  },
+  'click .js-delete': Popup.afterConfirm('cardDelete', function () {
+    const card = Cards.findOne(getCardId());
+    Popup.close();
+    if (!card) return;
+    // verify that there are no linked cards
+    if (ReactiveCache.getCards({ linkedId: card._id }).length === 0) {
+      Cards.remove(card._id);
+      // #6465 follow-up: like archiving, deleting must close the card's
+      // details window (drop it from the openCards session list).
+      Session.set('openCards', (Session.get('openCards') || []).filter((id) => id !== card._id));
+      if (Session.get('currentCard') === card._id) {
+        Session.set('currentCard', null);
+      }
+    } else {
+      // TODO: Maybe later we can list where the linked cards are.
+      // Now here is popup with a hint that the card cannot be deleted
+      // as there are linked cards.
+      // Related:
+      //   client/components/lists/listHeader.js about line 248
+      //   https://github.com/wekan/wekan/issues/2785
+      const message = `${TAPi18n.__(
+        'delete-linked-card-before-this-card',
+      )} linkedId: ${card._id
+        } at client/components/cards/cardDetails.js and https://github.com/wekan/wekan/issues/2785`;
+      alert(message);
+    }
+    Utils.goBoardId(card.boardId);
+  }),
+  'change .js-field-parent-board'(event, tpl) {
+    const selection = $(event.currentTarget).val();
+    const list = $('.js-field-parent-card');
+    if (selection === 'none') {
+      tpl.parentBoard.set(null);
+    } else {
+      // #3745: wait for the board subscription to be ready before showing its
+      // cards, so the parent-card list is populated on the first selection.
+      tpl.parentBoardReady.set(false);
+      Meteor.subscribe('board', selection, false, {
+        onReady() {
+          tpl.parentBoardReady.set(true);
+        },
+      });
+      tpl.parentBoard.set(selection);
+      list.prop('disabled', false);
+    }
+    tpl.setParentCardId(null);
+  },
+  'change .js-field-parent-card'(event, tpl) {
+    const selection = $(event.currentTarget).val();
+    tpl.setParentCardId(selection);
+  },
+});
+
+// #4495: create a brand-new board from THIS existing card, and link the card
+// to it, in one step. Adjacent to, and independent from, the existing
+// "Link to board" flow (Template.linkCardPopup in
+// client/components/lists/listBody.js), which links a NEW card to an
+// EXISTING board. This popup only asks for the new board's title (defaulting
+// to the card's own title); the actual board creation and linking happen
+// server-side, in the `createBoardFromCard` method (server/models/cards.js),
+// which sets on the card the exact same `type`/`linkedId` fields that flow
+// sets when linking to a whole board.
+Template.createBoardFromCardPopup.helpers({
+  cardTitle() {
+    const card = Cards.findOne(getCardId());
+    return card ? card.title : '';
+  },
+});
+
+Template.createBoardFromCardPopup.events({
+  'submit .js-create-board-from-card-form'(evt, tpl) {
+    evt.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) {
+      Popup.back();
+      return;
+    }
+    const title = tpl.$('.js-create-board-from-card-title').val();
+    Meteor.call('createBoardFromCard', card._id, title, (err, boardId) => {
+      if (err) {
+        alert(err.reason || err.message);
+        return;
+      }
+      if (boardId) {
+        Session.set(
+          'boardSubscriptionGeneration',
+          (Session.get('boardSubscriptionGeneration') || 0) + 1,
+        );
+      }
+      Popup.back();
+    });
+  },
+});
+
+Template.cardStartVotingPopup.onCreated(function () {
+  const cardId = getCardId();
+  this.currentCard = Cards.findOne(cardId);
+  this.voteQuestion = new ReactiveVar(this.currentCard?.voteQuestion);
+});
+
+Template.cardStartVotingPopup.helpers({
+  getVoteQuestion() {
+    const card = Cards.findOne(getCardId());
+    return card && card.getVoteQuestion ? card.getVoteQuestion() : null;
+  },
+  votePublic() {
+    const card = Cards.findOne(getCardId());
+    return card && card.votePublic ? card.votePublic() : false;
+  },
+  voteAllowNonBoardMembers() {
+    const card = Cards.findOne(getCardId());
+    return card && card.voteAllowNonBoardMembers ? card.voteAllowNonBoardMembers() : false;
+  },
+  getVoteEnd() {
+    const card = Cards.findOne(getCardId());
+    return card && card.getVoteEnd ? card.getVoteEnd() : null;
+  },
+});
+
+Template.cardStartVotingPopup.events({
+  'click .js-end-date': Popup.open('editVoteEndDate'),
+  'submit .edit-vote-question'(evt) {
+    evt.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    const voteQuestion = evt.target.vote.value;
+    const publicVote = $('#vote-public').hasClass('is-checked');
+    const allowNonBoardMembers = $('#vote-allow-non-members').hasClass(
+      'is-checked',
+    );
+    const endString = card.getVoteEnd();
+    Meteor.call('cards.setVoteQuestion', card.getRealId(), voteQuestion, publicVote, allowNonBoardMembers);
+    if (endString) {
+      Meteor.call('cards.setVoteEnd', card.getRealId(), new Date(endString));
+    }
+    backIfOwnPopup(evt, 'cardStartVotingPopup');
+  },
+  'click .js-remove-vote': Popup.afterConfirm('deleteVote', function () {
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    Meteor.call('cards.unsetVote', card.getRealId());
+    Popup.back();
+  }),
+  'click a.js-toggle-vote-public'(event) {
+    event.preventDefault();
+    $('#vote-public').toggleClass('is-checked');
+  },
+  'click a.js-toggle-vote-allow-non-members'(event) {
+    event.preventDefault();
+    $('#vote-allow-non-members').toggleClass('is-checked');
+  },
+});
+
+Template.positiveVoteMembersPopup.helpers({
+  voteMemberPositive() {
+    const card = Cards.findOne(getCardId());
+    return card ? card.voteMemberPositive() : [];
+  },
+});
+
+Template.negativeVoteMembersPopup.helpers({
+  voteMemberNegative() {
+    const card = Cards.findOne(getCardId());
+    return card ? card.voteMemberNegative() : [];
+  },
+});
+
+Template.cardDeletePopup.helpers({
+  archived() {
+    const card = Cards.findOne(getCardId());
+    return card ? card.archived : false;
+  },
+});
+
+Template.cardArchivePopup.helpers({
+  archived() {
+    const card = Cards.findOne(getCardId());
+    return card ? card.archived : false;
+  },
+});
+
+// editVoteEndDatePopup
+Template.editVoteEndDatePopup.onCreated(function () {
+  const card = Cards.findOne(getCardId());
+  setupDatePicker(this, {
+    defaultTime: formatDateTime(now()),
+    initialDate: card?.getVoteEnd ? (card.getVoteEnd() || undefined) : undefined,
+    async storeDate(date, currentCard) {
+      await Meteor.callAsync('cards.setVoteEnd', currentCard.getRealId(), date);
+    },
+    async deleteDate(currentCard) {
+      await Meteor.callAsync('cards.unsetVoteEnd', currentCard.getRealId());
+    },
+  });
+});
+
+Template.editVoteEndDatePopup.onRendered(function () {
+  datePickerRendered(this);
+});
+
+Template.editVoteEndDatePopup.helpers(datePickerHelpers());
+
+Template.cardStartPlanningPokerPopup.onCreated(function () {
+  const cardId = getCardId();
+  this.currentCard = Cards.findOne(cardId);
+  this.pokerQuestion = new ReactiveVar(this.currentCard?.pokerQuestion);
+});
+
+Template.cardStartPlanningPokerPopup.helpers({
+  getPokerQuestion() {
+    const card = Cards.findOne(getCardId());
+    return card && card.getPokerQuestion ? card.getPokerQuestion() : null;
+  },
+  pokerAllowNonBoardMembers() {
+    const card = Cards.findOne(getCardId());
+    return card && card.pokerAllowNonBoardMembers ? card.pokerAllowNonBoardMembers() : false;
+  },
+  getPokerEnd() {
+    const card = Cards.findOne(getCardId());
+    return card && card.getPokerEnd ? card.getPokerEnd() : null;
+  },
+});
+
+Template.cardStartPlanningPokerPopup.events({
+  'click .js-end-date': Popup.open('editPokerEndDate'),
+  'submit .edit-poker-question'(evt) {
+    evt.preventDefault();
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    const pokerQuestion = true;
+    const allowNonBoardMembers = $('#poker-allow-non-members').hasClass(
+      'is-checked',
+    );
+    const endString = card.getPokerEnd();
+
+    Meteor.call('cards.setPokerQuestion', card.getRealId(), pokerQuestion, allowNonBoardMembers);
+    if (endString) {
+      Meteor.call('cards.setPokerEnd', card.getRealId(), new Date(endString));
+    }
+    backIfOwnPopup(evt, 'cardStartPlanningPokerPopup');
+  },
+  'click .js-remove-poker': Popup.afterConfirm('deletePoker', function () {
+    const card = Cards.findOne(getCardId());
+    if (!card) return;
+    Meteor.call('cards.unsetPoker', card.getRealId());
+    Popup.back();
+  }),
+  'click a.js-toggle-poker-allow-non-members'(event) {
+    event.preventDefault();
+    $('#poker-allow-non-members').toggleClass('is-checked');
+  },
+});
+
+// editPokerEndDatePopup
+Template.editPokerEndDatePopup.onCreated(function () {
+  const card = Cards.findOne(getCardId());
+  setupDatePicker(this, {
+    defaultTime: formatDateTime(now()),
+    initialDate: card?.getPokerEnd ? (card.getPokerEnd() || undefined) : undefined,
+    async storeDate(date, currentCard) {
+      await Meteor.callAsync('cards.setPokerEnd', currentCard.getRealId(), date);
+    },
+    async deleteDate(currentCard) {
+      await Meteor.callAsync('cards.unsetPokerEnd', currentCard.getRealId());
+    },
+  });
+});
+
+Template.editPokerEndDatePopup.onRendered(function () {
+  datePickerRendered(this);
+});
+
+Template.editPokerEndDatePopup.helpers(datePickerHelpers());
+
+// Close the card details pane by pressing escape
+EscapeActions.register(
+  'detailsPane',
+  async () => {
+    // if card description diverges from database due to editing
+    // ask user whether changes should be applied
+    const currentUser = ReactiveCache.getCurrentUser();
+    if (currentUser?.profile?.rescueCardDescription === true) {
+      const currentCard = getCurrentCardFromContext();
+      const cardDetailsElement = getCardDetailsElement(currentCard?._id);
+      const currentDescription = cardDetailsElement?.querySelector(
+        '.editor.js-new-description-input',
+      );
+      if (currentDescription?.value && currentCard && !(currentDescription.value === currentCard.getDescription())) {
+        if (confirm(TAPi18n.__('rescue-card-description-dialogue'))) {
+          await currentCard.setDescription(currentDescription.value);
+          // Save it!
+          console.log(currentDescription.value);
+          console.log("current description", currentCard.getDescription());
+        } else {
+          // Do nothing!
+          console.log('Description changes were not saved to the database.');
+        }
+      }
+    }
+    // #5686: selecting the text of a checklist item (whose mousedown stops
+    // propagation, so cardDetailsIsDragging is never set) and releasing the
+    // mouse outside the card must NOT close the card. Treat a live text
+    // selection anchored inside the card pane the same as an in-card drag.
+    const selectingInsideCard = isTextSelectionInsideCard(
+      typeof window !== 'undefined' && window.getSelection
+        ? window.getSelection()
+        : null,
+      getCardDetailsElement(getCurrentCardFromContext()?._id),
+    );
+    if (Session.get('cardDetailsIsDragging') || selectingInsideCard) {
+      // Reset dragging status as the mouse landed outside the cardDetails template area and this will prevent a mousedown event from firing
+      Session.set('cardDetailsIsDragging', false);
+      Session.set('cardDetailsIsMouseDown', false);
+
+    } else {
+      // Trigger the close button so all close logic (openCards, routing, mini-screen) runs consistently
+      $('.js-close-card-details').first().trigger('click');
+    }
+  },
+  () => {
+    return !Session.equals('currentCard', null);
+  },
+  {
+    noClickEscapeOn: '.js-card-details,.board-sidebar,#header',
+  },
+);
+
+Template.cardAssigneesPopup.onCreated(function () {
+  let currBoard = Utils.getCurrentBoard();
+  let members = currBoard.activeMembers();
+  this.members = new ReactiveVar(members);
+});
+
+Template.cardAssigneesPopup.events({
+  'click .js-select-assignee'(event) {
+    const card = getCurrentCardFromContext();
+    if (!card) return;
+    const assigneeId = this.userId;
+    card.toggleAssignee(assigneeId);
+    event.preventDefault();
+  },
+  'keyup .card-assignees-filter'(event) {
+    const members = filterMembers(event.target.value);
+    Template.instance().members.set(members);
+  },
+});
+
+Template.cardAssigneesPopup.helpers({
+  suggestedMembers() {
+    return suggestedMembersFor(getCurrentCardFromContext(), 'assignees');
+  },
+  isCardAssignee() {
+    const card = getCurrentCardFromContext();
+    if (!card) return false;
+    const cardAssignees = card.getAssignees();
+
+    return (cardAssignees || []).includes(this.userId);
+  },
+
+  members() {
+    const members = Template.instance().members.get();
+    const uniqueMembers = uniqBy(members, 'userId');
+    return [...uniqueMembers].sort((a, b) => {
+      const userA = ReactiveCache.getUser(a.userId);
+      const userB = ReactiveCache.getUser(b.userId);
+      const nameA = userA ? userA.profile.fullname : '';
+      const nameB = userB ? userB.profile.fullname : '';
+      return nameA.localeCompare(nameB);
+    });
+  },
+
+  userData() {
+    return ReactiveCache.getUser(this.userId);
+  },
+});
+
+Template.cardAssigneePopup.helpers({
+  userData() {
+    return ReactiveCache.getUser(this.userId, {
+      fields: {
+        profile: 1,
+        username: 1,
+      },
+    });
+  },
+
+  memberType() {
+    const user = ReactiveCache.getUser(this.userId);
+    return user && user.isBoardAdmin() ? 'admin' : 'normal';
+  },
+
+  isCardAssignee() {
+    const card = getCurrentCardFromContext();
+    if (!card) return false;
+    const cardAssignees = card.getAssignees();
+
+    return (cardAssignees || []).includes(this.userId);
+  },
+
+  user() {
+    return ReactiveCache.getUser(this.userId);
+  },
+});
+
+Template.cardAssigneePopup.events({
+  'click .js-remove-assignee'() {
+    ReactiveCache.getCard(this.cardId).unassignAssignee(this.userId);
+    Popup.back();
+  },
+  'click .js-edit-profile': Popup.open('editProfile'),
+});
+
+// #3392: PI Program Board "Red Strings". Popup to pick another card on the
+// same board to add as a dependency. The popup's data context is the source
+// card (set by Popup.open on the .js-add-dependency element inside cardDetails).
+Template.cardDependenciesPopup.onCreated(function () {
+  this.searchTerm = new ReactiveVar('');
+  this.newType = new ReactiveVar(DEPENDENCY_TYPES[0].id);
+  this.newColor = new ReactiveVar(DEFAULT_DEPENDENCY_COLOR);
+});
+
+Template.cardDependenciesPopup.helpers({
+  defaultColor() {
+    return Template.instance().newColor.get();
+  },
+  typeOption() {
+    const current = Template.instance().newType.get();
+    return DEPENDENCY_TYPES.map(t => ({
+      id: t.id,
+      label: `dependency-type-${t.id}`,
+      selected: t.id === current,
+    }));
+  },
+  candidateCards() {
+    const sourceCard = Template.currentData();
+    if (!sourceCard) return [];
+    const term = Template.instance().searchTerm.get().toLowerCase();
+    const existingIds = (sourceCard.getDependencies
+      ? sourceCard.getDependencies()
+      : []
+    ).map(dep => dep.cardId);
+    const cards = ReactiveCache.getCards({
+      boardId: sourceCard.boardId,
+      archived: false,
+    });
+    return cards.filter(card => {
+      if (card._id === sourceCard._id) return false;
+      if (existingIds.includes(card._id)) return false;
+      if (term && !(card.title || '').toLowerCase().includes(term)) return false;
+      return true;
+    });
+  },
+});
+
+Template.cardDependenciesPopup.events({
+  'keyup .js-dependency-search'(event) {
+    Template.instance().searchTerm.set(event.currentTarget.value || '');
+  },
+  'change .js-new-dependency-type'(event) {
+    Template.instance().newType.set(event.currentTarget.value);
+  },
+  'change .js-new-dependency-color'(event) {
+    Template.instance().newColor.set(event.currentTarget.value);
+  },
+  'click .js-pick-dependency'(event) {
+    event.preventDefault();
+    const tpl = Template.instance();
+    const sourceCard = Template.currentData();
+    const targetId = event.currentTarget.dataset.targetId;
+    if (sourceCard && targetId) {
+      sourceCard.addDependency(targetId, {
+        type: tpl.newType.get(),
+        color: tpl.newColor.get(),
+      });
+    }
+    Popup.back();
+  },
+});
+
+// #3392: icon picker for an existing dependency. The source card is the popup's
+// data context; the target id was stashed on the cardDetails instance by the
+// .js-dependency-icon click handler.
+Template.cardDependencyIconPopup.helpers({
+  dependencyIcons() {
+    return DEPENDENCY_ICON_CHOICES.map(name => ({ name }));
+  },
+});
+
+Template.cardDependencyIconPopup.events({
+  'click .js-pick-dependency-icon'(event) {
+    event.preventDefault();
+    // Use the source card captured when the picker was opened (the popup's own
+    // data context is the dependency row, which has no setDependencyProps).
+    const sourceCard = editingDependencyCard;
+    const icon = event.currentTarget.dataset.icon || DEFAULT_DEPENDENCY_ICON;
+    if (sourceCard && editingDependencyTargetId) {
+      sourceCard.setDependencyProps(editingDependencyTargetId, { icon });
+    }
+    editingDependencyTargetId = null;
+    editingDependencyCard = null;
+    Popup.back();
+  },
+});
+
+// Kanboard-style whole-card recurrence: pick (or clear) the card's
+// automatic-recurrence interval. Mirrors checklists.js's
+// Template.checklistResetIntervalPopup.
+Template.cardRecurrenceIntervalPopup.helpers({
+  recurrenceIntervals() {
+    return CARD_RECURRENCE_INTERVALS;
+  },
+  isCurrentCardInterval() {
+    const card = Cards.findOne(getCardId());
+    const current = (card && card.recurrenceInterval) || 'none';
+    return current === this.toString();
+  },
+});
+
+Template.cardRecurrenceIntervalPopup.events({
+  'click .js-set-card-recurrence'(event) {
+    event.preventDefault();
+    const interval = event.currentTarget.getAttribute('data-interval');
+    const card = Cards.findOne(getCardId());
+    if (card) {
+      card.setRecurrenceInterval(interval);
+    }
+    Popup.back();
+  },
+});
+
+// #2015: the card's link as a QR code, drawn here (models/lib/qrCode.js).
+Template.cardQrCodePopup.helpers({
+  cardUrl() {
+    const card = Template.currentData();
+    return (card && typeof card.absoluteUrl === 'function' && card.absoluteUrl()) || '';
+  },
+  qrDataUri() {
+    const card = Template.currentData();
+    const url = card && typeof card.absoluteUrl === 'function' ? card.absoluteUrl() : '';
+    const { qrSvg } = require('/models/lib/qrCode');
+    const svg = url ? qrSvg(url, { scale: 6 }) : '';
+    // The SVG is the encoder's own ASCII markup, never the link's text.
+    return svg ? `data:image/svg+xml;base64,${window.btoa(svg)}` : '';
+  },
+});
+
+// #2012: Template.currentData() is the card.
+Template.cardKindPopup.events({
+  async 'click .js-select-card-kind'(event) {
+    event.preventDefault();
+    const card = Template.currentData();
+    if (card && typeof card.setCardKind === 'function') {
+      try { await card.setCardKind(event.currentTarget.dataset.kind || null); } catch (error) { console.error(error); }
+    }
+    backIfOwnPopup(event, 'cardKindPopup');
+  },
+});

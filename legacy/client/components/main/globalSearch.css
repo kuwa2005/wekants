@@ -1,0 +1,245 @@
+.global-search-board-wrapper {
+  border-radius: 8px;
+  min-width: 400px;
+  border-width: 8px;
+  border-color: #808080;
+  border-style: solid;
+  margin-bottom: 2rem;
+  margin-inline-end: auto;
+  margin-inline-start: auto;
+}
+.global-search-board-title {
+  font-size: 1.4rem;
+  font-weight: bold;
+  padding: 0.5rem;
+  background-color: #808080;
+  color: #fff;
+}
+.global-search-swimlane-title {
+  font-size: 1.1rem;
+  font-weight: bold;
+  padding: 0.5rem;
+  padding-bottom: 0.4rem;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+.swimlane-default-color {
+  background-color: #d3d3d3;
+}
+.global-search-list-title {
+  font-weight: bold;
+  font-size: 1.1rem;
+  text-align: center;
+  margin-bottom: 0.7rem;
+}
+.global-search-list-wrapper {
+  margin: 1rem;
+  border-radius: 5px;
+  padding: 1.5rem;
+  padding-top: 0.75rem;
+  display: inline-block;
+  min-width: 250px;
+  max-width: 350px;
+}
+.global-search-card-wrapper {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+.global-search-results-list-wrapper {
+  max-width: 500px;
+  margin-inline-end: auto;
+  margin-inline-start: auto;
+}
+.global-search-field-name {
+  font-weight: bold;
+}
+.global-search-context {
+  display: inline-block;
+}
+.global-search-context-separator {
+  font-weight: bold;
+}
+.global-search-context-list {
+  margin-bottom: 0.7rem;
+}
+.global-search-error-messages {
+  color: #8b0000;
+}
+.global-search-page {
+  width: 40%;
+  min-width: 400px;
+  margin-inline-end: auto;
+  margin-inline-start: auto;
+  line-height: 150%;
+}
+.global-search-page h1 {
+  margin-top: 2rem;
+}
+.global-search-page h2 {
+  margin-top: 1rem;
+}
+.global-search-query-input {
+  width: 90% !important;
+  margin-inline-end: auto;
+  margin-inline-start: auto;
+}
+.js-new-search {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+/* The new-search button uses the .primary button style, so it follows the theme
+   override colour (default blue #005377, or the board/global theme). The old
+   hardcoded belize (#216694) rules were removed. */
+.global-search-operator {
+  font-family: Courier;
+}
+.global-search-value {
+  font-family: Courier;
+  font-style: italic;
+}
+code {
+  color: #000;
+  background-color: #d3d3d3;
+  padding: 0.1rem !important;
+  font-size: 0.8rem !important;
+}
+.list-title {
+  background-color: #a9a9a9;
+}
+.global-search-footer {
+  border: none;
+  width: 100%;
+}
+.global-search-next-page {
+  border: none;
+  text-align: end;
+}
+.global-search-previous-page {
+  border: none;
+  text-align: start;
+}
+.global-search-instructions li {
+  margin-bottom: 0.3rem;
+}
+
+/* #6034 (MVP): drag-and-drop search results into board columns. */
+.global-search-results-list .result-card-wrapper {
+  cursor: grab;
+}
+.global-search-results-list .result-card-wrapper:active {
+  cursor: grabbing;
+}
+.global-search-result-drag-helper {
+  z-index: 1000;
+  opacity: 0.85;
+  pointer-events: none;
+  list-style: none;
+}
+.global-search-drop-hover {
+  outline: 2px dashed #216694;
+  outline-offset: -2px;
+  background-color: rgba(33, 102, 148, 0.08);
+}
+
+/* ── Search All Boards on a phone ────────────────────────────────────────────
+   `.global-search-page` is `width: 40%; min-width: 400px`, sized for a desktop
+   column. On a 375px phone the min-width alone pushes the whole block past the
+   right edge, so everything inside it - the Label Colors palette most visibly -
+   sits partly in the invisible area off-screen. The palette already has
+   `flex-wrap: wrap`; it could not help, because its container was wider than the
+   screen, so there was nothing to wrap into.
+
+   At small width the page block is simply as wide as the screen. The wrappers
+   with their own desktop minimums are released too, or they would re-create the
+   overflow one level down. */
+@media screen and (max-width: 800px) {
+  .global-search-page {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-inline: 8px;
+  }
+
+  /* ONE scroller: the body. Dragging the header bars (which sit OUTSIDE
+     #content) already scrolls the page, which proves the body is the real
+     scroller. The previous attempt made #content its own `overflow-y: auto`
+     scroller - but in the grey content area that TRAPPED the touch: #content
+     caught the gesture and, when it had nothing of its own to scroll, did not
+     pass it on to the body, so a finger drag over the text did nothing while the
+     same drag over the header still scrolled.
+
+     So #content is made a pass-through again: `overflow: visible` (do not catch
+     the touch) and `flex: 0 0 auto` with `min-height: auto` so it takes its
+     content's full natural height rather than being squeezed to the viewport by
+     the default `flex: 1`. That makes the body's content taller than the body,
+     so the BODY scrolls - one scroller, reachable by a finger anywhere, header or
+     content alike.
+
+     The body is `100dvh` so its bottom tracks Safari's toolbar (not the large
+     `100vh`), `overflow-y: auto` so it scrolls, and `overscroll-behavior:
+     contain` so the drag does not chain out to pull-to-refresh. All scoped with
+     `:has`, so only this page is affected. */
+  body:has(.wrapper.global-search-wrapper) {
+    height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  body:has(.wrapper.global-search-wrapper) #content {
+    flex: 0 0 auto;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .wrapper.global-search-wrapper {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .global-search-page,
+  .global-search-results-list-wrapper.global-search-results-list,
+  form.global-search-page.js-search-query-form {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .global-search-board-wrapper,
+  .global-search-results-list-wrapper {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Chips wrap onto as many rows as they need and never force a row wider than
+     the screen. `min-width: 0` lets a chip shrink below its content width, which
+     a flex item otherwise refuses to do. */
+  .global-search-page .palette-colors {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .global-search-page .palette-colors .palette-color,
+  .global-search-page .lists-wrapper .card-label {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+}
+
+/* Search phrases: the operators a phrase became (docs/Features/Pages/Search-Phrases.md). */
+.global-search-phrased {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #e8f2f8;
+  color: #01628c;
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}

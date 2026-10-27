@@ -1,0 +1,920 @@
+import { TAPi18n } from '/imports/i18n';
+import { trapTabKey } from '/client/lib/accessibility';
+import { formatDateForDisplay } from '/client/lib/dateDisplay';
+import { ReactiveCache } from '/imports/reactiveCache';
+import '/client/components/cards/attachments.jade';
+import { attachmentKind } from '/models/lib/attachmentKind';
+import { generateUniversalAttachmentUrl } from '/models/lib/universalUrlGenerator';
+import { canThumbnail, thumbnailUrl } from '/models/lib/attachmentThumbnail';
+import { liveAttachments } from '/models/lib/attachmentSoftDelete';
+import DOMPurify from 'dompurify';
+import { sanitizeHTML, sanitizeText } from '/imports/lib/secureDOMPurify';
+import { openZipAttachment } from '/client/lib/zipAttachmentViewer';
+import { openOfficeAttachment } from '/client/lib/officeAttachmentViewer';
+import uploadProgressManager from '../../lib/uploadProgressManager';
+import { attachmentMigrationManager } from '/client/lib/attachmentMigrationManager';
+import Attachments from '/models/attachments';
+import { Utils } from '/client/lib/utils';
+import { buildAttachmentUploadConfig } from '/client/lib/attachmentUploadConfig';
+const { cleanFileName } = require('/imports/lib/fileNameDisplay');
+const { attachmentTileCompact } = require('/models/lib/attachmentTile.cjs');
+import { formatDateTime } from '/imports/lib/dateUtils';
+import { EscapeActions } from '/client/lib/escapeActions';
+import { openNewDrawing } from '/client/lib/newDrawing';
+import { FlowRouter } from 'meteor/ostrio:flow-router-extra';
+import { ReactiveVar } from 'meteor/reactive-var';
+
+const { filesize } = require('filesize');
+import prettyMilliseconds from 'pretty-ms';
+
+// We store current card ID and the ID of currently opened attachment in a
+// global var. This is used so that we know what's the next attachment to open
+// when the user clicks on the prev/next button in the attachment viewer.
+let viewerOpener = null;
+let cardId = null;
+let openAttachmentId = null;
+let slideshowAttachmentIds = null;
+
+// Used to store the start and end coordinates of a touch event for attachment swiping
+let touchStartCoords = null;
+let touchEndCoords = null;
+
+let zipPreviewAbortController = null;
+let officePreview = null;
+let officePreviewAbortController = null;
+let officePreviewGeneration = 0;
+
+Template.attachmentGallery.events({
+  'click .open-preview'(event) {
+    event.preventDefault();
+
+    openAttachmentId = $(event.currentTarget).attr("data-attachment-id");
+    cardId = $(event.currentTarget).attr("data-card-id");
+    slideshowAttachmentIds = null;
+
+    openAttachmentViewer(openAttachmentId);
+  },
+  'click .js-add-attachment': Popup.open('cardAttachments'),
+  // #3257: an attached card opens in this tab, as a card link does.
+  'click .js-open-attached-card'(event) {
+    event.preventDefault();
+    const url = event.currentTarget.getAttribute('href');
+    if (url) FlowRouter.go(url);
+  },
+  'click .js-detach-card'(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const card = Template.currentData();
+    const cardId = typeof card.getRealId === 'function' ? card.getRealId() : card._id;
+    Meteor.call('detachCardFromCard', cardId, event.currentTarget.dataset.cardId, error => {
+      if (error) console.error('[attachments] detach card failed:', error);
+    });
+  },
+  // If we let this event bubble, FlowRouter will handle it and empty the page
+  // content, see #101.
+  'click .js-download'(event) {
+    event.stopPropagation();
+  },
+  'click .js-open-attachment-menu': Popup.open('attachmentActions'),
+  'click .js-rename': Popup.open('attachmentRename'),
+  // History.md §12.1: Delete is a SOFT delete, done by the server. The method
+  // marks the attachment deleted, keeps the file, unsets the cover if this was
+  // it, and records who did it in the card history - where it can be restored.
+  // Nothing on the client removes an attachment document any more (#5282's
+  // "Removed nonexistent document" cannot happen when nothing is removed).
+  'click .js-confirm-delete': Popup.afterConfirm('attachmentDelete', function() {
+      if (this._id) {
+        Meteor.call('attachments.softDelete', this._id);
+      }
+      Popup.back();
+  }),
+});
+
+// The slideshow walks the card's LIVE attachments (History.md §12.1) unless it
+// was opened with an explicit list of ids - the Files report and the card
+// history do that, and the history's list may contain a soft-deleted one.
+function getNextAttachmentId(currentAttachmentId, offset = 0) {
+  const attachments = slideshowAttachmentIds
+    ? slideshowAttachmentIds.map(id => ReactiveCache.getAttachment(id)).filter(Boolean)
+    : ReactiveCache.getAttachments(liveAttachments({'meta.cardId': cardId}));
+
+  let i = 0;
+  for (; i < attachments.length; i++) {
+    if (attachments[i]._id === currentAttachmentId) {
+      break;
+    }
+  }
+  return attachments[(i + offset + 1 + attachments.length) % attachments.length]._id;
+}
+
+function getPrevAttachmentId(currentAttachmentId, offset = 0) {
+  const attachments = slideshowAttachmentIds
+    ? slideshowAttachmentIds.map(id => ReactiveCache.getAttachment(id)).filter(Boolean)
+    : ReactiveCache.getAttachments(liveAttachments({'meta.cardId': cardId}));
+
+  let i = 0;
+  for (; i < attachments.length; i++) {
+    if (attachments[i]._id === currentAttachmentId) {
+      break;
+    }
+  }
+  return attachments[(i + offset - 1 + attachments.length) % attachments.length]._id;
+}
+
+function attachmentCanBeOpened(attachment) {
+  // #6532: a migrated attachment can arrive without these flags, so ask the
+  // shared helper - which derives them from the mime type or the file name -
+  // rather than the raw document. Otherwise an image that renders as a
+  // thumbnail still refuses to open in the viewer.
+  const kind = attachmentKind(attachment);
+  return (
+    kind.isImage ||
+    kind.isPDF ||
+    kind.isText ||
+    kind.isJSON ||
+    kind.isOffice ||
+    kind.isZIP ||
+    kind.isVideo ||
+    kind.isAudio
+  );
+}
+
+function getAttachmentUrl(attachment) {
+  return attachment && typeof attachment.link === 'function' ? attachment.link() : '';
+}
+
+function openAttachmentViewer(attachmentId) {
+  const attachment = ReactiveCache.getAttachment(attachmentId);
+
+  // Check if we can open the attachment (if we have a viewer for it) and exit if not
+  if (!attachmentCanBeOpened(attachment)) {
+    return;
+  }
+
+  /*
+  Instructions for adding a new viewer:
+    - add a new case to the switch statement below
+    - implement cleanup in the closeAttachmentViewer() function, if necessary
+    - mark attachment type as openable by adding a new condition to the attachmentCanBeOpened function
+  */
+  const kind = attachmentKind(attachment);
+  switch(true){
+    case (kind.isImage):
+      $("#image-viewer").attr("src", getAttachmentUrl(attachment));
+      // #337: the picture is named by its file for a screen reader.
+      if (attachment.name) $("#image-viewer").attr("alt", attachment.name);
+      $("#image-viewer").removeClass("hidden");
+      break;
+    case (kind.isPDF):
+      $("#pdf-viewer").attr("data", getAttachmentUrl(attachment));
+      $("#pdf-viewer").removeClass("hidden");
+      break;
+    case (kind.isVideo):
+      // We have to create a new <source> DOM element and append it to the video
+      // element, otherwise the video won't load
+      let videoSource = document.createElement('source');
+      videoSource.setAttribute('src', getAttachmentUrl(attachment));
+      $("#video-viewer").append(videoSource);
+
+      $("#video-viewer").removeClass("hidden");
+      break;
+    case (kind.isAudio):
+      // We have to create a new <source> DOM element and append it to the audio
+      // element, otherwise the audio won't load
+      let audioSource = document.createElement('source');
+      audioSource.setAttribute('src', getAttachmentUrl(attachment));
+      $("#audio-viewer").append(audioSource);
+
+      $("#audio-viewer").removeClass("hidden");
+      break;
+    case (kind.isText):
+    case (kind.isJSON):
+      $("#txt-viewer").attr("data", getAttachmentUrl(attachment));
+      $("#txt-viewer").removeClass("hidden");
+      break;
+    case (kind.isZIP): {
+      const container = document.getElementById('zip-viewer');
+      zipPreviewAbortController = new AbortController();
+      const { signal } = zipPreviewAbortController;
+      container.classList.remove('hidden');
+      container.textContent = TAPi18n.__('loading');
+      openZipAttachment({ container, signal, size: attachment.size,
+        url: getAttachmentUrl(attachment), emptyMessage: TAPi18n.__('no-results') })
+        .catch(error => {
+          if (signal.aborted) return;
+          container.textContent = TAPi18n.__('error');
+          console.error('Could not preview ZIP attachment:', error);
+        });
+      break;
+    }
+    case (kind.isOffice): {
+      const generation = ++officePreviewGeneration;
+      const container = document.getElementById('office-viewer');
+      officePreviewAbortController = new AbortController();
+      container.replaceChildren();
+      container.classList.remove('hidden');
+      openOfficeAttachment({
+        container,
+        extension: kind.extension,
+        signal: officePreviewAbortController.signal,
+        size: attachment.size,
+        url: getAttachmentUrl(attachment),
+      }).then(preview => {
+        if (generation !== officePreviewGeneration) {
+          preview.destroy();
+          return;
+        }
+        officePreview = preview;
+      }).catch(error => {
+        if (generation !== officePreviewGeneration) return;
+        console.error('Could not preview Office attachment:', error);
+        closeAttachmentViewer();
+      });
+      break;
+    }
+  }
+
+  // Show the cleaned name: URL-decoded, homoglyphs folded, invisible characters
+  // and exploit markup removed (plain text; .text() escapes, so never HTML).
+  $('#attachment-name').text(cleanFileName(attachment.name));
+  const opening = !viewerOpener;
+  if (opening) viewerOpener = document.activeElement;
+  $('#viewer-overlay').removeClass('hidden');
+  if (opening) document.getElementById('viewer-close')?.focus();
+}
+
+// Admin Panel / Files uses the same viewer as an opened card, but its next and
+// previous buttons traverse the currently published report page rather than a
+// single card. Keeping the scope explicit also prevents unrelated attachments
+// that happen to be in Minimongo from entering the slideshow.
+export function openAttachmentSlideshow(attachmentId, attachmentIds = []) {
+  openAttachmentId = attachmentId;
+  cardId = null;
+  slideshowAttachmentIds = Array.isArray(attachmentIds)
+    ? attachmentIds.filter(Boolean)
+    : [];
+  openAttachmentViewer(attachmentId);
+}
+
+function closeAttachmentViewer(restoreFocus = true) {
+  zipPreviewAbortController?.abort();
+  zipPreviewAbortController = null;
+  const zipViewer = document.getElementById('zip-viewer');
+  zipViewer?.replaceChildren();
+  zipViewer?.classList.add('hidden');
+  officePreviewGeneration++;
+  if (officePreviewAbortController) {
+    officePreviewAbortController.abort();
+    officePreviewAbortController = null;
+  }
+  if (officePreview) {
+    officePreview.destroy();
+    officePreview = null;
+  }
+  const officeViewer = document.getElementById('office-viewer');
+  officeViewer?.replaceChildren();
+  officeViewer?.classList.add('hidden');
+
+  $("#viewer-overlay").addClass("hidden");
+
+  // We need to reset the viewers to avoid showing previous attachments
+  $("#image-viewer").attr("src", "");
+  $("#image-viewer").addClass("hidden");
+
+  $("#pdf-viewer").attr("data", "");
+  $("#pdf-viewer").addClass("hidden");
+
+  $("#txt-viewer").attr("data", "");
+  $("#txt-viewer").addClass("hidden");
+
+  $("#video-viewer").get(0)?.pause(); // Stop playback
+  if ($("#video-viewer").get(0)) $("#video-viewer").get(0).currentTime = 0;
+  $("#video-viewer").empty();
+  $("#video-viewer").addClass("hidden");
+
+  $("#audio-viewer").get(0)?.pause(); // Stop playback
+  if ($("#audio-viewer").get(0)) $("#audio-viewer").get(0).currentTime = 0;
+  $("#audio-viewer").empty();
+  $("#audio-viewer").addClass("hidden");
+  if (restoreFocus) {
+    if (viewerOpener?.isConnected) viewerOpener.focus();
+    viewerOpener = null;
+  }
+}
+
+function openNextAttachment() {
+  closeAttachmentViewer(false);
+
+    let i = 0;
+    // Find an attachment that can be opened
+    while (true) {
+      const id = getNextAttachmentId(openAttachmentId, i);
+      const attachment = ReactiveCache.getAttachment(id);
+      if (attachmentCanBeOpened(attachment)) {
+        openAttachmentId = id;
+        openAttachmentViewer(id);
+        break;
+      }
+      i++;
+    }
+}
+
+function openPrevAttachment() {
+  closeAttachmentViewer(false);
+
+    let i = 0;
+    // Find an attachment that can be opened
+    while (true) {
+      const id = getPrevAttachmentId(openAttachmentId, i);
+      const attachment = ReactiveCache.getAttachment(id);
+      if (attachmentCanBeOpened(attachment)) {
+        openAttachmentId = id;
+        openAttachmentViewer(id);
+        break;
+      }
+      i--;
+    }
+}
+
+function processTouch(){
+
+  xDist = touchEndCoords.x - touchStartCoords.x;
+  yDist = touchEndCoords.y - touchStartCoords.y;
+
+  // Left swipe
+  if (Math.abs(xDist) > Math.abs(yDist) && xDist < 0) {
+    openNextAttachment();
+  }
+
+  // Right swipe
+  if (Math.abs(xDist) > Math.abs(yDist) && xDist > 0) {
+    openPrevAttachment();
+  }
+
+  // Up swipe
+  if (Math.abs(yDist) > Math.abs(xDist) && yDist < 0) {
+    closeAttachmentViewer();
+  }
+
+}
+
+Template.attachmentViewer.onDestroyed(function () {
+  closeAttachmentViewer();
+});
+
+Template.attachmentViewer.events({
+  'keydown #viewer-overlay'(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeAttachmentViewer();
+    } else {
+      trapTabKey(event);
+    }
+  },
+  'touchstart #viewer-container'(event) {
+    touchStartCoords = {
+      x: event.changedTouches[0].screenX,
+      y: event.changedTouches[0].screenY
+    }
+  },
+  'touchend #viewer-container'(event) {
+    touchEndCoords = {
+      x: event.changedTouches[0].screenX,
+      y: event.changedTouches[0].screenY
+    }
+    processTouch();
+  },
+  'click #viewer-container'(event) {
+
+    // Make sure the click was on #viewer-container and not on any of its children
+    if(event.target !== event.currentTarget) {
+      event.stopPropagation();
+      return;
+    }
+
+    closeAttachmentViewer();
+  },
+  'click #viewer-content'(event) {
+
+    // Make sure the click was on #viewer-content and not on any of its children
+    if(event.target !== event.currentTarget) {
+      event.stopPropagation();
+      return;
+    }
+
+    closeAttachmentViewer();
+  },
+  'click #viewer-close'(event) {
+    event.preventDefault();
+    closeAttachmentViewer();
+  },
+  'click #next-attachment'(event) {
+    event.preventDefault();
+    openNextAttachment();
+  },
+  'click #prev-attachment'(event) {
+    event.preventDefault();
+    openPrevAttachment();
+  },
+});
+
+// #3275: the URL to SHOW an attachment small - the gallery tile and the
+// minicard cover. A raster image gets its /thumbnail (a WebP of at most 512
+// pixels) instead of the full original; anything else keeps the original URL.
+export function attachmentPreviewUrl(attachment) {
+  if (!attachment || !attachment._id) return '';
+  const url = generateUniversalAttachmentUrl(attachment._id);
+  return canThumbnail(attachment) ? thumbnailUrl(url) : url;
+}
+Template.registerHelper('attachmentPreviewUrl', attachmentPreviewUrl);
+
+// A preview that fails to load - a 404 or a network error; a thumbnail the
+// server cannot build is already redirected to the original (302) - falls
+// back to the original file ONCE, then stops. Not logged: a failed preview is
+// not an attack. One capturing listener covers the attachment row, the board
+// cover and the open-card cover (error events do not bubble).
+export function previewFallback(img) {
+  if (!img || img.dataset.previewFellBack === '1') return;
+  const src = img.getAttribute('src') || '';
+  const original = src.replace(/\/thumbnail(?=\?|$)/, '');
+  if (!original || original === src) return;
+  img.dataset.previewFellBack = '1';
+  img.src = original;
+}
+const PREVIEW_IMAGES = 'img.attachment-thumbnail, img.minicard-cover-image, img.card-details-cover-image';
+if (typeof document !== 'undefined') {
+  document.addEventListener('error', event => {
+    const target = event.target;
+    if (target && typeof target.matches === 'function' && target.matches(PREVIEW_IMAGES)) previewFallback(target);
+  }, true);
+}
+
+// #3257: the cards attached to this card, as the server lets this viewer see
+// them (server/models/attachedCards.js attachedCardsInfo) - fetched again
+// whenever the card's list of attached cards changes.
+Template.attachmentGallery.onCreated(function () {
+  this.attachedCards = new ReactiveVar([]);
+  this.autorun(() => {
+    const card = Template.currentData();
+    const cardId = card && (typeof card.getRealId === 'function' ? card.getRealId() : card._id);
+    const ids = card && Array.isArray(card.attachedCardIds) ? card.attachedCardIds.join(',') : '';
+    if (!cardId || !ids) { this.attachedCards.set([]); return; }
+    Meteor.call('attachedCardsInfo', cardId, (error, result) => {
+      this.attachedCards.set(error ? [] : (result || []));
+    });
+  });
+});
+
+Template.attachmentGallery.helpers({
+  // #6796: the small file button instead of the preview tile
+  // (models/lib/attachmentTile.cjs).
+  attachmentTileCompact(file) {
+    if (!file) return true;
+    const board = ReactiveCache.getBoard(file.meta?.boardId) || Utils.getCurrentBoard();
+    const link = typeof file.link === 'function' ? file.link() : file.link;
+    return attachmentTileCompact({
+      isImage: file.isImage, extension: file.extension, hasLink: !!link,
+    }, board?.allowsAttachmentPreviewsOnCard);
+  },
+  attachedCards() {
+    return Template.instance().attachedCards.get();
+  },
+  attachments() {
+    const card = Template.currentData();
+    if (!card) return [];
+    const cardId = typeof card.getRealId === 'function' ? card.getRealId() : card._id;
+    if (!cardId) return [];
+    // Live ones only (History.md §12.1); the soft-deleted ones are still in
+    // minimongo for the card history, and must not be drawn here.
+    const filesCursor = Attachments.find(
+      liveAttachments({ 'meta.cardId': cardId }),
+      { sort: { uploadedAt: -1 } },
+    );
+    // Call fetch() on the underlying Mongo cursor to establish a reactive
+    // dependency directly inside this Blaze computation. Without this,
+    // .each() (which calls cursor.map()) would not register reactivity and
+    // newly-uploaded attachments would not appear until a page reload.
+    if (filesCursor && filesCursor.cursor) {
+      filesCursor.cursor.fetch();
+    }
+    return filesCursor.each();
+  },
+  isBoardAdmin() {
+    return ReactiveCache.getCurrentUser()?.isBoardAdmin();
+  },
+  fileSize(size) {
+    const ret = filesize(size);
+    return ret;
+  },
+  sanitize(value) {
+    return sanitizeHTML(value);
+  },
+  uploaderName() {
+    const uploaderId = this.userId;
+    if (!uploaderId) return '';
+    const uploader = ReactiveCache.getUser(uploaderId);
+    if (!uploader) return '';
+    return uploader.profile && uploader.profile.fullname
+      ? uploader.profile.fullname
+      : uploader.username || '';
+  },
+  // #6532: the template asks `if(isImage)` and prints `extension` - both of
+  // which a migrated attachment can be missing, which drew an empty white box
+  // where the picture should be. A helper wins over the data context in Blaze,
+  // so these answer for every attachment, derived when the document is silent.
+  isImage() {
+    return attachmentKind(this).isImage;
+  },
+  isVideo() {
+    return attachmentKind(this).isVideo;
+  },
+  isAudio() {
+    return attachmentKind(this).isAudio;
+  },
+  extension() {
+    return attachmentKind(this).extension;
+  },
+  uploadedAt() {
+    if (this.uploadedAtOstrio) {
+      return formatDateForDisplay(this.uploadedAtOstrio, true, formatDateTime);
+    }
+    // Fall back to ObjectId timestamp (first 4 bytes = Unix seconds)
+    try {
+      const ts = parseInt(this._id.substring(0, 8), 16) * 1000;
+      if (!isNaN(ts)) return formatDateForDisplay(new Date(ts), true, formatDateTime);
+    } catch (_) {}
+    return '';
+  },
+});
+
+Template.cardAttachmentsPopup.onCreated(function() {
+  this.uploads = new ReactiveVar([]);
+});
+
+Template.cardAttachmentsPopup.helpers({
+  getEstimateTime(upload) {
+    const ret = prettyMilliseconds(upload.estimateTime.get());
+    return ret;
+  },
+  getEstimateSpeed(upload) {
+    const ret = filesize(upload.estimateSpeed.get(), {round: 0}) + "/s";
+    return ret;
+  },
+  uploads() {
+    return Template.instance().uploads.get();
+  }
+});
+
+Template.cardAttachmentsPopup.events({
+  async 'change .js-attach-file'(event, templateInstance) {
+    event.stopPropagation();
+    const card = this;
+    const files = event.currentTarget.files;
+    if (files) {
+      let uploads = [];
+      const uploaders = await handleFileUpload(card, files);
+
+      uploaders.forEach(uploader => {
+        uploader.on('start', function() {
+          uploads.push(this);
+          templateInstance.uploads.set(uploads);
+        });
+        uploader.on('end', (error, fileRef) => {
+          uploads = uploads.filter(_upload => _upload.config.fileId != fileRef._id);
+          templateInstance.uploads.set(uploads);
+          if (uploads.length == 0 ) {
+            Popup.back();
+          }
+        });
+      });
+    }
+  },
+  'click .js-computer-upload'(event, templateInstance) {
+    // Prevent the click fired when the OS file-picker dialog closes from
+    // triggering EscapeActions and closing the popup before the upload starts.
+    // Same pattern as swimlanes.js after drag operations.
+    EscapeActions.preventNextClick();
+    templateInstance.find('.js-attach-file').click();
+    event.preventDefault();
+  },
+  'click .js-upload-clipboard-image': Popup.open('previewClipboardImage'),
+  'click .js-attach-card': Popup.open('attachCard'),
+  // #6802: draw a new file - the whole window - saved as an SVG attachment.
+  'click .js-attach-drawing'(event) {
+    event.preventDefault();
+    // This popup goes, and the drawing opens once the click is over: the
+    // document's click-outside handler would otherwise see a click on a popup
+    // that no longer exists and close the new one at once.
+    event.stopPropagation();
+    const cardId = this && this._id;
+    Popup.close();
+    setTimeout(() => openNewDrawing(cardId), 0);
+  },
+});
+
+// #3257: attach a card by a pasted card link, or one of this board's cards
+// found by its title. The server decides whether it may be attached.
+const escapeForRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+Template.attachCardPopup.onCreated(function () {
+  this.query = new ReactiveVar('');
+  this.error = new ReactiveVar('');
+});
+Template.attachCardPopup.helpers({
+  attachCardError() {
+    return Template.instance().error.get();
+  },
+  attachCardMatches() {
+    const query = Template.instance().query.get().trim();
+    const card = Template.currentData();
+    if (!query || !card || /^https?:|\//.test(query)) return [];
+    const ownId = typeof card.getRealId === 'function' ? card.getRealId() : card._id;
+    const attached = Array.isArray(card.attachedCardIds) ? card.attachedCardIds : [];
+    return ReactiveCache.getCards({
+      boardId: card.boardId,
+      archived: false,
+      _id: { $nin: [ownId, ...attached] },
+      title: { $regex: escapeForRegExp(query), $options: 'i' },
+    }, { limit: 8, sort: { title: 1 } });
+  },
+});
+function attachCard(templateInstance, card, target) {
+  const cardId = typeof card.getRealId === 'function' ? card.getRealId() : card._id;
+  templateInstance.error.set('');
+  Meteor.call('attachCardToCard', cardId, String(target || ''), error => {
+    if (error) templateInstance.error.set(error.error === 'attach-card-self' ? 'attach-card-self'
+      : error.error === 'attach-card-limit' ? 'attach-card-limit' : 'attach-card-not-found');
+    else Popup.back(2);
+  });
+}
+Template.attachCardPopup.events({
+  'input .js-attach-card-input'(event, templateInstance) {
+    templateInstance.query.set(event.currentTarget.value);
+    templateInstance.error.set('');
+  },
+  'click .js-attach-card-match'(event, templateInstance) {
+    event.preventDefault();
+    attachCard(templateInstance, Template.currentData(), event.currentTarget.dataset.cardId);
+  },
+  'submit .js-attach-card-form'(event, templateInstance) {
+    event.preventDefault();
+    attachCard(templateInstance, Template.currentData(), templateInstance.find('.js-attach-card-input').value);
+  },
+});
+
+const MAX_IMAGE_PIXEL = Utils.MAX_IMAGE_PIXEL;
+const COMPRESS_RATIO = Utils.IMAGE_COMPRESS_RATIO;
+let pastedResults = null;
+
+// Shared upload logic for drag-and-drop functionality
+export async function handleFileUpload(card, files) {
+  if (!files || files.length === 0) {
+    return [];
+  }
+
+  // Check if board allows attachments
+  const board = card.board();
+  if (!board || !board.allowsAttachments) {
+    if (process.env.DEBUG === 'true') {
+      console.warn('Attachments not allowed on this board');
+    }
+    return [];
+  }
+
+  // Check if user can modify the card
+  if (!Utils.canModifyCard()) {
+    if (process.env.DEBUG === 'true') {
+      console.warn('User does not have permission to modify this card');
+    }
+    return [];
+  }
+
+  const uploads = [];
+
+  for (const file of files) {
+    // Basic file validation
+    if (!file || !file.name) {
+      if (process.env.DEBUG === 'true') {
+        console.warn('Invalid file object');
+      }
+      continue;
+    }
+
+    // The id, the sanitized name, the chunk size and the transport all come
+    // from one builder - the file id has to be stamped into `meta` for
+    // Attachments' namingFunction to find it, and the transport has to be DDP
+    // on Sandstorm and HTTP everywhere else. Both are easy to leave out by hand
+    // and neither says so until an upload silently does not arrive.
+    // client/lib/attachmentUploadConfig.js
+    const config = buildAttachmentUploadConfig({
+      file,
+      meta: Utils.getCommonAttachmentMetaFrom(card),
+    });
+
+    try {
+      const uploader = await Attachments.insertAsync(
+        config,
+        false,
+      );
+
+      // Add to progress manager for tracking
+      const uploadId = uploadProgressManager.addUpload(card.getRealId(), uploader, file);
+
+      uploader.on('uploaded', (error, fileRef) => {
+        if (!error) {
+          if (fileRef.isImage) {
+            card.setCover(fileRef._id);
+            if (process.env.DEBUG === 'true') {
+              console.log(`Set cover image for card ${card._id}: ${fileRef.name}`);
+            }
+          }
+        } else {
+          if (process.env.DEBUG === 'true') {
+            console.error('Upload error:', error);
+          }
+        }
+      });
+
+      uploader.on('error', (error) => {
+        if (process.env.DEBUG === 'true') {
+          console.error('Upload error:', error);
+        }
+      });
+
+      uploads.push(uploader);
+      uploader.start();
+    } catch (error) {
+      if (process.env.DEBUG === 'true') {
+        console.error('Failed to create uploader:', error);
+      }
+    }
+  }
+
+  return uploads;
+}
+
+Template.previewClipboardImagePopup.onRendered(() => {
+  // we can paste image from clipboard
+  const handle = results => {
+    if (results.dataURL.startsWith('data:image/')) {
+      const direct = results => {
+        $('img.preview-clipboard-image').attr('src', results.dataURL);
+        pastedResults = results;
+      };
+      if (MAX_IMAGE_PIXEL) {
+        // if has size limitation on image we shrink it before uploading
+        Utils.shrinkImage({
+          dataurl: results.dataURL,
+          maxSize: MAX_IMAGE_PIXEL,
+          ratio: COMPRESS_RATIO,
+          callback(changed) {
+            if (changed !== false && !!changed) {
+              results.dataURL = changed;
+            }
+            direct(results);
+          },
+        });
+      } else {
+        direct(results);
+      }
+    }
+  };
+
+  $(document.body).pasteImageReader(handle);
+
+  // we can also drag & drop image file to it
+  $(document.body).dropImageReader(handle);
+});
+
+Template.previewClipboardImagePopup.events({
+  async 'click .js-upload-pasted-image'() {
+    const card = this;
+    if (pastedResults && pastedResults.file) {
+      const file = pastedResults.file;
+      window.oPasted = pastedResults;
+      // Same builder as the file-picker upload above; a pasted image has no
+      // name of its own, which the builder answers with the image's type.
+      const config = buildAttachmentUploadConfig({
+        file,
+        meta: Utils.getCommonAttachmentMetaFrom(card),
+      });
+      const uploader = await Attachments.insertAsync(
+        config,
+        false,
+      );
+      uploader.on('uploaded', (error, fileRef) => {
+        if (!error) {
+          if (fileRef.isImage) {
+            card.setCover(fileRef._id);
+          }
+        }
+      });
+      uploader.on('end', (error, fileRef) => {
+        pastedResults = null;
+        $(document.body).pasteImageReader(() => {});
+        Popup.back();
+      });
+      uploader.start();
+    }
+  },
+});
+
+Template.attachmentActionsPopup.helpers({
+  // The "add cover" / "add background image" entries are shown `if isImage`
+  // too - same derivation, or a migrated image could not be made a cover.
+  isImage() {
+    return attachmentKind(this).isImage;
+  },
+  isCover() {
+    const ret = ReactiveCache.getCard(this.meta.cardId).coverId == this._id;
+    return ret;
+  },
+  isBackgroundImage() {
+    const url = getAttachmentUrl(this);
+    return !!url && Utils.getCurrentBoard()?.backgroundImageURL === url;
+  },
+});
+
+Template.attachmentActionsPopup.events({
+  'click .js-add-cover'() {
+    ReactiveCache.getCard(this.meta.cardId).setCover(this._id);
+    Popup.back();
+  },
+  'click .js-remove-cover'() {
+    ReactiveCache.getCard(this.meta.cardId).unsetCover();
+    Popup.back();
+  },
+  async 'click .js-add-background-image'(event) {
+    event.preventDefault();
+    const currentBoard = Utils.getCurrentBoard();
+    const url = getAttachmentUrl(this);
+    if (!currentBoard || !url) return;
+    try {
+      if (await currentBoard.setBackgroundImageURL(url) === false) return;
+      Utils.setBackgroundImage(url);
+      Popup.back();
+    } catch (error) {
+      window.alert(TAPi18n.__('server-error'));
+    }
+  },
+  async 'click .js-remove-background-image'(event) {
+    event.preventDefault();
+    const currentBoard = Utils.getCurrentBoard();
+    if (!currentBoard) return;
+    try {
+      if (await currentBoard.setBackgroundImageURL('') === false) return;
+      Utils.setBackgroundImage('');
+      Popup.back();
+      Utils.reload();
+    } catch (error) {
+      window.alert(TAPi18n.__('server-error'));
+    }
+  },
+});
+
+Template.attachmentRenamePopup.helpers({
+  getNameWithoutExtension() {
+    // A literal suffix, never a RegExp built from the file's extension.
+    const suffix = `.${this.extension}`;
+    return this.name.endsWith(suffix) ? this.name.slice(0, -suffix.length) : this.name;
+  },
+});
+
+Template.attachmentRenamePopup.events({
+  'keydown input.js-edit-attachment-name'(evt, tpl) {
+    // enter = save
+    if (evt.keyCode === 13) {
+      tpl.find('button[type=submit]').click();
+    }
+  },
+  'click button.js-submit-edit-attachment-name'(event, tpl) {
+    // save button pressed
+    event.preventDefault();
+    // A migrated attachment can lack extensionWithDot; its extension is enough.
+    const suffix = this.extensionWithDot || (this.extension ? `.${this.extension}` : '');
+    const name = tpl.$('.js-edit-attachment-name')[0]
+      .value
+      .trim() + suffix;
+    if (name === sanitizeText(name)) {
+      Meteor.call('renameAttachment', this._id, name);
+    }
+    Popup.back();
+  },
+});
+
+// Template helpers for attachment migration status
+Template.registerHelper('attachmentMigrationStatus', function(attachmentId) {
+  return attachmentMigrationManager.getAttachmentMigrationStatus(attachmentId);
+});
+
+Template.registerHelper('isAttachmentMigrating', function(attachmentId) {
+  return attachmentMigrationManager.isAttachmentBeingMigrated(attachmentId);
+});
+
+Template.registerHelper('attachmentMigrationProgress', function() {
+  return attachmentMigrationManager.attachmentMigrationProgress.get();
+});
+
+Template.registerHelper('attachmentMigrationStatusText', function() {
+  return attachmentMigrationManager.attachmentMigrationStatus.get();
+});

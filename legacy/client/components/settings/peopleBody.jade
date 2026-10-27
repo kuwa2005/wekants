@@ -1,0 +1,882 @@
+template(name="people")
+  .setting-content
+    //- Multitenancy option D (docs/Design/Multitenancy/Multitenancy.md, D.7): the
+    //- Admin Panel opens for the site admin AND for a per-tenant Global Admin, who
+    //- gets the same menu with only the panes about their own Organization. The
+    //- server scopes what they can see and write; this only decides what to draw.
+    unless currentUser.isAdminOrOrgAdmin
+      | {{_ 'error-notAuthorized'}}
+    else
+      //- No page-title bar. The Admin Panel top bar already names the section and
+      //- the left menu highlights the open pane, so a third line repeating the pane
+      //- name only cost vertical space. Admin Panel / Problems never had one.
+      .content-body
+        if loginLocationReportOpen
+          +leftMenu(loginLocationMenuItems)
+          .main-body
+            +paneTitle(loginLocationPaneTitle)
+            +tablePage(loginLocationTablePageData)
+        else
+          +leftMenu(menuItems)
+          .main-body
+            //- Every Admin Panel pane opens with the same heading, and it is the
+            //- open menu entry's own label (docs/Features/All-Boards/Left-Menu.md).
+            +paneTitle(paneTitleData)
+            //- Login and E-mail moved here from Admin Panel / Settings. Their templates
+            //- still live in settingBody.jade beside the other settings panes - Blaze
+            //- templates are global - and their handlers moved onto those templates so
+            //- they fire wherever the pane is rendered.
+            //- The comment lives ABOVE the chain on purpose: a comment BETWEEN `if` and
+            //- `else if` splits them, and the orphaned `else if` fails the build with
+            //- "Can't use the built-in 'if' here".
+            if loading.get
+              +spinner
+            else if registrationSetting.get
+              +general
+              +authProviderSettings(loginOptionsData)
+              //- Windows SSO, which works only on a Windows server.
+              +authProviderSettings(windowsSsoData)
+            else if samlSetting
+              +authProviderSettings(samlSettingsData)
+            else if authConfigSection
+              +authProviderSettings(authConfigSettingsData)
+              if ldapPane
+                +ldapTestConnection
+            else if authenticationSection
+              +general(section=authenticationSection)
+            else if emailSetting.get
+              +email
+            else if notifySetting.get
+              +notificationSettingsPopup(scope="admin")
+            else if orgSetting.get
+              +orgGeneral(orgTablePageData)
+            else if teamSetting.get
+              +teamGeneral(teamTablePageData)
+            else if peopleSetting.get
+              +peopleGeneral(peopleTablePageData)
+            else if lockedUsersSetting.get
+              +lockedUsersGeneral
+            else if rolesSetting.get
+              +rolesGeneral
+            else if templatesSetting.get
+              +templatesGeneral
+            else if domainSetting.get
+              +domainGeneral
+
+
+template(name="orgGeneral")
+  //- The Organization half of #6116, beside the Organizations it is about - it used
+  //- to be one "same Organization OR Team" checkbox in the Login pane, which is
+  //- where neither of the two things it restricts lives. Ticked = a user may only
+  //- be added to a board when they share an Organization with whoever adds them.
+  ul.setting-detail
+    li
+      a.flex.js-toggle-board-members-same-org
+        .materialCheckBox(class="{{#if currentSetting.boardMembersFromSameOrgOnly}}is-checked{{/if}}")
+
+        span {{_ 'board-members-same-org-only'}}
+  +tablePage(this)
+
+//- One header cell for an Organization feature column: the label plus its
+//- select-all / unselect-all pair. Rendered by the shared table page through the
+//- column spec (headerTemplate), so the <th> itself still belongs to that
+//- template. `feature` and `labelKey` come from headerData.
+template(name="orgFeatureHeader")
+  | {{_ labelKey}}
+  br
+  a.js-org-feature-all(href="#", data-feature="{{feature}}", data-value="true", title="{{_ 'select-all'}}")
+    i.fa.fa-check-square-o
+  |  
+  a.js-org-feature-all(href="#", data-feature="{{feature}}", data-value="false", title="{{_ 'unselect-all'}}")
+    i.fa.fa-square-o
+
+template(name="teamGeneral")
+  //- The Team half of #6116 - see orgGeneral above. Ticked = a user may only be
+  //- added to a board when they share a Team with whoever adds them. Both ticked is
+  //- the old "Organization OR Team" rule, which is what an upgraded install gets.
+  ul.setting-detail
+    li
+      a.flex.js-toggle-board-members-same-team
+        .materialCheckBox(class="{{#if currentSetting.boardMembersFromSameTeamOnly}}is-checked{{/if}}")
+
+        span {{_ 'board-members-same-team-only'}}
+  +tablePage(this)
+
+//- The Teams equivalent of orgFeatureHeader: label plus its select-all pair,
+//- parameterised by feature. Rendered through the shared table page.
+template(name="teamFeatureHeader")
+  | {{_ labelKey}}
+  br
+  a.js-team-feature-all(href="#", data-feature="{{feature}}", data-value="true", title="{{_ 'select-all'}}")
+    i.fa.fa-check-square-o
+  |  
+  a.js-team-feature-all(href="#", data-feature="{{feature}}", data-value="false", title="{{_ 'unselect-all'}}")
+    i.fa.fa-square-o
+
+template(name="peopleGeneral")
+  //- Not part of the table: the Add/Remove Teams panel this pane opens.
+  #divAddOrRemoveTeamContainer
+    +modifyTeamsUsers
+  +tablePage(this)
+
+template(name="selectAllUser")
+  //- #6465: label AND box in one <label>, so the box cannot land on top of the
+  //- word. They were two loose inline nodes in a table heading: the heading
+  //- centres its content, the checkbox is replaced-content with its own
+  //- baseline, and at the width the column happens to have, the box overlapped
+  //- the text. A label also makes the word itself click the box.
+  label.select-all-user(for="chkSelectAll")
+    span {{_ 'dueCardsViewChange-choice-all'}}
+    input.allUserChkBox(type="checkbox", id="chkSelectAll")
+
+template(name="domainGeneral")
+  +tablePage(tablePageData)
+
+template(name="newOrgRow")
+  a.new-org
+    i.fa.fa-plus
+    | {{_ 'new'}}
+
+template(name="newTeamRow")
+  a.new-team
+    i.fa.fa-plus
+    | {{_ 'new'}}
+
+template(name="newUserRow")
+  //- On Sandstorm every account is a Sandstorm user who opened the grain; there
+  //- is no password account to create (Smaller-wekan-spk.md).
+  unless isSandstorm
+    a.new-user
+      i.fa.fa-plus
+      | {{_ 'new'}}
+
+template(name="orgRow")
+  tr
+    td
+      a.edit-org
+        i.fa.fa-pencil-square-o
+        | {{_ 'edit'}}
+      a.more-settings-org
+        | ⋯
+    if orgData.orgIsActive
+      td {{ orgData.orgDisplayName }}
+    else
+      td <s>{{ orgData.orgDisplayName }}</s>
+    if orgData.orgIsActive
+      td {{ orgData.orgDesc }}
+    else
+      td <s>{{ orgData.orgDesc }}</s>
+    if orgData.orgIsActive
+      td {{ orgData.orgShortName }}
+    else
+      td <s>{{ orgData.orgShortName }}</s>
+    if orgData.orgIsActive
+      td {{ orgData.orgWebsite }}
+    else
+      td <s>{{ orgData.orgWebsite }}</s>
+    if orgData.orgIsActive
+      td {{ displayDate orgData.createdAt 'LLL' }}
+    else
+      td <s>{{ displayDate orgData.createdAt 'LLL' }}</s>
+    td
+      if orgData.orgIsActive
+        | {{_ 'yes'}}
+      else
+        | {{_ 'no'}}
+    td.text-center
+      input.js-toggle-org-feature(type="checkbox", data-feature="orgSharedTemplates", checked=orgData.orgSharedTemplates)
+    td.text-center
+      input.js-toggle-org-feature(type="checkbox", data-feature="orgPropagateMembersToBoards", checked=orgData.orgPropagateMembersToBoards)
+    td.text-center
+      input.js-toggle-org-feature(type="checkbox", data-feature="orgSyncMembersFromAuth", checked=orgData.orgSyncMembersFromAuth)
+
+template(name="teamRow")
+  tr
+    td
+      a.edit-team
+        i.fa.fa-pencil-square-o
+        | {{_ 'edit'}}
+      a.more-settings-team
+        | ⋯
+    if teamData.teamIsActive
+      td {{ teamData.teamDisplayName }}
+    else
+      td <s>{{ teamData.teamDisplayName }}</s>
+    if teamData.teamIsActive
+      td {{ teamData.teamDesc }}
+    else
+      td <s>{{ teamData.teamDesc }}</s>
+    if teamData.teamIsActive
+      td {{ teamData.teamShortName }}
+    else
+      td <s>{{ teamData.teamShortName }}</s>
+    if teamData.teamIsActive
+      td {{ teamData.teamWebsite }}
+    else
+      td <s>{{ teamData.teamWebsite }}</s>
+    if teamData.teamIsActive
+      td {{ displayDate teamData.createdAt 'LLL' }}
+    else
+      td <s>{{ displayDate teamData.createdAt 'LLL' }}</s>
+    td
+      if teamData.teamIsActive
+        | {{_ 'yes'}}
+      else
+        | {{_ 'no'}}
+    td.text-center
+      input.js-toggle-team-feature(type="checkbox", data-feature="teamSharedTemplates", checked=teamData.teamSharedTemplates)
+    td.text-center
+      input.js-toggle-team-feature(type="checkbox", data-feature="teamPropagateMembersToBoards", checked=teamData.teamPropagateMembersToBoards)
+    td.text-center
+      input.js-toggle-team-feature(type="checkbox", data-feature="teamSyncMembersFromAuth", checked=teamData.teamSyncMembersFromAuth)
+
+template(name="peopleRow")
+  tr
+    td
+      a.edit-user(data-user-id=userData._id)
+        i.fa.fa-pencil-square-o
+        | {{_ 'edit'}}
+      a.more-settings-user(data-user-id=userData._id)
+        | ⋯
+    if userData.loginDisabled
+      td.username
+        a.js-edit-people-avatar(data-user-id=userData._id)
+          if hasAvatarUrl
+            .avatar
+              img.avatar-image(src="{{avatarSrc userData.profile.avatarUrl}}", alt="{{userData.username}}", title="{{_ 'change-avatar'}}")
+          else
+            +userAvatarInitials(userId=userData._id)
+        <s>{{ userData.username }}</s>
+    else if isUserLocked
+      td.username
+        a.js-edit-people-avatar(data-user-id=userData._id)
+          if hasAvatarUrl
+            .avatar
+              img.avatar-image(src="{{avatarSrc userData.profile.avatarUrl}}", alt="{{userData.username}}", title="{{_ 'change-avatar'}}")
+          else
+            +userAvatarInitials(userId=userData._id)
+        | {{ userData.username }}
+    else
+      td.username
+        a.js-edit-people-avatar(data-user-id=userData._id)
+          if hasAvatarUrl
+            .avatar
+              img.avatar-image(src="{{avatarSrc userData.profile.avatarUrl}}", alt="{{userData.username}}", title="{{_ 'change-avatar'}}")
+          else
+            +userAvatarInitials(userId=userData._id)
+        | {{ userData.username }}
+    if userData.loginDisabled
+      td <s>{{ userData.emails.[0].address }}</s>
+    else
+      td {{ userData.emails.[0].address }}
+    if userData.loginDisabled
+      td
+        if userData.isAdmin
+          | <s>{{_ 'yes'}}</s>
+        else
+          | <s>{{_ 'no'}}</s>
+    else
+      td
+        if userData.isAdmin
+          | {{_ 'yes'}}
+        else
+          | {{_ 'no'}}
+    td.account-active-status
+      if userData.loginDisabled
+        span.text-red.js-toggle-active-status(data-user-id=userData._id, data-is-active="false", title="{{_ 'admin-people-user-inactive'}}")
+          i.fa.fa-ban
+      else
+        span.text-green.js-toggle-active-status(data-user-id=userData._id, data-is-active="true", title="{{_ 'admin-people-user-active'}}")
+          i.fa.fa-check
+    td.people-login-locations
+      each loginCountries
+        button.js-open-login-country(type="button", data-user-id="{{userId}}", data-country="{{country}}", title="{{country}}")
+          span(aria-hidden="true") {{flag}}
+          span {{count}}
+    td.account-status
+      if isUserLocked
+        span.text-red.js-toggle-lock-status.emoji-icon(data-user-id=userData._id, data-is-locked="true", title="{{_ 'accounts-lockout-click-to-unlock'}}")
+          i.fa.fa-lock
+      else
+        span.text-green.js-toggle-lock-status.emoji-icon(data-user-id=userData._id, data-is-locked="false", title="{{_ 'accounts-lockout-user-unlocked'}}")
+          i.fa.fa-unlock
+    td.last-active-status
+      if lastActiveAt
+        if isRecentlyActive
+          span.text-green.emoji-icon(title="{{_ 'admin-people-currently-online'}}")
+            i.fa.fa-circle
+        | {{ displayDate lastActiveAt 'LLL' }}
+      else
+        | -
+    if userData.loginDisabled
+      td <s>{{ displayDate userData.createdAt 'LLL' }}</s>
+    else
+      td {{ displayDate userData.createdAt 'LLL' }}
+    if userData.loginDisabled
+      td
+        input.selectUserChkBox(type="checkbox", disabled="disabled", id="{{userData._id}}")
+    else
+      td
+        input.selectUserChkBox(type="checkbox", id="{{userData._id}}")
+
+template(name="editOrgPopup")
+  form
+    label.hide.orgId(type="text" value=org._id)
+    label
+      | {{_ 'displayName'}}
+      textarea.js-orgDisplayName(rows="2" required)= org.orgDisplayName
+      span.error.hide.orgname-taken
+        | {{_ 'error-orgname-taken'}}
+    label
+      | {{_ 'description'}}
+      textarea.js-orgDesc(rows="2" required)= org.orgDesc
+    label
+      | {{_ 'shortName'}}
+      input.js-orgShortName(type="text" value=org.orgShortName required)
+    label
+      | {{_ 'autoAddUsersWithDomainName'}}
+      input.js-orgAutoAddUsersWithDomainName(type="text" value=org.orgAutoAddUsersWithDomainName)
+    label
+      | {{_ 'website'}}
+      input.js-orgWebsite(type="text" value=org.orgWebsite)
+    label
+      | {{_ 'active-org'}}
+      select.select-active.js-org-isactive
+        option(value="false") {{_ 'no'}}
+        option(value="true" selected="{{org.orgIsActive}}") {{_ 'yes'}}
+    hr
+    //- Multitenancy option D (D.2 and D.9): the hostnames this Organization is
+    //- served on, and the branding that replaces the instance branding on them.
+    //- Only in effect when the deployment sets MULTITENANCY=true; empty means this
+    //- Organization is not a tenant and nothing changes.
+    h2.admin-pane-group-title {{_ 'org-tenant'}}
+    label
+      | {{_ 'org-domains'}}
+      input.js-orgDomains(type="text" value=org.orgDomains placeholder="a.example.com, kanban.example.org")
+      span.error.hide.orgdomain-taken
+        | {{_ 'error-org-domain-taken'}}
+    span.form-text.text-muted {{_ 'org-domains-description'}}
+    if org.orgDomainsRequested
+      span.form-text.text-muted.js-orgDomainsRequested
+        | {{_ 'org-domains-requested'}} {{org.orgDomainsRequested}}
+    label
+      | {{_ 'custom-product-name'}}
+      textarea.js-orgProductName(rows="2")= org.orgProductName
+    label
+      | {{_ 'custom-login-logo-image-url'}}
+      input.js-orgCustomLoginLogoImageUrl(type="text" value=org.orgCustomLoginLogoImageUrl)
+    label
+      | {{_ 'custom-login-logo-link-url'}}
+      input.js-orgCustomLoginLogoLinkUrl(type="text" value=org.orgCustomLoginLogoLinkUrl)
+    label
+      | {{_ 'text-below-custom-login-logo'}}
+      textarea.js-orgTextBelowCustomLoginLogo(rows="2")= org.orgTextBelowCustomLoginLogo
+    label
+      | {{_ 'custom-top-left-corner-logo-image-url'}}
+      input.js-orgCustomTopLeftCornerLogoImageUrl(type="text" value=org.orgCustomTopLeftCornerLogoImageUrl)
+    label
+      | {{_ 'custom-top-left-corner-logo-link-url'}}
+      input.js-orgCustomTopLeftCornerLogoLinkUrl(type="text" value=org.orgCustomTopLeftCornerLogoLinkUrl)
+    label
+      | {{_ 'custom-help-link-url'}}
+      input.js-orgCustomHelpLinkUrl(type="text" value=org.orgCustomHelpLinkUrl)
+    label
+      | {{_ 'custom-legal-notice-link-url'}}
+      input.js-orgLegalNotice(type="text" value=org.orgLegalNotice)
+    hr
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+//- Multitenancy option D (D.7): the per-tenant Global Admins of one Organization.
+//- Reached from the Organizations table's ⋯ menu, and it is the ONE place a tenant
+//- is given an administrator - the site-wide Admin flag is edited where it always
+//- was, in the user's own popup, and is never touched from here.
+template(name="orgAdminsPopup")
+  ul.pop-over-list
+    li
+      span.form-text.text-muted {{_ 'org-admins-description'}}
+    if loading.get
+      li
+        | {{_ 'loading'}}
+    else
+      each member in members
+        li
+          a.js-toggle-org-admin(data-user-id="{{member._id}}")
+            .materialCheckBox(class="{{#if member.isOrgAdmin}}is-checked{{/if}}")
+            span  {{member.username}}
+            if member.fullname
+              span.quiet  ({{member.fullname}})
+            if member.isSiteAdmin
+              span.quiet  — {{_ 'admin'}}
+      unless members.length
+        li
+          | {{_ 'no-items-message'}}
+    if error.get
+      li
+        span.error {{error.get}}
+
+template(name="editTeamPopup")
+  form
+    label.hide.teamId(type="text" value=team._id)
+    label
+      | {{_ 'displayName'}}
+      textarea.js-teamDisplayName(rows="2" required)= team.teamDisplayName
+      span.error.hide.teamname-taken
+        | {{_ 'error-teamname-taken'}}
+    label
+      | {{_ 'description'}}
+      textarea.js-teamDesc(rows="2" required)= team.teamDesc
+    label
+      | {{_ 'shortName'}}
+      input.js-teamShortName(type="text" value=team.teamShortName required)
+    label
+      | {{_ 'website'}}
+      input.js-teamWebsite(type="text" value=team.teamWebsite)
+    label
+      | {{_ 'active-team'}}
+      select.select-active.js-team-isactive
+        option(value="false") {{_ 'no'}}
+        option(value="true" selected="{{team.teamIsActive}}") {{_ 'yes'}}
+    hr
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+template(name="editUserPopup")
+  form
+    label.hide.userId(type="text" value=user._id)
+    label
+      | {{_ 'username'}}
+      span.error.hide.username-taken
+        | {{_ 'error-username-taken'}}
+      if isLdap
+        input.js-profile-username(type="text" value=user.username readonly)
+      else
+        input.js-profile-username(type="text" value=user.username required)
+    label
+      | {{_ 'fullname'}}
+      textarea.js-profile-fullname(rows="2" required)= user.profile.fullname
+    label
+      | {{_ 'initials'}}
+      input.js-profile-initials(type="text" value=user.profile.initials)
+    label
+      | {{_ 'admin'}}
+      select.select-role.js-profile-isadmin
+        option(value="false") {{_ 'no'}}
+        option(value="true" selected="{{user.isAdmin}}") {{_ 'yes'}}
+    label
+      | {{_ 'email'}}
+      span.error.hide.email-taken
+        | {{_ 'error-email-taken'}}
+      if isLdap
+        input.js-profile-email(type="email" value="{{user.emails.[0].address}}" readonly)
+      else
+        input.js-profile-email(type="email" value="{{user.emails.[0].address}}" required)
+    label
+      | {{_ 'import-usernames'}}
+      input.js-import-usernames(type="text" value=user.importUsernames)
+    label
+      | {{_ 'verified'}}
+      select.select-verified.js-profile-email-verified
+        option(value="false") {{_ 'no'}}
+        option(value="true" selected="{{userData.emails.[0].verified}}") {{_ 'yes'}}
+    label
+      | {{_ 'active-person'}}
+      select.select-active.js-profile-isactive
+        option(value="false") {{_ 'yes'}}
+        option(value="true" selected="{{user.loginDisabled}}") {{_ 'no'}}
+    label
+      | {{_ 'authentication-type'}}
+      select.select-authenticationMethod.js-authenticationMethod
+        each authentications
+          if isSelected value
+            option(value="{{value}}" selected) {{_ value}}
+          else
+            option(value="{{value}}") {{_ value}}
+    label
+      | {{_ 'organizations'}}
+      span#addUserOrg
+        i.fa.fa-plus
+      span#removeUserOrg
+        i.fa.fa-minus
+      select.js-orgs#jsOrgs
+        option(value="-1") {{_ 'organizations'}} :
+        each value in orgsDatas
+          option(value="{{value._id}}") {{value.orgDisplayName}}
+      input#jsUserOrgsInPut.js-userOrgs(type="text" value=user.orgsUserBelongs, disabled)
+      input#jsUserOrgIdsInPut.js-userOrgIds.hide(type="hidden" value=user.orgIdsUserBelongs)
+    label
+      | {{_ 'teams'}}
+      span#addUserTeam
+        i.fa.fa-plus
+      span#removeUserTeam
+        i.fa.fa-minus
+      select.js-teams#jsTeams
+        option(value="-1") {{_ 'teams'}} :
+        each value in teamsDatas
+          option(value="{{value._id}}") {{_ value.teamDisplayName}}
+      input#jsUserTeamsInPut.js-userteams(type="text" value=user.teamsUserBelongs, disabled)
+      input#jsUserTeamIdsInPut.js-userteamIds.hide(type="hidden" value=user.teamIdsUserBelongs)
+
+    unless isSandstorm
+      hr
+      label
+        | {{_ 'password'}}
+        input.js-profile-password(type="password")
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+template(name="newOrgPopup")
+  form
+    //label.hide.userId(type="text" value=user._id)
+    label
+      | {{_ 'displayName'}}
+      textarea.js-orgDisplayName(rows="2" required)
+    label
+      | {{_ 'description'}}
+      textarea.js-orgDesc(rows="2" required)
+    label
+      | {{_ 'shortName'}}
+      input.js-orgShortName(type="text" value="" required)
+    label
+      | {{_ 'autoAddUsersWithDomainName'}}
+      input.js-orgAutoAddUsersWithDomainName(type="text" value="")
+    label
+      | {{_ 'website'}}
+      input.js-orgWebsite(type="text" value="" required)
+    label
+      | {{_ 'active-org'}}
+      select.select-active.js-org-isactive
+        option(value="false" selected="selected") {{_ 'no'}}
+        option(value="true") {{_ 'yes'}}
+    hr
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+template(name="newTeamPopup")
+  form
+    //label.hide.teamId(type="text" value=team._id)
+    label
+      | {{_ 'displayName'}}
+      textarea.js-teamDisplayName(rows="2" required)
+    label
+      | {{_ 'description'}}
+      textarea.js-teamDesc(rows="2" required)
+    label
+      | {{_ 'shortName'}}
+      input.js-teamShortName(type="text" value="" required)
+    label
+      | {{_ 'website'}}
+      input.js-teamWebsite(type="text" value="")
+    label
+      | {{_ 'active-team'}}
+      select.select-active.js-team-isactive
+        option(value="false" selected="selected") {{_ 'no'}}
+        option(value="true") {{_ 'yes'}}
+    hr
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+template(name="modifyTeamsUsers")
+  label
+    | {{_ 'teams'}}
+    select.js-teamsUser#jsteamsUser
+      each value in teamsDatas
+        option(value="{{value._id}}") {{_ value.teamDisplayName}}
+  hr
+  label
+    | {{_ 'r-action'}}
+    .form-group.flex
+      input.wekan-form-control#addAction(type="radio" name="action" value="true" checked="checked")
+      label(for=addAction) {{_ 'add'}}
+      input.wekan-form-control#deleteAction(type="radio" name="action" value="false")
+      label(for=deleteAction) {{_ 'delete'}}
+  div.buttonsContainer
+    input.primary.wide#addTeamBtn(type="submit" value="{{_ 'save'}}")
+    input.primary.wide#cancelBtn(type="submit" value="{{_ 'cancel'}}")
+
+template(name="newUserPopup")
+  form
+    //label.hide.userId(type="text" value=user._id)
+    label
+      | {{_ 'fullname'}}
+      textarea.js-profile-fullname(rows="2" required)
+    label
+      | {{_ 'username'}}
+      span.error.hide.username-taken
+        | {{_ 'error-username-taken'}}
+      //if isLdap
+      //
+        input.js-profile-username(type="text" value=user.username readonly)
+      //else
+      input.js-profile-username(type="text" value="" required)
+    label
+      | {{_ 'initials'}}
+      input.js-profile-initials(type="text" value="")
+    label
+      | {{_ 'email'}}
+      span.error.hide.email-taken
+        | {{_ 'error-email-taken'}}
+      //if isLdap
+      //
+        input.js-profile-email(type="email" value="{{user.emails.[0].address}}" readonly)
+      //else
+      input.js-profile-email(type="email" value="" required)
+    label
+      | {{_ 'import-usernames'}}
+      input.js-import-usernames(type="text" value="")
+    label
+      | {{_ 'admin'}}
+      select.select-role.js-profile-isadmin
+        option(value="false" selected="selected") {{_ 'no'}}
+        option(value="true") {{_ 'yes'}}
+    label
+      | {{_ 'active-person'}}
+      select.select-active.js-profile-isactive
+        option(value="false" selected="selected") {{_ 'yes'}}
+        option(value="true") {{_ 'no'}}
+    label
+      | {{_ 'authentication-type'}}
+      select.select-authenticationMethod.js-authenticationMethod
+        each authentications
+          if isSelected value
+            option(value="{{value}}" selected) {{_ value}}
+          else
+            option(value="{{value}}") {{_ value}}
+    label
+      | {{_ 'organizations'}}
+      span#addUserOrgNewUser
+        i.fa.fa-plus
+      span#removeUserOrgNewUser
+        i.fa.fa-minus
+      select.js-orgsNewUser#jsOrgsNewUser
+        option(value="-1") {{_ 'organizations'}} :
+        each value in orgsDatas
+          option(value="{{value._id}}") {{value.orgDisplayName}}
+      input#jsUserOrgsInPutNewUser.js-userOrgsNewUser(type="text" value=user.orgsUserBelongs, disabled)
+      input#jsUserOrgIdsInPutNewUser.js-userOrgIdsNewUser.hide(type="text" value=user.orgIdsUserBelongs)
+    label
+      | {{_ 'teams'}}
+      span#addUserTeamNewUser
+        i.fa.fa-plus
+      span#removeUserTeamNewUser
+        i.fa.fa-minus
+      select.js-teamsNewUser#jsTeamsNewUser
+        option(value="-1") {{_ 'teams'}} :
+        each value in teamsDatas
+          option(value="{{value._id}}") {{_ value.teamDisplayName}}
+      input#jsUserTeamsInPutNewUser.js-userteamsNewUser(type="text" value=user.teamsUserBelongs, disabled)
+      input#jsUserTeamIdsInPutNewUser.js-userteamIdsNewUser.hide(type="text" value=user.teamIdsUserBelongs)
+
+    hr
+    label
+      | {{_ 'password'}}
+      input.js-profile-password(type="password" required)
+    div.buttonsContainer
+      input.primary.wide(type="submit" value="{{_ 'save'}}")
+
+template(name="settingsOrgPopup")
+  ul.pop-over-list
+    //- Multitenancy option D (D.7): appointing this Organization's own per-tenant
+    //- Global Admins, from the menu the row already had.
+    li
+      a.js-org-admins
+        i.fa.fa-user-secret
+        | {{_ 'org-admins'}}
+    hr
+    li
+      form
+        label#deleteOrgWarningMessage.hide
+          | {{_ 'delete-org-warning-message'}}
+        br
+        label
+          | {{_ 'delete-org-confirm-popup'}}
+        br
+        label.hide.orgId(type="text" value=org._id)
+        labeldelete-org-confirm-popup
+        div.buttonsContainer
+          input#deleteButton.card-details-red.right.wide(type="button" value="{{_ 'delete'}}")
+  // It's not yet possible to impersonate organization. Only impersonate user,
+  // because that changes current user ID. What would it mean in practice
+  // to impersonate organization?
+  //
+    li
+  //
+      a.impersonate-org
+  //
+        i.fa.fa-user
+  //
+        | {{_ 'impersonate-user'}}
+  //
+  //
+
+template(name="settingsTeamPopup")
+  ul.pop-over-list
+    li
+      form
+        label#deleteTeamWarningMessage.hide
+          | {{_ 'delete-team-warning-message'}}
+        br
+        label
+          | {{_ 'delete-team-confirm-popup'}}
+        br
+        label.hide.teamId(type="text" value=team._id)
+        div.buttonsContainer
+          input#deleteButton.card-details-red.right.wide(type="button" value="{{_ 'delete'}}")
+
+template(name="settingsUserPopup")
+  ul.pop-over-list
+    li
+      a.impersonate-user
+        i.fa.fa-user
+        | {{_ 'impersonate-user'}}
+    br
+    hr
+    li
+      form
+        label.hide.userId(type="text" value=user._id)
+        label
+          | {{_ 'anonymize-account-confirm-popup' }}
+        br
+        div.buttonsContainer
+          input#anonymizeButton.card-details-red.right.wide(type="button" value="{{_ 'anonymize-account'}}")
+    br
+    li
+      form
+        label.hide.userId(type="text" value=user._id)
+        label
+          | {{_ 'delete-user-confirm-popup' }}
+        br
+        div.buttonsContainer
+          input#deleteButton.card-details-red.right.wide(type="button" value="{{_ 'delete'}}")
+  // Delete is enabled, but there is still bug of leaving empty user avatars
+  // to boards: boards members, card members and assignees have
+  // empty users. So it is better to remove user from all boards before removing user.
+  // See:
+  // - wekan/client/components/settings/peopleBody.jade deleteButton
+  // - wekan/client/components/settings/peopleBody.js deleteButton
+  // - wekan/client/components/sidebar/sidebar.js Popup.afterConfirm('removeMember'
+  //
+     that does now remove member from board, card members and assignees correctly,
+  //
+     but that should be used to remove user from all boards similarly
+  // - wekan/models/users.js Delete is not enabled
+
+template(name="lockedUsersGeneral")
+  .locked-users-settings
+    h3 {{_ 'accounts-lockout-settings'}}
+    p {{_ 'accounts-lockout-info'}}
+
+    h4 {{_ 'accounts-lockout-known-users'}}
+    .title {{_ 'accounts-lockout-failures-before'}}
+    .form-group
+      input.wekan-form-control#known-failures-before-lockout(type="number", min="1", max="10", placeholder="3" value="{{knownFailuresBeforeLockout}}")
+    .title {{_ 'accounts-lockout-period'}}
+    .form-group
+      input.wekan-form-control#known-lockout-period(type="number", min="10", max="600", placeholder="60" value="{{knownLockoutPeriod}}")
+    .title {{_ 'accounts-lockout-failure-window'}}
+    .form-group
+      input.wekan-form-control#known-failure-window(type="number", min="1", max="60", placeholder="15" value="{{knownFailureWindow}}")
+
+    h4 {{_ 'accounts-lockout-unknown-users'}}
+    .title {{_ 'accounts-lockout-failures-before'}}
+    .form-group
+      input.wekan-form-control#unknown-failures-before-lockout(type="number", min="1", max="10", placeholder="3" value="{{unknownFailuresBeforeLockout}}")
+    .title {{_ 'accounts-lockout-period'}}
+    .form-group
+      input.wekan-form-control#unknown-lockout-period(type="number", min="10", max="600", placeholder="60" value="{{unknownLockoutPeriod}}")
+    .title {{_ 'accounts-lockout-failure-window'}}
+    .form-group
+      input.wekan-form-control#unknown-failure-window(type="number", min="1", max="60", placeholder="15" value="{{unknownFailureWindow}}")
+
+    button.js-lockout-save.primary {{_ 'save'}}
+
+template(name="rolesGeneral")
+  .roles-settings
+    p.roles-description {{_ 'roles-info'}}
+
+    h4 {{_ 'allow-invite-to-board'}}
+    ul#roles-setting.setting-detail
+      li
+        a.flex.js-toggle-all-roles
+          .materialCheckBox(class="{{#if allRolesAllowed}}is-checked{{/if}}")
+          span {{_ 'all-board-members'}}
+      each roleOptions
+        li
+          a.flex.js-toggle-role(data-role="{{key}}")
+            .materialCheckBox(class="{{#if allowed}}is-checked{{/if}}")
+            span {{_ label}}
+
+    button.js-roles-save.primary {{_ 'save'}}
+
+    //- Custom roles (#3022): named roles built from what a board member may
+    //- do. Board admin stays a built-in role. Each row saves on its own.
+    h4 {{_ 'custom-roles'}}
+    p.roles-description {{_ 'custom-roles-desc'}}
+    ul.custom-roles.setting-detail
+      each customRoleRows
+        li.custom-role(data-id="{{id}}")
+          input.js-custom-role-name(type="text" value=name maxlength="60" aria-label="{{_ 'custom-role-name'}}" placeholder="{{_ 'custom-role-name'}}")
+          each capabilities
+            a.flex.js-custom-role-cap(data-cap="{{cap}}" role="checkbox" aria-checked="{{#if on}}true{{else}}false{{/if}}" tabindex="0")
+              .materialCheckBox(class="{{#if on}}is-checked{{/if}}")
+              span {{_ labelKey}}
+          if isNew
+            button.js-custom-role-save.primary {{_ 'add-custom-role'}}
+          else
+            button.js-custom-role-save.primary {{_ 'save'}}
+            button.js-custom-role-delete {{_ 'delete'}}
+
+    //- Roles Status: what each board role may do, READ-ONLY, below the Save
+    //- button. It is the shared table page (docs/Features/General/Table.md), so it
+    //- looks and behaves like every other Admin Panel table, and it follows the
+    //- checkboxes ABOVE the Save button - the working copy, not the saved
+    //- document - so an admin can see the effect of a change before saving it.
+    +tablePage(rolesStatusTable)
+
+template(name="templatesGeneral")
+  .templates-settings
+    p.templates-description {{_ 'shared-templates-info'}}
+
+    ul#templates-setting.setting-detail
+      li
+        a.flex.js-toggle-template-scope(data-scope="organizations")
+          .materialCheckBox(class="{{#if scopeChecked 'organizations'}}is-checked{{/if}}")
+          span {{_ 'organizations'}}
+      li
+        a.flex.js-toggle-template-scope(data-scope="teams")
+          .materialCheckBox(class="{{#if scopeChecked 'teams'}}is-checked{{/if}}")
+          span {{_ 'teams'}}
+      li
+        a.flex.js-toggle-template-scope(data-scope="domains")
+          .materialCheckBox(class="{{#if scopeChecked 'domains'}}is-checked{{/if}}")
+          span {{_ 'domains'}}
+
+    .shared-templates-results
+      if loading.get
+        +spinner
+      else if hasAnyScope
+        each scopeBlock in scopeBlocks
+          h4 {{_ scopeBlock.scopeLabel}}
+          if scopeBlock.groups.length
+            each group in scopeBlock.groups
+              .shared-templates-group
+                h5 {{group.groupName}}
+                ul.setting-detail
+                  each member in group.members
+                    li
+                      span.shared-templates-user {{member.label}}
+                      ul.shared-templates-boards
+                        each board in member.templateBoards
+                          li
+                            if board.boardId
+                              a.js-shared-template-link(href="{{board.url}}" data-board-id="{{board.boardId}}" data-slug="{{board.slug}}")
+                                i.fa.fa-clone
+                                | {{board.title}}
+                            else
+                              span
+                                i.fa.fa-clone
+                                | {{board.title}}
+          else
+            p.shared-templates-none {{_ 'no-shared-templates'}}
+      else
+        p.shared-templates-hint {{_ 'shared-templates-select-scope'}}

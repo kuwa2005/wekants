@@ -1,0 +1,377 @@
+import { commentCardMatchesBoard, recordCommentBoundaryDenial } from '/models/lib/commentCardBoundary';
+import { assignedOnlyAllowsCard } from '/models/lib/boardCardScope';
+import { Meteor } from 'meteor/meteor';
+import { WebApp } from 'meteor/webapp';
+import { Authentication } from '/server/authentication';
+import { sendJsonResult } from '/server/apiMiddleware';
+import {
+  validateCommentBody,
+  httpStatusForError,
+  extractErrorMessage,
+} from '/server/lib/apiResponseHelpers';
+import { ReactiveCache } from '/imports/reactiveCache';
+import Activities from '/models/activities';
+import CardComments, { assertCanMutateComment } from '/models/cardComments';
+import { ensureIndex } from '/server/lib/mongoStartup';
+import { tripCanary } from '/server/lib/canary';
+import { allowIsBoardMemberCommentOnly } from '/server/lib/utils';
+import { canCommentInList } from '/server/lib/listPermissionGate';
+
+async function commentCreation(userId, doc) {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[commentCreation] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  await Activities.insertAsync({
+    userId,
+    activityType: 'addComment',
+    boardId: doc.boardId,
+    cardId: doc.cardId,
+    commentId: doc._id,
+    listId: card.listId,
+    swimlaneId: card.swimlaneId,
+  });
+}
+
+Meteor.startup(async () => {
+  await ensureIndex(CardComments, { modifiedAt: -1 });
+  await ensureIndex(CardComments, { cardId: 1, createdAt: -1 });
+  // The board publication now publishes all of a board's comments with one cursor on
+  // the denormalized boardId (replacing a per-card N+1, #6480); index it so that
+  // board-level query is not a full collection scan.
+  await ensureIndex(CardComments, { boardId: 1 });
+});
+
+CardComments.after.insert(async (userId, doc) => {
+  await commentCreation(userId, doc);
+});
+
+CardComments.after.update(async (userId, doc) => {
+  const card = await ReactiveCache.getCard(doc.cardId);
+  if (!card) {
+    console.warn('[CardComments.after.update] Card not found for cardId:', doc.cardId, '— skipping activity insert.');
+    return;
+  }
+  await Activities.insertAsync({
+    userId,
+    activityType: 'editComment',
+    boardId: doc.boardId,
+    cardId: doc.cardId,
+    commentId: doc._id,
+    // #3606: store the comment text so the activity feed shows it instead of
+    // "undefined" (the id was passed before, and a deleted comment cannot be
+    // looked up live).
+    commentText: doc.text,
+    listId: card.listId,
+    swimlaneId: card.swimlaneId,
+  });
+});
+
+CardComments.before.remove(async (userId, doc) => {
+  try {
+    const card = await ReactiveCache.getCard(doc.cardId);
+    if (!card) {
+      console.warn('[CardComments.before.remove] Card not found for cardId:', doc.cardId, '— skipping deleteComment activity.');
+    } else {
+      await Activities.insertAsync({
+        userId,
+        activityType: 'deleteComment',
+        boardId: doc.boardId,
+        cardId: doc.cardId,
+        commentId: doc._id,
+        // #3606: capture the text before the comment doc is removed, so the
+        // feed shows the deleted comment instead of "undefined".
+        commentText: doc.text,
+        listId: card.listId,
+        swimlaneId: card.swimlaneId,
+      });
+    }
+    const activity = await ReactiveCache.getActivity({ commentId: doc._id });
+    if (activity) {
+      await Activities.removeAsync(activity._id);
+    }
+  } catch (e) {
+    console.error('[CardComments.before.remove] Error while processing comment deletion for doc._id:', doc._id, e);
+  }
+});
+
+WebApp.handlers.get('/api/boards/:boardId/cards/:cardId/comments', async function(req, res) {
+  try {
+    const paramBoardId = req.params.boardId;
+    const paramCardId = req.params.cardId;
+    await Authentication.checkBoardAccess(req.userId, paramBoardId);
+    // The card is the authoritative board boundary. Older/imported comments can
+    // have a missing or stale denormalized boardId even though their cardId is
+    // valid (the board export deliberately follows cardId for the same reason).
+    // Validate that the requested card belongs to this board, then return every
+    // comment attached to it instead of silently dropping those legacy rows.
+    const card = await ReactiveCache.getCard({
+      _id: paramCardId,
+      boardId: paramBoardId,
+    });
+    if (!card) {
+      sendJsonResult(res, { code: 404, data: { error: 'Card not found' } });
+      return;
+    }
+    sendJsonResult(res, {
+      code: 200,
+      data: (await ReactiveCache.getCardComments({
+        cardId: paramCardId,
+      })).map(doc => ({
+        _id: doc._id,
+        comment: doc.text,
+        authorId: doc.userId,
+      })),
+    });
+  } catch (error) {
+    sendJsonResult(res, {
+      code: httpStatusForError(error),
+      data: { error: extractErrorMessage(error) },
+    });
+  }
+});
+
+WebApp.handlers.get(
+  '/api/boards/:boardId/cards/:cardId/comments/:commentId',
+  async function(req, res) {
+    try {
+      const paramBoardId = req.params.boardId;
+      const paramCommentId = req.params.commentId;
+      const paramCardId = req.params.cardId;
+      await Authentication.checkBoardAccess(req.userId, paramBoardId);
+      sendJsonResult(res, {
+        code: 200,
+        data: await ReactiveCache.getCardComment({
+          _id: paramCommentId,
+          cardId: paramCardId,
+          boardId: paramBoardId,
+        }),
+      });
+    } catch (error) {
+      sendJsonResult(res, {
+        code: httpStatusForError(error),
+        data: { error: extractErrorMessage(error) },
+      });
+    }
+  },
+);
+
+WebApp.handlers.post('/api/boards/:boardId/cards/:cardId/comments', async function(req, res) {
+  try {
+    const paramBoardId = req.params.boardId;
+    const paramCardId = req.params.cardId;
+    Authentication.checkLoggedIn(req.userId);
+    const board = await ReactiveCache.getBoard(paramBoardId);
+    Authentication.checkBoardExists(board);
+    const card = await ReactiveCache.getCard({ _id: paramCardId, boardId: paramBoardId });
+    // #4527: the card's list may grant or refuse commenting for this role.
+    const mayComment = card && card.boardId === paramBoardId
+      ? await canCommentInList(req.userId, board, card.listId)
+      : allowIsBoardMemberCommentOnly(req.userId, board);
+    await Authentication.checkAdminOrCondition(req.userId, mayComment);
+
+    if (!commentCardMatchesBoard(card, paramCardId, paramBoardId)) {
+      recordCommentBoundaryDenial('rest:comment-insert');
+      sendJsonResult(res, { code: 404, data: { error: 'Card not found' } });
+      return;
+    }
+    // An assigned-only member comments only on their own cards (GHSA-r4gm-mjj9-g3x8).
+    if (!assignedOnlyAllowsCard(board, req.userId, card)) {
+      try {
+        require('/server/lib/securityLog').record({
+          key: 'authz.assigned', action: 'blocked', source: 'rest:comment-insert', userId: req.userId,
+          detail: 'Assigned-only member commented on a card not assigned to them.',
+        });
+      } catch (e) { /* logging must never break the guard */ }
+      sendJsonResult(res, { code: 404, data: { error: 'Card not found' } });
+      return;
+    }
+
+    // Validate the required `comment` parameter before inserting. Without this
+    // an empty/missing comment reaches the schema-validated insert and throws a
+    // circular validation error that previously surfaced as HTTP 500. See #5804.
+    const validation = validateCommentBody(req.body);
+    if (!validation.valid) {
+      sendJsonResult(res, {
+        code: 400,
+        data: { error: validation.error },
+      });
+      return;
+    }
+
+    const id = await CardComments.direct.insertAsync({
+      userId: req.userId,
+      text: validation.comment,
+      cardId: paramCardId,
+      boardId: paramBoardId,
+    });
+
+    sendJsonResult(res, {
+      code: 200,
+      data: {
+        _id: id,
+      },
+    });
+
+    const cardComment = await ReactiveCache.getCardComment({
+      _id: id,
+      cardId: paramCardId,
+      boardId: paramBoardId,
+    });
+    await commentCreation(req.userId, cardComment);
+  } catch (error) {
+    sendJsonResult(res, {
+      code: httpStatusForError(error),
+      data: { error: extractErrorMessage(error) },
+    });
+  }
+});
+
+// #1037: comments had GET/POST/DELETE over the REST API but no way to edit
+// one, so an API client had to delete and re-create a comment (losing its
+// original commentId and timestamp) just to fix a typo. Mirrors the DELETE
+// handler right below it: same lookup, the same assertCanMutateComment rule
+// (author, or a board admin unless the board sets restrictCommentEditing),
+// and the same foreign-edit canary so an attempted edit of somebody else's
+// comment is as visible as an attempted delete already is.
+WebApp.handlers.put(
+  '/api/boards/:boardId/cards/:cardId/comments/:commentId',
+  async function(req, res) {
+    try {
+      const paramBoardId = req.params.boardId;
+      const paramCommentId = req.params.commentId;
+      const paramCardId = req.params.cardId;
+      await Authentication.checkBoardAccess(req.userId, paramBoardId);
+
+      const comment = await ReactiveCache.getCardComment({
+        _id: paramCommentId,
+        cardId: paramCardId,
+        boardId: paramBoardId,
+      });
+      if (!comment) {
+        sendJsonResult(res, { code: 404, data: { error: 'Comment not found' } });
+        return;
+      }
+
+      const validation = validateCommentBody(req.body);
+      if (!validation.valid) {
+        sendJsonResult(res, {
+          code: 400,
+          data: { error: validation.error },
+        });
+        return;
+      }
+
+      // Same object-level rule DDP applies (GHSA-pqr4-rxgp-hv2m), and the same
+      // canary as the DELETE handler when the caller is editing somebody
+      // else's comment.
+      if (comment.userId && comment.userId !== req.userId) {
+        try {
+          await assertCanMutateComment(req.userId, comment);
+        } catch (refusal) {
+          tripCanary('comment.foreign-edit', { req, userId: req.userId });
+          throw refusal;
+        }
+      } else {
+        await assertCanMutateComment(req.userId, comment);
+      }
+
+      await CardComments.direct.updateAsync(
+        { _id: paramCommentId, cardId: paramCardId, boardId: paramBoardId },
+        { $set: { text: validation.comment } },
+      );
+
+      sendJsonResult(res, {
+        code: 200,
+        data: { _id: paramCommentId },
+      });
+
+      const updated = await ReactiveCache.getCardComment({
+        _id: paramCommentId,
+        cardId: paramCardId,
+        boardId: paramBoardId,
+      });
+      if (updated) {
+        const card = await ReactiveCache.getCard(updated.cardId);
+        if (card) {
+          await Activities.insertAsync({
+            userId: req.userId,
+            activityType: 'editComment',
+            boardId: updated.boardId,
+            cardId: updated.cardId,
+            commentId: updated._id,
+            commentText: updated.text,
+            listId: card.listId,
+            swimlaneId: card.swimlaneId,
+          });
+        }
+      }
+    } catch (error) {
+      sendJsonResult(res, {
+        code: httpStatusForError(error),
+        data: { error: extractErrorMessage(error) },
+      });
+    }
+  },
+);
+
+WebApp.handlers.delete(
+  '/api/boards/:boardId/cards/:cardId/comments/:commentId',
+  async function(req, res) {
+    try {
+      const paramBoardId = req.params.boardId;
+      const paramCommentId = req.params.commentId;
+      const paramCardId = req.params.cardId;
+      await Authentication.checkBoardAccess(req.userId, paramBoardId);
+
+      // GHSA-pqr4-rxgp-hv2m: board membership is not permission to delete
+      // ANOTHER member's comment. This used to be the only check here, and the
+      // object-level rule (author, or a board admin unless the board sets
+      // restrictCommentEditing) lived in a collection hook keyed off the Meteor
+      // userId — which an HTTP request does not carry, so the hook took its
+      // "server-internal, no user" path and allowed every deletion. Load the
+      // comment and apply the same rule DDP applies, before removing anything.
+      const comment = await ReactiveCache.getCardComment({
+        _id: paramCommentId,
+        cardId: paramCardId,
+        boardId: paramBoardId,
+      });
+      if (!comment) {
+        sendJsonResult(res, { code: 404, data: { error: 'Comment not found' } });
+        return;
+      }
+      // A canary with the REQUEST in hand, so the event carries the real client
+      // address and not just the account (docs/Security/Remediation/WeKan.md §12).
+      // Deleting somebody else's comment is refused exactly as before - the
+      // canary only records the attempt, and the 403 below is unchanged.
+      if (comment.userId && comment.userId !== req.userId) {
+        try {
+          await assertCanMutateComment(req.userId, comment);
+        } catch (refusal) {
+          tripCanary('comment.foreign-delete', { req, userId: req.userId });
+          throw refusal;
+        }
+      } else {
+        await assertCanMutateComment(req.userId, comment);
+      }
+
+      await CardComments.removeAsync({
+        _id: paramCommentId,
+        cardId: paramCardId,
+        boardId: paramBoardId,
+      });
+      sendJsonResult(res, {
+        code: 200,
+        data: {
+          _id: paramCardId,
+        },
+      });
+    } catch (error) {
+      sendJsonResult(res, {
+        code: httpStatusForError(error),
+        data: { error: extractErrorMessage(error) },
+      });
+    }
+  },
+);

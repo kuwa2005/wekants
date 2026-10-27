@@ -1,0 +1,550 @@
+import {addGroupsWithAttributes, addEmail, changeFullname, changeUsername, oauth2AdminStatusFromGroups} from './loginHandler';
+import { fetch, Headers } from 'meteor/fetch';
+import { URLSearchParams } from 'meteor/url';
+import { Buffer } from 'node:buffer';
+import https from 'https';
+import fs from 'fs';
+import { resolveOidcEndpoint } from './endpoint';
+const { mergeWhitelistedClaims } = require('./serviceDataClaims');
+const { maybeGenerateOauth2ClientSecretJwt } = require('./oauth2ClientSecretJwt');
+const { isEmailDomainAllowed } = require('./emailDomainPolicy');
+
+// Every OAUTH2_*/ORACLE_OIM_ENABLED/PROPAGATE_OIDC_DATA setting: the Admin
+// Panel / People / OAuth2 override when one is stored, otherwise the
+// environment variable. The app installs the resolver
+// (server/lib/authConfig.js); a package cannot import it. Read per login, so a
+// change applies to the next login without a restart.
+function authEnv(name) {
+  const resolve = globalThis.__wekanAuthEnv;
+  return typeof resolve === 'function' ? resolve(name) : process.env[name];
+}
+const authEnvObject = new Proxy(process.env, {
+  get(target, name) {
+    return typeof name === 'string' ? authEnv(name) : undefined;
+  },
+});
+const isOracleOim = () => authEnv('ORACLE_OIM_ENABLED') === 'true';
+
+// #2458 (Sign in with Apple): Apple's "client secret" is not a static string
+// like every other generic-OAuth2 provider's - it is a short-lived JWT the
+// server must sign itself with a private key from Apple's developer portal.
+// When OAUTH2_SECRET_JWT_KEY_PATH is set, mint a fresh one for this request;
+// otherwise fall back to the static OAUTH2_SECRET exactly as before, so
+// every provider that does not set these new env vars is unaffected.
+function resolveClientSecret(config) {
+  const jwtSecret = maybeGenerateOauth2ClientSecretJwt(authEnvObject, config.clientId);
+  return jwtSecret || OAuth.openSecret(config.secret);
+}
+
+Oidc = {};
+
+// OAUTH2_CA_CERT, read when a request needs it so Admin Panel / People / OAuth2
+// can change it without a restart. The file is re-read only when the path
+// changes. A path that cannot be read logs once and means "no extra CA".
+let caPath = null;
+let caContent = false;
+function oidcHttpCa() {
+  const configured = authEnv('OAUTH2_CA_CERT');
+  if (configured === caPath) return caContent;
+  caPath = configured;
+  caContent = false;
+  if (configured !== undefined && configured !== '') {
+    try {
+      if (fs.existsSync(configured)) {
+        caContent = fs.readFileSync(configured);
+      }
+    } catch (e) {
+      console.log('WARNING: failed loading: ' + configured);
+      console.log(e);
+    }
+  }
+  return caContent;
+}
+OAuth.registerService('oidc', 2, null, async function (query) {
+  var debug = process.env.DEBUG === 'true';
+
+  // #4897: these MUST be fresh per-login objects. They used to be module-level
+  // (`var serviceData = {}` etc. shared by every login of every user), so:
+  //   * fields a login did not overwrite leaked in from the PREVIOUS login of a
+  //     DIFFERENT user (e.g. refreshToken is only set when the provider sends
+  //     one, and idTokenWhitelistFields were Object.assign-ed cumulatively), and
+  //   * two logins running concurrently (this handler awaits the token,
+  //     userinfo and two Meteor.callAsync calls) interleaved writes to the SAME
+  //     object, so a user could intermittently be created/updated with another
+  //     user's id/email/username — the "web interface shows different data than
+  //     MongoDB" reports.
+  var profile = {};
+  var serviceData = {};
+  var userinfo = {};
+
+  var token = await getToken(query);
+  if (debug) console.log('XXX: register token:', token);
+
+  // #5174: everything below reads fields off the provider's answer, so the
+  // answer has to BE something first. When it is not, the failure has to name
+  // the provider's own complaint rather than surface as a TypeError three lines
+  // later - the reported case was a scope mismatch, and what the admin saw was
+  // "Cannot read property 'ocs' of null".
+  if (!token || typeof token !== 'object') {
+    throw new Error('OIDC: the token endpoint returned no usable response. '
+      + 'Check the provider log for the authorization code exchange.');
+  }
+
+  var accessToken = token.access_token || token.id_token;
+  if (!accessToken) {
+    // A 200 with neither token in it: the provider answered, and what it
+    // answered with is the useful part. Keys only - the values are secrets.
+    throw new Error('OIDC: the token endpoint returned neither access_token nor '
+      + 'id_token. It returned these fields: ' + Object.keys(token).join(', ')
+      + (token.error_description ? ' (' + token.error_description + ')' : ''));
+  }
+
+  // parseInt(undefined) is NaN, and NaN propagates into the account's expiry
+  // silently. A provider that sends no expires_in gets the OAuth2 default hour.
+  var expiresIn = parseInt(token.expires_in, 10);
+  if (!Number.isFinite(expiresIn)) expiresIn = 3600;
+  var expiresAt = (+new Date) + (1000 * expiresIn);
+
+  var claimsInAccessToken = authEnv('OAUTH2_ADFS_ENABLED') === 'true' ||
+                            authEnv('OAUTH2_B2C_ENABLED') === 'true';
+
+  if(claimsInAccessToken)
+  {
+    // hack when using custom claims in the accessToken. On premise ADFS. And Azure AD B2C.
+    userinfo = getTokenContent(accessToken);
+  }
+  else
+  {
+    // normal behaviour, getting the claims from UserInfo endpoint.
+    userinfo = await getUserInfo(accessToken);
+  }
+
+  // #5174: getTokenContent() returns NULL for a token it cannot parse, and the
+  // ADFS/B2C branch above assigns that straight into userinfo - so this line was
+  // `null.ocs` and threw "Cannot read property 'ocs' of null", which says
+  // nothing about what actually went wrong. Both branches are checked here, once,
+  // before anything reads a claim.
+  if (!userinfo || typeof userinfo !== 'object') {
+    throw new Error('OIDC: no user information came back from the provider ('
+      + (claimsInAccessToken
+        ? 'claims were expected inside the access token, which could not be parsed'
+        : 'the userinfo endpoint returned nothing usable')
+      + '). Check the provider log, and that the scopes WeKan requests '
+      + '(OAUTH2_REQUEST_PERMISSIONS) are the ones the provider allows.');
+  }
+
+  // Both hacks re-point userinfo at a nested object, so both need that object to
+  // exist: a Nextcloud response with `ocs` but no `ocs.data` used to replace
+  // userinfo with undefined and fail on the next line instead of this one.
+  if (userinfo.ocs && userinfo.ocs.data) userinfo = userinfo.ocs.data; // Nextcloud hack
+  if (userinfo.metadata) userinfo = userinfo.metadata // Openshift hack
+  if (!userinfo || typeof userinfo !== 'object') {
+    throw new Error('OIDC: the provider response unwrapped to nothing usable '
+      + '(ocs/metadata). Check the provider log.');
+  }
+  if (debug) console.log('XXX: userinfo:', userinfo);
+
+  serviceData.id = userinfo[authEnv('OAUTH2_ID_MAP')]; // || userinfo["id"];
+  serviceData.username = userinfo[authEnv('OAUTH2_USERNAME_MAP')]; // || userinfo["uid"];
+  serviceData.fullname = userinfo[authEnv('OAUTH2_FULLNAME_MAP')]; // || userinfo["displayName"];
+  // Capture the provider's avatar. `picture` is a standard OpenID Connect claim (a URL);
+  // allow an override map for providers that use a different key. WeKan then localizes it
+  // into files/avatars (app board-open trigger) so it shows and is carried by export.
+  serviceData.picture = userinfo[authEnv('OAUTH2_AVATAR_MAP') || 'picture'] || userinfo['picture'] || null;
+  serviceData.accessToken = accessToken;
+  serviceData.expiresAt = expiresAt;
+
+
+  // If on Oracle OIM email is empty or null, get info from username
+  if (isOracleOim()) {
+    if (userinfo[authEnv('OAUTH2_EMAIL_MAP')]) {
+      serviceData.email = userinfo[authEnv('OAUTH2_EMAIL_MAP')];
+    } else {
+      serviceData.email = userinfo[authEnv('OAUTH2_USERNAME_MAP')];
+    }
+  }
+
+  if (!isOracleOim()) {
+    serviceData.email = userinfo[authEnv('OAUTH2_EMAIL_MAP')]; // || userinfo["email"];
+  }
+
+  if (authEnv('OAUTH2_B2C_ENABLED') === 'true') {
+    // #5174: an Azure AD B2C token without the `emails` claim - which is what a
+    // scope the tenant did not grant produces - made this `undefined[0]`.
+    if (!Array.isArray(userinfo.emails) || !userinfo.emails.length) {
+      throw new Error('OIDC (B2C): the token carries no "emails" claim. The '
+        + 'tenant must be configured to release it for the requested scopes.');
+    }
+    serviceData.email = userinfo["emails"][0];
+  }
+
+  // SECURITY (GHSA-mp7g-hj5q-gxhq): Capture the provider's email_verified
+  // claim so the Accounts.onCreateUser hook can refuse to link an OIDC login
+  // to an existing local account on the basis of an unverified email.
+  // Different providers use boolean true or the string "true".
+  serviceData.email_verified =
+    userinfo["email_verified"] === true || userinfo["email_verified"] === "true";
+
+  if (accessToken) {
+    var tokenContent = getTokenContent(accessToken);
+    var config = await getConfiguration();
+    if (tokenContent) {
+      mergeWhitelistedClaims(
+        serviceData,
+        tokenContent,
+        config.idTokenWhitelistFields,
+      );
+    }
+  }
+
+  if (token.refresh_token)
+    serviceData.refreshToken = token.refresh_token;
+  if (debug) console.log('XXX: serviceData:', serviceData);
+
+  // Apply to every handshake, including existing users, before group/board
+  // routines can change memberships or Meteor can create or merge an account.
+  if (!isEmailDomainAllowed(serviceData.email, authEnv('OAUTH2_ALLOWED_EMAIL_DOMAINS'))) {
+    throw new Meteor.Error(403, 'Login forbidden');
+  }
+
+  profile.name = userinfo[authEnv('OAUTH2_FULLNAME_MAP')]; // || userinfo["displayName"];
+  profile.email = userinfo[authEnv('OAUTH2_EMAIL_MAP')]; // || userinfo["email"];
+  if (serviceData.picture) profile.avatarUrl = serviceData.picture; // localized on board open
+
+  if (authEnv('OAUTH2_B2C_ENABLED') === 'true') {
+    profile.email = userinfo["emails"][0];
+  }
+
+  if (debug) console.log('XXX: profile:', profile);
+
+
+  //temporarily store data from oidc in user.services.oidc.groups to update groups
+  serviceData.groups = (userinfo["groups"] && userinfo["wekanGroups"]) ? userinfo["wekanGroups"] : userinfo["groups"];
+  // groups arriving as array of strings indicate there is no scope set in oidc privider
+  // to assign teams and keep admin privileges
+  // data needs to be treated  differently.
+  // use case: in oidc provider no scope is set, hence no group attributes.
+  //    therefore: keep admin privileges for wekan as before
+  if(Array.isArray(serviceData.groups) && serviceData.groups.length && typeof serviceData.groups[0] === "string" )
+  {
+    // #4897: `user` was an implicit global shared by concurrent logins.
+    const user = await Meteor.users.findOneAsync({'_id':  serviceData.id});
+
+    serviceData.groups.forEach(function(groupName, i)
+    {
+      if(user?.isAdmin && i == 0)
+      {
+        // keep information of user.isAdmin since in loginHandler the user will // be updated regarding group admin privileges provided via oidc
+        serviceData.groups[i] = {"isAdmin": true};
+        serviceData.groups[i]["displayName"]= groupName;
+      }
+      else
+      {
+        serviceData.groups[i] = {"displayName": groupName};
+      }
+    });
+  }
+
+  // Fix OIDC login loop for integer user ID. Thanks to danielkaiser.
+  // https://github.com/wekan/wekan/issues/4795
+  await Meteor.callAsync('groupRoutineOnLogin',serviceData, ""+serviceData.id);
+  await Meteor.callAsync('boardRoutineOnLogin',serviceData, ""+serviceData.id);
+
+  return {
+    serviceData: serviceData,
+    options: { profile: profile }
+  };
+});
+
+var userAgent = "Meteor";
+if (Meteor.release) {
+  userAgent += "/" + Meteor.release;
+}
+
+// The token exchange: standard OIDC, or Oracle OIM's (client credentials in a
+// Basic header). Chosen per login from ORACLE_OIM_ENABLED.
+var getToken = function (query) {
+  return isOracleOim() ? getTokenOracleOim(query) : getTokenOidc(query);
+};
+
+{
+  var getTokenOidc = async function (query) {
+    var debug = process.env.DEBUG === 'true';
+    var config = await getConfiguration();
+    var serverTokenEndpoint = resolveOidcEndpoint(
+      config.serverUrl,
+      config.tokenEndpoint,
+    );
+
+    try {
+      var body = new URLSearchParams({
+        code: query.code,
+        client_id: config.clientId,
+        client_secret: resolveClientSecret(config),
+        redirect_uri: OAuth._redirectUri('oidc', config),
+        grant_type: 'authorization_code',
+        state: query.state
+      });
+
+      var fetchOptions = {
+        method: 'POST',
+        headers: new Headers({
+          'Accept': 'application/json',
+          'User-Agent': userAgent,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }),
+        body: body.toString()
+      };
+
+      const httpCa = oidcHttpCa();
+      if (httpCa) {
+        fetchOptions.agent = new https.Agent({ ca: httpCa });
+      }
+
+      var response = await fetch(serverTokenEndpoint, fetchOptions);
+      var data = await response.json();
+
+      if (!response.ok) {
+        throw new Error("Failed to get token from OIDC " + serverTokenEndpoint + ": " + response.statusText);
+      }
+      if (data.error) {
+        // if the http response was a json object with an error attribute
+        throw new Error("Failed to complete handshake with OIDC " + serverTokenEndpoint + ": " + data.error);
+      }
+      if (debug) console.log('XXX: getToken response: ', data);
+      return data;
+    } catch (err) {
+      throw Object.assign(new Error("Failed to get token from OIDC " + serverTokenEndpoint + ": " + err.message),
+        { response: err.response });
+    }
+  };
+}
+
+{
+
+  var getTokenOracleOim = async function (query) {
+    var debug = process.env.DEBUG === 'true';
+    var config = await getConfiguration();
+    var serverTokenEndpoint = resolveOidcEndpoint(
+      config.serverUrl,
+      config.tokenEndpoint,
+    );
+
+    // OIM needs basic Authentication token in the header - ClientID + SECRET in base64
+    var dataToken = authEnv('OAUTH2_CLIENT_ID') + ':' + authEnv('OAUTH2_SECRET');
+    var strBasicToken64 = Buffer.from(dataToken).toString('base64');
+
+    // eslint-disable-next-line no-console
+    if (debug) console.log('Basic Token: ', strBasicToken64);
+
+    try {
+      var body = new URLSearchParams({
+        code: query.code,
+        client_id: config.clientId,
+        client_secret: resolveClientSecret(config),
+        redirect_uri: OAuth._redirectUri('oidc', config),
+        grant_type: 'authorization_code',
+        state: query.state
+      });
+
+      var fetchOptions = {
+        method: 'POST',
+        headers: new Headers({
+          'Accept': 'application/json',
+          'User-Agent': userAgent,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + strBasicToken64
+        }),
+        body: body.toString()
+      };
+
+      const httpCa = oidcHttpCa();
+      if (httpCa) {
+        fetchOptions.agent = new https.Agent({ ca: httpCa });
+      }
+
+      var response = await fetch(serverTokenEndpoint, fetchOptions);
+      var data = await response.json();
+
+      if (!response.ok) {
+        throw new Error("Failed to get token from OIDC " + serverTokenEndpoint + ": " + response.statusText);
+      }
+      if (data.error) {
+        // if the http response was a json object with an error attribute
+        throw new Error("Failed to complete handshake with OIDC " + serverTokenEndpoint + ": " + data.error);
+      }
+      // eslint-disable-next-line no-console
+      if (debug) console.log('XXX: getToken response: ', data);
+      return data;
+    } catch (err) {
+      throw Object.assign(new Error("Failed to get token from OIDC " + serverTokenEndpoint + ": " + err.message),
+        { response: err.response });
+    }
+  };
+}
+
+
+var getUserInfo = async function (accessToken) {
+  var debug = process.env.DEBUG === 'true';
+  var config = await getConfiguration();
+  // Some userinfo endpoints use a different base URL than the authorization or token endpoints.
+  // This logic allows the end user to override the setting by providing the full URL to userinfo in their config.
+  var serverUserinfoEndpoint = resolveOidcEndpoint(
+    config.serverUrl,
+    config.userinfoEndpoint,
+  );
+
+  try {
+    var fetchOptions = {
+      method: 'GET',
+      headers: new Headers({
+        'User-Agent': userAgent,
+        'Authorization': 'Bearer ' + accessToken
+      })
+    };
+
+    const httpCa = oidcHttpCa();
+    if (httpCa) {
+      fetchOptions.agent = new https.Agent({ ca: httpCa });
+    }
+
+    var response = await fetch(serverUserinfoEndpoint, fetchOptions);
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch userinfo from OIDC " + serverUserinfoEndpoint + ": " + response.statusText);
+    }
+
+    var data = await response.json();
+    if (debug) console.log('XXX: getUserInfo response: ', data);
+    return data;
+  } catch (err) {
+    throw Object.assign(new Error("Failed to fetch userinfo from OIDC " + serverUserinfoEndpoint + ": " + err.message),
+                   {response: err.response});
+  }
+};
+
+var getConfiguration = async function () {
+  var config = await ServiceConfiguration.configurations.findOneAsync({ service: 'oidc' });
+  if (!config) {
+    throw new ServiceConfiguration.ConfigError('Service oidc not configured.');
+  }
+  return config;
+};
+
+var getTokenContent = function (token) {
+  var content = null;
+  if (token) {
+    try {
+      var parts = token.split('.');
+      var header = JSON.parse(Buffer.from(parts[0], 'base64').toString());
+      content = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      var signature = Buffer.from(parts[2], 'base64');
+      var signed = parts[0] + '.' + parts[1];
+    } catch (err) {
+      content = {
+        exp: 0
+      };
+    }
+  }
+  return content;
+}
+Meteor.methods({
+  'groupRoutineOnLogin': async function(info, userId)
+  {
+    // SECURITY (GHSA-cv95-8h7c-2ffq): This method is invoked only server-side
+    // during the OIDC login flow (via Meteor.callAsync from the
+    // OAuth.registerService('oidc') callback above). With PROPAGATE_OIDC_DATA
+    // enabled it grants isAdmin based on the caller-supplied group data, so if
+    // it were callable directly over DDP any authenticated user could promote
+    // themselves to global admin. A server-side method call has
+    // this.connection === null; a direct client call has a non-null
+    // connection. Reject the latter.
+    if (this.connection !== null) {
+      throw new Meteor.Error('not-authorized');
+    }
+    check(info, Object);
+    check(userId, String);
+
+    // #5876: optional OAUTH2_ADMIN_GROUPS. When set (comma/whitespace separated
+    // list of group names), grant/revoke Wekan admin for the logging-in OIDC
+    // user based on whether their OIDC `groups` claim intersects that list.
+    // This mirrors LDAP_SYNC_ADMIN_GROUPS and is independent of
+    // PROPAGATE_OIDC_DATA. When OAUTH2_ADMIN_GROUPS is empty/unset (default),
+    // isAdmin is left untouched, so existing behavior is unchanged.
+    {
+      const adminStatus = oauth2AdminStatusFromGroups(info.groups);
+      if (adminStatus.manage) {
+        const adminUser = await Meteor.users.findOneAsync({'services.oidc.id': userId});
+        if (adminUser) {
+          await Meteor.users.updateAsync({_id: adminUser._id}, {$set: {isAdmin: adminStatus.isAdmin}});
+        }
+      }
+    }
+
+    // Any non-empty value turned this on, 'false' included; 'false' - which
+    // is also what the Admin Panel's "No" stores - now means off.
+    var propagateValue = authEnv('PROPAGATE_OIDC_DATA');
+    var propagateOidcData = !!propagateValue && propagateValue !== 'false';
+    if (propagateOidcData) {
+      // #4897: `users`/`user` were implicit globals shared by concurrent
+      // logins; between the awaits below another login could reassign `user`,
+      // so this login's email/fullname/username got written onto ANOTHER
+      // user's document. loginHandler.js now uses Meteor.users directly.
+      const user = await Meteor.users.findOneAsync({'services.oidc.id':  userId});
+
+      if(user) {
+        //updates/creates Groups and user admin privileges accordingly if not undefined
+        if (info.groups) {
+          await addGroupsWithAttributes(user, info.groups);
+        }
+
+        if(info.email) await addEmail(user, info.email);
+        if(info.fullname) await changeFullname(user, info.fullname);
+        if(info.username) await changeUsername(user, info.username);
+      }
+    }
+  }
+});
+
+Meteor.methods({
+  'boardRoutineOnLogin': async function(info, oidcUserId)
+  {
+    // SECURITY (GHSA-cv95-8h7c-2ffq): Invoked only server-side during the OIDC
+    // login flow (via Meteor.callAsync from the OAuth.registerService('oidc')
+    // callback above). It adds the OIDC user to the default board (optionally
+    // as board admin) with no per-user authorization, so reject direct
+    // client/DDP calls (this.connection non-null).
+    if (this.connection !== null) {
+      throw new Meteor.Error('not-authorized');
+    }
+    check(info, Object);
+    check(oidcUserId, String);
+
+    const defaultBoardParams = (process.env.DEFAULT_BOARD_ID || '').split(':');
+    const defaultBoardId = defaultBoardParams.shift()
+    if (!defaultBoardId) return
+
+    const board = await Boards.findOneAsync(defaultBoardId)
+    const user = await Users.findOneAsync({ 'services.oidc.id': oidcUserId })
+    const userId = user?._id
+    const memberIndex = (board?.members || []).map(m => m.userId).indexOf(userId);
+    if(!board || !userId || memberIndex > -1) return
+
+    await board.addMember(userId)
+    // DEFAULT_BOARD_ID=<id>:isAdmin:isWorker... - Array has no .contains, so
+    // this threw and the user got the default role whatever was configured.
+    // isCommentsOnly is the spelling that has always been documented here;
+    // isCommentOnly, the flag's real name, works too.
+    await board.setMemberPermission(
+      userId,
+      defaultBoardParams.includes("isAdmin"),
+      defaultBoardParams.includes("isNoComments"),
+      defaultBoardParams.includes("isCommentOnly") || defaultBoardParams.includes("isCommentsOnly"),
+      defaultBoardParams.includes("isWorker")
+    )
+  }
+});
+
+Oidc.retrieveCredential = function (credentialToken, credentialSecret) {
+  return OAuth.retrieveCredential(credentialToken, credentialSecret);
+};

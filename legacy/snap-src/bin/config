@@ -1,0 +1,1112 @@
+#!/bin/sh
+
+# All supported keys are defined here together with descriptions and default values
+
+# list of supported keys
+keys="WEKAN_AUTOPICK WEKAN_AUTOPICK_TIMEOUT DEBUG BIND_IP MAIL_TLS_CA_CERT MAIL_TLS_SERVERNAME WEBHOOK_TLS_CA_CERT HTTP_PROXY HTTPS_PROXY NO_PROXY HTTPS_PORT HTTPS_CERT_FILE HTTPS_KEY_FILE HTTPS_BIND_IP HTTPS_REDIRECT WEKAN_FERRETDB_OPLOG WEKAN_FERRETDB_HANDLER WEKAN_FERRETDB_URL DDP_TRANSPORT METEOR_REACTIVITY_ORDER MONGO_LOG_DESTINATION MONGO_URL MONGO_OPLOG_URL MONGODB_BIND_UNIX_SOCKET MONGODB_BIND_IP MONGODB_PORT MAIL_URL MAIL_FROM MAIL_SERVICE MAIL_SERVICE_USER MAIL_SERVICE_PASSWORD ROOT_URL PORT DISABLE_MONGODB CADDY_ENABLED CADDY_BIND_PORT WITH_API CARDS_LOADING CARD_OPENED_WEBHOOK_ENABLED ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURES_BEFORE ACCOUNTS_LOCKOUT_KNOWN_USERS_PERIOD ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS USERS_DISABLE_INACTIVE_AFTER_DAYS BACKUP_KEEP_DAYS ACCOUNTS_COOKIE_REFRESH_RATE_LIMIT INBOUND_IMAP_POLL_SECONDS INBOUND_EMAIL_PER_ADDRESS_PER_HOUR INBOUND_EMAIL_WEBHOOK_SECRET INBOUND_EMAIL_MAX_BYTES INBOUND_EMAIL_MAX_ATTACHMENT_BYTES EMAIL_VIEW_SENDS_PER_HOUR INBOUND_IMAP_DISABLED WEKAN_DISK_MONITOR WEKAN_DISK_WATCH_PATHS WEKAN_RAM_MONITOR WEKAN_IMPORT_RUN_STALE_MS ATTACHMENTS_RETENTION_DAYS ATTACHMENTS_RETENTION_MODE ATTACHMENTS_PURGE_DELETED_AFTER_DAYS ATTACHMENTS_RETENTION_DRY_RUN ATTACHMENTS_RETENTION_MAX_PER_RUN ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM ATTACHMENTS_UPLOAD_MIME_TYPES ATTACHMENTS_UPLOAD_MAX_SIZE AVATARS_UPLOAD_EXTERNAL_PROGRAM AVATARS_UPLOAD_MIME_TYPES AVATARS_UPLOAD_MAX_SIZE DEFAULT_AVATAR_URL MAX_IMAGE_PIXEL IMAGE_COMPRESS_RATIO BIGEVENTS_PATTERN NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE NOTIFY_DUE_DAYS_BEFORE_AND_AFTER NOTIFY_DUE_AT_HOUR_OF_DAY DEFAULT_BOARD_ID EMAIL_NOTIFICATION_TIMEOUT CORS CORS_ALLOW_HEADERS CORS_EXPOSE_HEADERS MATOMO_ADDRESS MATOMO_SITE_ID MATOMO_DO_NOT_TRACK MATOMO_WITH_USERNAME METRICS_ALLOWED_IP_ADDRESSES BROWSER_POLICY_ENABLED TRUSTED_URL WEBHOOKS_ATTRIBUTES OAUTH2_ENABLED OIDC_REDIRECTION_ENABLED OAUTH2_CA_CERT OAUTH2_LOGIN_STYLE OAUTH2_CLIENT_ID OAUTH2_SECRET OAUTH2_SERVER_URL OAUTH2_AUTH_ENDPOINT OAUTH2_USERINFO_ENDPOINT OAUTH2_TOKEN_ENDPOINT OAUTH2_LOGOUT_ENDPOINT OAUTH2_ID_MAP OAUTH2_USERNAME_MAP OAUTH2_FULLNAME_MAP OAUTH2_ID_TOKEN_WHITELIST_FIELDS OAUTH2_EMAIL_MAP OAUTH2_REQUEST_PERMISSIONS OAUTH2_ADFS_ENABLED OAUTH2_B2C_ENABLED OAUTH2_MERGE_EXISTING_USERS LDAP_ENABLE LDAP_PORT LDAP_HOST LDAP_AD_SIMPLE_AUTH LDAP_BASEDN LDAP_LOGIN_FALLBACK LDAP_RECONNECT LDAP_TIMEOUT LDAP_IDLE_TIMEOUT LDAP_CONNECT_TIMEOUT LDAP_AUTHENTIFICATION LDAP_AUTHENTIFICATION_USERDN LDAP_AUTHENTIFICATION_PASSWORD LDAP_LOG_ENABLED LDAP_BACKGROUND_SYNC LDAP_BACKGROUND_SYNC_INTERVAL LDAP_BACKGROUND_SYNC_KEEP_EXISTANT_USERS_UPDATED LDAP_BACKGROUND_SYNC_IMPORT_NEW_USERS LDAP_ENCRYPTION LDAP_CA_CERT LDAP_REJECT_UNAUTHORIZED LDAP_USER_AUTHENTICATION LDAP_USER_AUTHENTICATION_FIELD LDAP_USER_SEARCH_FILTER LDAP_USER_SEARCH_SCOPE LDAP_USER_SEARCH_FIELD LDAP_SEARCH_PAGE_SIZE LDAP_SEARCH_SIZE_LIMIT LDAP_GROUP_FILTER_ENABLE LDAP_GROUP_FILTER_OBJECTCLASS LDAP_GROUP_FILTER_GROUP_ID_ATTRIBUTE LDAP_GROUP_FILTER_GROUP_MEMBER_ATTRIBUTE LDAP_GROUP_FILTER_GROUP_MEMBER_FORMAT LDAP_GROUP_FILTER_NESTED LDAP_GROUP_FILTER_GROUP_NAME LDAP_UNIQUE_IDENTIFIER_FIELD LDAP_UTF8_NAMES_SLUGIFY LDAP_USERNAME_FIELD LDAP_FULLNAME_FIELD LDAP_MERGE_EXISTING_USERS LDAP_SYNC_USER_DATA LDAP_SYNC_USER_DATA_FIELDMAP LDAP_SYNC_GROUP_ROLES LDAP_DEFAULT_DOMAIN LDAP_EMAIL_MATCH_ENABLE LDAP_EMAIL_MATCH_REQUIRE LDAP_EMAIL_MATCH_VERIFIED LDAP_EMAIL_FIELD LDAP_SYNC_ADMIN_STATUS LDAP_SYNC_ADMIN_GROUPS HEADER_LOGIN_ID HEADER_LOGIN_FIRSTNAME HEADER_LOGIN_LASTNAME HEADER_LOGIN_EMAIL HEADER_LOGIN_TRUSTED_IPS HEADER_LOGIN_TRUSTED_PROXIES LOGOUT_WITH_TIMER LOGOUT_IN LOGOUT_ON_HOURS LOGOUT_ON_MINUTES DEFAULT_AUTHENTICATION_METHOD PASSWORD_LOGIN_ENABLED CAS_ENABLED CAS_BASE_URL CAS_LOGIN_URL CAS_VALIDATE_URL SAML_ENABLED SAML_PROVIDER SAML_ENTRYPOINT SAML_ISSUER SAML_CERT SAML_IDPSLO_REDIRECTURL SAML_PRIVATE_KEYFILE SAML_PUBLIC_CERTFILE SAML_IDENTIFIER_FORMAT SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE SAML_ATTRIBUTES SAML_MERGE_EXISTING_USERS SAML_IDP_PROFILE SAML_WANT_RESPONSE_SIGNED SAML_WANT_ASSERTIONS_SIGNED SAML_LOGIN_FLOW OAUTH_GOOGLE_ENABLED OAUTH_GOOGLE_CLIENT_ID OAUTH_GOOGLE_SECRET OAUTH_GOOGLE_SECRET_FILE OAUTH_GITHUB_ENABLED OAUTH_GITHUB_CLIENT_ID OAUTH_GITHUB_SECRET OAUTH_GITHUB_SECRET_FILE OAUTH_FACEBOOK_ENABLED OAUTH_FACEBOOK_APP_ID OAUTH_FACEBOOK_SECRET OAUTH_FACEBOOK_SECRET_FILE OAUTH_TWITTER_ENABLED OAUTH_TWITTER_CONSUMER_KEY OAUTH_TWITTER_SECRET OAUTH_TWITTER_SECRET_FILE OAUTH_METEOR_DEVELOPER_ENABLED OAUTH_METEOR_DEVELOPER_CLIENT_ID OAUTH_METEOR_DEVELOPER_SECRET OAUTH_METEOR_DEVELOPER_SECRET_FILE OAUTH_WEIBO_ENABLED OAUTH_WEIBO_CLIENT_ID OAUTH_WEIBO_SECRET OAUTH_WEIBO_SECRET_FILE OAUTH_MEETUP_ENABLED OAUTH_MEETUP_CLIENT_ID OAUTH_MEETUP_SECRET OAUTH_MEETUP_SECRET_FILE OAUTH_PROVIDERS_LOGIN_STYLE OAUTH_PROVIDERS_MERGE_EXISTING_USERS OAUTH_PROVIDERS_ALLOWED_EMAIL_DOMAINS PASSWORDLESS_ENABLED ORACLE_OIM_ENABLED RESULTS_PER_PAGE WAIT_SPINNER NODE_OPTIONS LDAP_AUTHENTIFICATION_PASSWORD_FILE OAUTH2_SECRET_FILE MAIL_URL_FILE MONGO_URL_FILE S3 S3_SECRET_KEY_FILE OAUTH2_AUTO_REGISTRATION OAUTH2_ADMIN_GROUPS NOTIFY_ON_ASSIGN LDAP_BACKGROUND_SYNC_DISABLE_NONEXISTANT_USERS LDAP_SYNC_ORGANIZATIONS LDAP_SYNC_ORGANIZATIONS_GROUPS LDAP_SYNC_TEAMS LDAP_SYNC_TEAMS_GROUPS LDAP_MIGRATION_ALLOW_PASSWORD_LOGIN LDAP_USER_ATTRIBUTES LDAP_GROUP_BASEDN OAUTH2_AVATAR_MAP OAUTH2_ALLOWED_EMAIL_DOMAINS OAUTH2_DEFAULT_ORGANIZATION PROPAGATE_OIDC_DATA OAUTH2_SECRET_JWT_KEY_PATH OAUTH2_SECRET_JWT_ISSUER OAUTH2_SECRET_JWT_KEY_ID OAUTH2_SECRET_JWT_AUDIENCE OAUTH2_SECRET_JWT_SUBJECT OAUTH2_SECRET_JWT_EXPIRES_IN CAS_MERGE_EXISTING_USERS"
+
+#-------------------- TWO COPIES OF THE DATA --------------------
+# After a MongoDB -> FerretDB migration both copies stay on disk, and if both have
+# been written to since, bin/database-autopick reads them and serves the one that
+# holds the work. That read starts each database on a temporary port, so on a big
+# instance it takes time - and WeKan does not open its web port until it is done.
+#
+# autopick: 'false' skips the comparison entirely and starts on the database
+# already selected. The site comes up at once, and the choice becomes something to
+# make by hand (wekan.database-compare, wekan.database-merge).
+DESCRIPTION_WEKAN_AUTOPICK="WEKAN_AUTOPICK. Default: 'true'. Set 'false' to skip comparing the two copies of the database at startup and serve the one already selected."
+DEFAULT_WEKAN_AUTOPICK="true"
+KEY_WEKAN_AUTOPICK='autopick'
+
+# And a bound on it, so a comparison that cannot finish does not keep the site
+# down. When it runs out, nothing is changed or switched and WeKan starts on the
+# database already selected - the same outcome as autopick being off.
+DESCRIPTION_WEKAN_AUTOPICK_TIMEOUT="WEKAN_AUTOPICK_TIMEOUT. Default: '900' seconds. How long the startup comparison of the two database copies may take before it is stopped and WeKan starts anyway."
+DEFAULT_WEKAN_AUTOPICK_TIMEOUT="900"
+KEY_WEKAN_AUTOPICK_TIMEOUT='autopick-timeout'
+
+#-------------------- CHANGE STREAMS --------------------
+# https://forums.meteor.com/t/meteor-3-5-beta-change-streams-performance-improvements/64461#change-streams-setup-3
+# https://github.com/meteor/meteor/blob/release-3.5/v3-docs/docs/performance/change-streams-observer-driver.md#choosing-the-reactivity-driver-order
+DESCRIPTION_METEOR_REACTIVITY_ORDER="METEOR_REACTIVITY_ORDER. Default: 'changeStreams,oplog,polling'. Fallback for environments without a replica set: 'oplog,polling'"
+DEFAULT_METEOR_REACTIVITY_ORDER="changeStreams,oplog,polling"
+KEY_METEOR_REACTIVITY_ORDER='meteor-reactivity-order'
+
+# For multi-process / multi-tenant deployments on one host with network_mode: host,
+# also set a distinct Meteor.settings.packages['ddp-server'].uws.port per process.
+# See docs/Platforms/FOSS/Container/Docker/Meteor3/multitenancy.md
+DESCRIPTION_DDP_TRANSPORT="DDP_TRANSPORT. Only 'sockjs': the snap ships no uWebSockets.js, so 'uws' is coerced to sockjs at startup."
+DEFAULT_DDP_TRANSPORT="sockjs"
+KEY_DDP_TRANSPORT='ddp-transport'
+#-----------------------------------------------------------------
+# ==== AWS S3 FOR FILES ====
+# Any region. For example:
+#   us-standard,us-west-1,us-west-2,
+#   eu-west-1,eu-central-1,
+#   ap-southeast-1,ap-northeast-1,sa-east-1
+#
+#- S3='{"s3":{"key": "xxx", "secret": "xxx", "bucket": "xxx", "region": "eu-west-1"}}'
+#-----------------------------------------------------------------
+
+# This is not set here, because it can be set only at config files
+# snap/hooks/install and snap/hooks/post-refresh
+#DESCRIPTION_WRITABLE_PATH="Writable path. Default: $SNAP_COMMON/files"
+#DEFAULT_WRITABLE_PATH=""
+#KEY_WRITABLE_PATH="writable-path"
+
+#---------------------------------------------------------------------
+# https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132
+# Add more Node heap:
+#   NODE_OPTIONS="--max_old_space_size=4096"
+# Add more stack:
+#   bash -c "ulimit -s 65500; exec node --stack-size=65500 main.js"
+#---------------------------------------------------------------------
+#
+# CMD ["node", "/build/main.js"]
+DESCRIPTION_NODE_OPTIONS="Add more Node heap. https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132 . Default: node-options=\"--max_old_space_size=4096\""
+DEFAULT_NODE_OPTIONS=""
+KEY_NODE_OPTIONS="node-options"
+
+# default values
+DESCRIPTION_DEBUG="Debug OIDC OAuth2 etc. Example: sudo snap set wekan debug='true'"
+DEFAULT_DEBUG="false"
+KEY_DEBUG="debug"
+
+DESCRIPTION_MONGO_LOG_DESTINATION="MONGO_LOG_DESTINATION: devnull/snapcommon/syslog. Default: 'devnull'"
+DEFAULT_MONGO_LOG_DESTINATION="devnull"
+KEY_MONGO_LOG_DESTINATION='mongo-log-destination'
+
+DESCRIPTION_MONGO_URL="MONGO_URL. Default: ''"
+DEFAULT_MONGO_URL=""
+KEY_MONGO_URL='mongo-url'
+
+DESCRIPTION_MONGO_OPLOG_URL="MongoDB Oplog URL. Default: 'mongodb://127.0.0.1:mongodb-port/local?replicaSet=rs0'"
+DEFAULT_MONGO_OPLOG_URL=""
+KEY_MONGO_OPLOG_URL="mongo-oplog-url"
+
+DESCRIPTION_MONGODB_BIND_UNIX_SOCKET="mongodb binding unix socket. Example: /var/snap/<snap-instance-name>/current/share . Default: ''\n"\
+"\t\t\t Default behaviour will preffer binding over unix socket, to disable unix socket binding set value to 'nill' string\n"\
+"\t\t\t To bind to instance of mongodb provided through content interface,set value to relative path to the socket inside '$SNAP_DATA/shared' directory"
+DEFAULT_MONGODB_BIND_UNIX_SOCKET=""
+KEY_MONGODB_BIND_UNIX_SOCKET="mongodb-bind-unix-socket"
+
+DESCRIPTION_MONGODB_PORT="mongodb binding port: eg 27017 when using localhost"
+DEFAULT_MONGODB_PORT="27019"
+KEY_MONGODB_PORT='mongodb-port'
+
+DESCRIPTION_MONGODB_BIND_IP="mongodb binding ip address: eg 127.0.0.1 for localhost\n\t\tIf not defined default unix socket is used instead"
+DEFAULT_MONGODB_BIND_IP="127.0.0.1"
+KEY_MONGODB_BIND_IP="mongodb-bind-ip"
+
+DESCRIPTION_MAIL_URL="wekan mail binding"
+DEFAULT_MAIL_URL=""
+KEY_MAIL_URL="mail-url"
+
+DESCRIPTION_MAIL_FROM="wekan's admin mail from name email address"
+DEFAULT_MAIL_FROM=""
+KEY_MAIL_FROM="mail-from"
+
+DESCRIPTION_MAIL_SERVICE="wekan's mail-service, see https://github.com/wekan/wekan/wiki/Troubleshooting-Mail"
+DEFAULT_MAIL_SERVICE=""
+KEY_MAIL_SERVICE="mail-service"
+
+DESCRIPTION_MAIL_SERVICE_USER="wekan's mail-service-user"
+DEFAULT_MAIL_SERVICE_USER=""
+KEY_MAIL_SERVICE_USER="mail-service-user"
+
+DESCRIPTION_MAIL_SERVICE_PASSWORD="wekan's mail-service-password"
+DEFAULT_MAIL_SERVICE_PASSWORD=""
+KEY_MAIL_SERVICE_PASSWORD="mail-service-password"
+
+DESCRIPTION_ROOT_URL="wekan's root url, eg http://127.0.0.1, https://example.com, https://wekan.example.com, http://example.com/wekan"
+DEFAULT_ROOT_URL="http://127.0.0.1"
+KEY_ROOT_URL="root-url"
+
+DESCRIPTION_PORT="port wekan is exposed at"
+DEFAULT_PORT="8080"
+KEY_PORT="port"
+
+# #6546: which address WeKan itself listens on. Empty keeps Meteor's own default
+# (all IPv4 addresses, 0.0.0.0), which is why the snap could not be reached over
+# IPv6 and there was no setting to change it. `::` listens on IPv6 and, on a
+# dual-stack host, on IPv4 through it; `::1` or an address listens on that one.
+#   snap set wekan bind-ip='::'
+# #6551 / #6553: reach a mail server or a webhook endpoint whose certificate does
+# not verify as it stands - a self-signed one, an internal CA, or a wildcard that
+# covers one level fewer than the host has. Certificate verification is NEVER
+# turned off: what these say is which certificate to trust, and which name to
+# check it against.
+DESCRIPTION_MAIL_TLS_CA_CERT="Certificate (or CA) to TRUST for the mail server: the PEM itself, or a path to a file holding it. A self-signed certificate is its own issuer, so putting it here makes it valid"
+DEFAULT_MAIL_TLS_CA_CERT=""
+KEY_MAIL_TLS_CA_CERT="mail-tls-ca-cert"
+
+DESCRIPTION_MAIL_TLS_SERVERNAME="Name to verify the mail server's certificate AGAINST, when the host is not the name on it (e.g. a wildcard that covers one level fewer)"
+DEFAULT_MAIL_TLS_SERVERNAME=""
+KEY_MAIL_TLS_SERVERNAME="mail-tls-servername"
+
+DESCRIPTION_WEBHOOK_TLS_CA_CERT="Certificate (or CA) to TRUST for outgoing webhooks: the PEM itself, or a path to a file holding it"
+DEFAULT_WEBHOOK_TLS_CA_CERT=""
+KEY_WEBHOOK_TLS_CA_CERT="webhook-tls-ca-cert"
+
+DESCRIPTION_HTTP_PROXY="Proxy for outgoing http:// requests (webhooks, imports, avatars), e.g. http://squid.example.com:3128. The destination is still checked before the proxy is used"
+DEFAULT_HTTP_PROXY=""
+KEY_HTTP_PROXY="http-proxy"
+
+DESCRIPTION_HTTPS_PROXY="Proxy for outgoing https:// requests, reached through CONNECT, e.g. http://squid.example.com:3128"
+DEFAULT_HTTPS_PROXY=""
+KEY_HTTPS_PROXY="https-proxy"
+
+DESCRIPTION_NO_PROXY="Destinations that do not use the proxy: comma-separated host names (and their subdomains), host:port, addresses, or *"
+DEFAULT_NO_PROXY=""
+KEY_NO_PROXY="no-proxy"
+
+DESCRIPTION_HTTPS_PORT="Serve HTTPS from WeKan itself on this port (off when empty). Needs https-cert-file and https-key-file. The snap's Caddy is the alternative"
+DEFAULT_HTTPS_PORT=""
+KEY_HTTPS_PORT="https-port"
+
+DESCRIPTION_HTTPS_CERT_FILE="Certificate (with chain) for https-port: a file path or the PEM itself. A renewed file is loaded without a restart"
+DEFAULT_HTTPS_CERT_FILE=""
+KEY_HTTPS_CERT_FILE="https-cert-file"
+
+DESCRIPTION_HTTPS_KEY_FILE="Private key for https-port: a file path or the PEM itself"
+DEFAULT_HTTPS_KEY_FILE=""
+KEY_HTTPS_KEY_FILE="https-key-file"
+
+DESCRIPTION_HTTPS_BIND_IP="Address https-port listens on (default: bind-ip, else all)"
+DEFAULT_HTTPS_BIND_IP=""
+KEY_HTTPS_BIND_IP="https-bind-ip"
+
+DESCRIPTION_HTTPS_REDIRECT="true: plain-HTTP requests get a redirect to HTTPS"
+DEFAULT_HTTPS_REDIRECT=""
+KEY_HTTPS_REDIRECT="https-redirect"
+
+DESCRIPTION_BIND_IP="address WeKan listens on. Empty: Meteor default (0.0.0.0, IPv4 only). '::' for IPv6 (and IPv4 on a dual-stack host)"
+DEFAULT_BIND_IP=""
+KEY_BIND_IP="bind-ip"
+
+DESCRIPTION_DISABLE_MONGODB="Disable mongodb service: use only if binding to database outside of the ${SNAP_NAME} snap. Valid values: [true,false]"
+DEFAULT_DISABLE_MONGODB="false"
+KEY_DISABLE_MONGODB="disable-mongodb"
+
+
+DESCRIPTION_WEKAN_FERRETDB_OPLOG="FerretDB reactivity mode. 'true' (default) = tail the write-notified FerretDB OpLog for real-time updates; 'false' = standalone polling fallback. Only applies when database=ferretdb. Force polling: snap set ${SNAP_NAME} wekan-ferretdb-oplog=false ; enable OpLog: snap set ${SNAP_NAME} wekan-ferretdb-oplog=true"
+DEFAULT_WEKAN_FERRETDB_OPLOG="true"
+KEY_WEKAN_FERRETDB_OPLOG="wekan-ferretdb-oplog"
+
+DESCRIPTION_WEKAN_FERRETDB_HANDLER="FerretDB v1 storage backend. 'sqlite' (default) = the embedded, zero-dependency SQLite backend (data under \$SNAP_COMMON/files/db). 'postgresql' / 'mysql' = an EXTERNAL PostgreSQL / MySQL server that YOU run (the snap does not bundle one); set its address with wekan-ferretdb-url. Only applies when database=ferretdb."
+DEFAULT_WEKAN_FERRETDB_HANDLER="sqlite"
+KEY_WEKAN_FERRETDB_HANDLER="wekan-ferretdb-handler"
+
+DESCRIPTION_WEKAN_FERRETDB_URL="Connection URL for an external FerretDB backend when wekan-ferretdb-handler is postgresql or mysql, e.g. 'postgres://user:pass@127.0.0.1:5432/ferretdb' or 'mysql://user:pass@127.0.0.1:3306/ferretdb'. Ignored for the sqlite backend."
+DEFAULT_WEKAN_FERRETDB_URL=""
+KEY_WEKAN_FERRETDB_URL="wekan-ferretdb-url"
+
+DESCRIPTION_CADDY_ENABLED="Enable caddy service (caddy - Every Site on HTTPS) personal license for non-commercial use only, see https://caddyserver.com/products/licenses . Set to 'true' to enable caddy\n\t\tcaddy settings are handled through $SNAP_COMMON/Caddyfile"
+DEFAULT_CADDY_ENABLED="false"
+KEY_CADDY_ENABLED="caddy-enabled"
+
+DESCRIPTION_CADDY_BIND_PORT="Port on which caddy will expect proxy (WeKan listens on it when caddy is enabled); $SNAP_COMMON/Caddyfile reads it as {$CADDY_BIND_PORT}"
+DEFAULT_CADDY_BIND_PORT="3001"
+KEY_CADDY_BIND_PORT="caddy-bind-port"
+
+DESCRIPTION_WITH_API="Enable/disable the api of wekan"
+DEFAULT_WITH_API="true"
+KEY_WITH_API="with-api"
+
+DESCRIPTION_CARDS_LOADING="How a board loads its cards: 'auto' (default, a board with more than 500 cards loads only the visible cards per list, smaller boards load every card), 'all' (every card of every board into the browser) or 'lazy' (only the visible cards per list, on every board). Example: sudo snap set wekan cards-loading='lazy'"
+DEFAULT_CARDS_LOADING="auto"
+KEY_CARDS_LOADING="cards-loading"
+
+DESCRIPTION_CARD_OPENED_WEBHOOK_ENABLED="Card opened, send webhook message. Default: false https://github.com/wekan/wekan/issues/2518"
+DEFAULT_CARD_OPENED_WEBHOOK_ENABLED="false"
+KEY_CARD_OPENED_WEBHOOK_ENABLED="card-opened-webhook-enabled"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURES_BEFORE="Accounts lockout known users failures before, greater than 0. Default: 3"
+DEFAULT_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURES_BEFORE="3"
+KEY_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURES_BEFORE="accounts-lockout-known-users-failures-before"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_KNOWN_USERS_PERIOD="Accounts lockout know users period, in seconds. Default: 60"
+DEFAULT_ACCOUNTS_LOCKOUT_KNOWN_USERS_PERIOD="60"
+KEY_ACCOUNTS_LOCKOUT_KNOWN_USERS_PERIOD="accounts-lockout-known-users-period"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW="Accounts lockout unknown failure window, in seconds. Default: 15"
+DEFAULT_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW="15"
+KEY_ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW="accounts-lockout-known-users-failure-window"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE="Accounts lockout unknown users failures before, greater than 0. Default: 3"
+DEFAULT_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE="3"
+KEY_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE="accounts-lockout-unknown-users-failures-before"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD="Accounts lockout unknown users lockout period, in seconds. Default: 60"
+DEFAULT_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD="60"
+KEY_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD="accounts-lockout-unknown-users-lockout-period"
+
+DESCRIPTION_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW="Accounts lockout unknown users failure window, in seconds. Default: 15"
+DEFAULT_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW="15"
+KEY_ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW="accounts-lockout-unknown-users-failure-window"
+
+DESCRIPTION_ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS="Accounts common login expiration in days. Default: 90"
+DEFAULT_ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS="90"
+KEY_ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS="accounts-common-login-expiration-in-days"
+
+DESCRIPTION_USERS_DISABLE_INACTIVE_AFTER_DAYS="Once a night, disable accounts that have not used WeKan for this many days. Admins are never disabled. Empty or 0 = off. Example: 180"
+DEFAULT_USERS_DISABLE_INACTIVE_AFTER_DAYS=""
+KEY_USERS_DISABLE_INACTIVE_AFTER_DAYS="users-disable-inactive-after-days"
+
+DESCRIPTION_BACKUP_KEEP_DAYS="After each successful Admin Panel backup, delete local backups older than this many days; the newest is always kept. Empty or 0 = keep all. Admin Panel / Attachments / Backup can set it too. Example: 7"
+DEFAULT_BACKUP_KEEP_DAYS=""
+KEY_BACKUP_KEEP_DAYS="backup-keep-days"
+
+DESCRIPTION_ACCOUNTS_COOKIE_REFRESH_RATE_LIMIT="Login-cookie refreshes allowed per 10 seconds from one address (Meteor default 30); raise it behind a reverse proxy that is not trusted for the client address. Admin Panel / People / Login overrides it; applies from the next start."
+DEFAULT_ACCOUNTS_COOKIE_REFRESH_RATE_LIMIT=""
+KEY_ACCOUNTS_COOKIE_REFRESH_RATE_LIMIT="accounts-cookie-refresh-rate-limit"
+
+DESCRIPTION_INBOUND_IMAP_POLL_SECONDS="Email to card: how often IMAP mailboxes are read, in seconds (default 60, at least 15)."
+DEFAULT_INBOUND_IMAP_POLL_SECONDS=""
+KEY_INBOUND_IMAP_POLL_SECONDS="inbound-imap-poll-seconds"
+
+DESCRIPTION_INBOUND_EMAIL_PER_ADDRESS_PER_HOUR="Email to card: cards one sender address can make per hour (default 60)."
+DEFAULT_INBOUND_EMAIL_PER_ADDRESS_PER_HOUR=""
+KEY_INBOUND_EMAIL_PER_ADDRESS_PER_HOUR="inbound-email-per-address-per-hour"
+
+DESCRIPTION_INBOUND_EMAIL_WEBHOOK_SECRET="Email to card: the secret the mail provider must send with each webhook POST, if not set in Admin Panel / People / Notification Settings / Email to card."
+DEFAULT_INBOUND_EMAIL_WEBHOOK_SECRET=""
+KEY_INBOUND_EMAIL_WEBHOOK_SECRET="inbound-email-webhook-secret"
+
+DESCRIPTION_INBOUND_EMAIL_MAX_BYTES="Email to card: largest message in bytes (default 31457280, 30 MB)."
+DEFAULT_INBOUND_EMAIL_MAX_BYTES=""
+KEY_INBOUND_EMAIL_MAX_BYTES="inbound-email-max-bytes"
+
+DESCRIPTION_INBOUND_EMAIL_MAX_ATTACHMENT_BYTES="Email to card: largest attachment in bytes (default 26214400, 25 MB)."
+DEFAULT_INBOUND_EMAIL_MAX_ATTACHMENT_BYTES=""
+KEY_INBOUND_EMAIL_MAX_ATTACHMENT_BYTES="inbound-email-max-attachment-bytes"
+
+DESCRIPTION_EMAIL_VIEW_SENDS_PER_HOUR="Emails one user can send from the email view per hour (default 50)."
+DEFAULT_EMAIL_VIEW_SENDS_PER_HOUR=""
+KEY_EMAIL_VIEW_SENDS_PER_HOUR="email-view-sends-per-hour"
+
+DESCRIPTION_INBOUND_IMAP_DISABLED="true stops THIS server process from reading IMAP mailboxes - for a multi-pod deployment where one pod should read them. Environment only: an Admin Panel value would be shared by every pod."
+DEFAULT_INBOUND_IMAP_DISABLED=""
+KEY_INBOUND_IMAP_DISABLED="inbound-imap-disabled"
+
+DESCRIPTION_WEKAN_DISK_MONITOR="false turns off the disk-usage monitor of this server (Admin Panel / Problems / Disk usage). Default on."
+DEFAULT_WEKAN_DISK_MONITOR=""
+KEY_WEKAN_DISK_MONITOR="wekan-disk-monitor"
+
+DESCRIPTION_WEKAN_DISK_WATCH_PATHS="Comma-separated paths on this server whose disk usage is watched, instead of the data and files directories."
+DEFAULT_WEKAN_DISK_WATCH_PATHS=""
+KEY_WEKAN_DISK_WATCH_PATHS="wekan-disk-watch-paths"
+
+DESCRIPTION_WEKAN_RAM_MONITOR="false turns off the memory monitor of this server (Admin Panel / Problems / Memory usage). Default on."
+DEFAULT_WEKAN_RAM_MONITOR=""
+KEY_WEKAN_RAM_MONITOR="wekan-ram-monitor"
+
+DESCRIPTION_WEKAN_IMPORT_RUN_STALE_MS="Milliseconds after which an import with no progress counts as interrupted and can be resumed or discarded (at least 60000)."
+DEFAULT_WEKAN_IMPORT_RUN_STALE_MS=""
+KEY_WEKAN_IMPORT_RUN_STALE_MS="wekan-import-run-stale-ms"
+
+DESCRIPTION_ATTACHMENTS_RETENTION_DAYS="Once a night, delete card attachments older than this many days (restorable from the card history). Empty or 0 = off. Example: 730"
+DEFAULT_ATTACHMENTS_RETENTION_DAYS=""
+KEY_ATTACHMENTS_RETENTION_DAYS="attachments-retention-days"
+
+DESCRIPTION_ATTACHMENTS_RETENTION_MODE="uploaded (default): by upload date. card-inactive: also only when the card has had no activity for as long."
+DEFAULT_ATTACHMENTS_RETENTION_MODE="uploaded"
+KEY_ATTACHMENTS_RETENTION_MODE="attachments-retention-mode"
+
+DESCRIPTION_ATTACHMENTS_PURGE_DELETED_AFTER_DAYS="Remove for good, file included, attachments deleted this many days ago. Only this frees storage. Empty or 0 = off. Example: 30"
+DEFAULT_ATTACHMENTS_PURGE_DELETED_AFTER_DAYS=""
+KEY_ATTACHMENTS_PURGE_DELETED_AFTER_DAYS="attachments-purge-deleted-after-days"
+
+DESCRIPTION_ATTACHMENTS_RETENTION_DRY_RUN="true: attachment retention only logs what it would delete or purge."
+DEFAULT_ATTACHMENTS_RETENTION_DRY_RUN="false"
+KEY_ATTACHMENTS_RETENTION_DRY_RUN="attachments-retention-dry-run"
+
+DESCRIPTION_ATTACHMENTS_RETENTION_MAX_PER_RUN="Attachments deleted and purged per step per night. Default: 1000"
+DEFAULT_ATTACHMENTS_RETENTION_MAX_PER_RUN="1000"
+KEY_ATTACHMENTS_RETENTION_MAX_PER_RUN="attachments-retention-max-per-run"
+
+DESCRIPTION_ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM="Attachments upload validation by an external program. {file} is replaced by the uploaded file. Example: /usr/local/bin/avscan {file}"
+DEFAULT_ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM=""
+KEY_ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM="attachments-upload-external-program"
+
+DESCRIPTION_ATTACHMENTS_UPLOAD_MIME_TYPES="Attachments upload mime types. Example: image/*,text/*"
+DEFAULT_ATTACHMENTS_UPLOAD_MIME_TYPES=""
+KEY_ATTACHMENTS_UPLOAD_MIME_TYPES="attachments-upload-mime-types"
+
+DESCRIPTION_ATTACHMENTS_UPLOAD_MAX_SIZE="Attachments upload max size in bytes. Example: 5000000"
+DEFAULT_ATTACHMENTS_UPLOAD_MAX_SIZE=""
+KEY_ATTACHMENTS_UPLOAD_MAX_SIZE="attachments-upload-max-size"
+
+DESCRIPTION_AVATARS_UPLOAD_EXTERNAL_PROGRAM="Avatars upload validation by an external program. {file} is replaced by the uploaded file. Example: /usr/local/bin/avscan {file}"
+DEFAULT_AVATARS_UPLOAD_EXTERNAL_PROGRAM=""
+KEY_AVATARS_UPLOAD_EXTERNAL_PROGRAM="avatars-upload-external-program"
+
+DESCRIPTION_AVATARS_UPLOAD_MIME_TYPES="Avatars upload mime types. Example: image/*"
+DEFAULT_AVATARS_UPLOAD_MIME_TYPES=""
+KEY_AVATARS_UPLOAD_MIME_TYPES="avatars-upload-mime-types"
+
+DESCRIPTION_AVATARS_UPLOAD_MAX_SIZE="Avatars upload max size in bytes. Example: 500000"
+DEFAULT_AVATARS_UPLOAD_MAX_SIZE=""
+KEY_AVATARS_UPLOAD_MAX_SIZE="avatars-upload-max-size"
+
+DESCRIPTION_DEFAULT_AVATAR_URL="Avatar of users who have not set one: a URL with {username}, {userId}, {emailMd5} or {emailSha256} replaced. Example: http://192.168.1.200/avatars/{username}.png"
+DEFAULT_DEFAULT_AVATAR_URL=""
+KEY_DEFAULT_AVATAR_URL="default-avatar-url"
+
+# Example, not in use: /var/snap/<snap-instance-name>/common/uploads/
+
+DESCRIPTION_MAX_IMAGE_PIXEL="Max image pixel: Allow to shrink attached/pasted image https://github.com/wekan/wekan/pull/2544"
+DEFAULT_MAX_IMAGE_PIXEL=""
+KEY_MAX_IMAGE_PIXEL="max-image-pixel"
+
+DESCRIPTION_IMAGE_COMPRESS_RATIO="Image compress ratio: Allow to shrink attached/pasted image https://github.com/wekan/wekan/pull/2544"
+DEFAULT_IMAGE_COMPRESS_RATIO=""
+KEY_IMAGE_COMPRESS_RATIO="image-compress-ratio"
+
+DESCRIPTION_NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE="Number of days after a notification is read before we remove it. Default: 2."
+DEFAULT_NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE=""
+KEY_NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE="notification-tray-after-read-days-before-remove"
+
+DESCRIPTION_DEFAULT_BOARD_ID="After OIDC login, add users automatically to this default-board-id. https://github.com/wekan/wekan/pull/5098"
+DEFAULT_DEFAULT_BOARD_ID=""
+KEY_DEFAULT_BOARD_ID="default-board-id"
+
+DESCRIPTION_BIGEVENTS_PATTERN="Big events pattern: Notify always due etc regardless of notification settings. Default: NONE, All: received|start|due|end, Disabled: NONE"
+DEFAULT_BIGEVENTS_PATTERN="NONE"
+KEY_BIGEVENTS_PATTERN="bigevents-pattern"
+
+DESCRIPTION_NOTIFY_DUE_DAYS_BEFORE_AND_AFTER="Notify due days, accepts ',' delimited string, i.e. 2,0 means notify will be sent out 2 days before and right on due day. Default: empty"
+DEFAULT_NOTIFY_DUE_DAYS_BEFORE_AND_AFTER=""
+KEY_NOTIFY_DUE_DAYS_BEFORE_AND_AFTER="notify-due-days-before-and-after"
+
+DESCRIPTION_NOTIFY_DUE_AT_HOUR_OF_DAY="Notify due at hour of day. Default every morning at 8am. Can be 0-23. If env variable has parsing error, use default. Notification sent to watchers. Default: 0"
+DEFAULT_NOTIFY_DUE_AT_HOUR_OF_DAY=""
+KEY_NOTIFY_DUE_AT_HOUR_OF_DAY="notify-due-at-hour-of-day"
+
+DESCRIPTION_EMAIL_NOTIFICATION_TIMEOUT="Email notification timeout, ms. Default: 30000 (=30s)."
+DEFAULT_EMAIL_NOTIFICATION_TIMEOUT="30000"
+KEY_EMAIL_NOTIFICATION_TIMEOUT="email-notification-timeout"
+
+DESCRIPTION_CORS="Enable/disable CORS: Set Access-Control-Allow-Origin header. Example: *"
+DEFAULT_CORS=""
+KEY_CORS="cors"
+
+DESCRIPTION_CORS_ALLOW_HEADERS="Set Access-Control-Allow-Headers header.  \"Authorization,Content-Type\" is required for cross-origin use of the API."
+DEFAULT_CORS_ALLOW_HEADERS=""
+KEY_CORS_ALLOW_HEADERS="cors-allow-headers"
+
+DESCRIPTION_CORS_EXPOSE_HEADERS="Set Access-Control-Expose-Headers header.  This is not needed for typical CORS situations. Example: *"
+DEFAULT_CORS_EXPOSE_HEADERS=""
+KEY_CORS_EXPOSE_HEADERS="cors-expose-headers"
+
+DESCRIPTION_MATOMO_ADDRESS="The address of the server where matomo is hosted"
+DEFAULT_MATOMO_ADDRESS=""
+KEY_MATOMO_ADDRESS="matomo-address"
+
+DESCRIPTION_MATOMO_SITE_ID="The value of the site ID given in matomo server for wekan"
+DEFAULT_MATOMO_SITE_ID=""
+KEY_MATOMO_SITE_ID="matomo-site-id"
+
+DESCRIPTION_MATOMO_DO_NOT_TRACK="The option do not track which enables users to not be tracked by matomo"
+DEFAULT_MATOMO_DO_NOT_TRACK="true"
+KEY_MATOMO_DO_NOT_TRACK="matomo-do-not-track"
+
+DESCRIPTION_MATOMO_WITH_USERNAME="The option that allows matomo to retrieve the username"
+DEFAULT_MATOMO_WITH_USERNAME="false"
+KEY_MATOMO_WITH_USERNAME="matomo-with-username"
+
+DESCRIPTION_METRICS_ALLOWED_IP_ADDRESSES="Metrics allowed IP addresses, separated by ',' . https://github.com/wekan/wekan/wiki/Metrics"
+DEFAULT_METRICS_ALLOWED_IP_ADDRESSES=""
+KEY_METRICS_ALLOWED_IP_ADDRESSES="metrics-allowed-ip-addresses"
+
+DESCRIPTION_BROWSER_POLICY_ENABLED="Enable browser policy and allow one trusted URL that can have iframe that has Wekan embedded inside.\n"\
+"\t\t\t Setting this to false is not recommended, it also disables all other browser policy protections\n"\
+"\t\t\t and allows all iframing etc. See wekan/server/policy.js"
+DEFAULT_BROWSER_POLICY_ENABLED="true"
+KEY_BROWSER_POLICY_ENABLED="browser-policy-enabled"
+
+DESCRIPTION_TRUSTED_URL="When browser policy is enabled, HTML code at this Trusted URL can have iframe that embeds Wekan inside."
+DEFAULT_TRUSTED_URL=""
+KEY_TRUSTED_URL="trusted-url"
+
+DESCRIPTION_WEBHOOKS_ATTRIBUTES="What to send to Outgoing Webhook, or leave out. Example, that includes all that are default: cardId,listId,oldListId,boardId,comment,user,card,commentId ."
+DEFAULT_WEBHOOKS_ATTRIBUTES=""
+KEY_WEBHOOKS_ATTRIBUTES="webhooks-attributes"
+
+DESCRIPTION_ORACLE_OIM_ENABLED="Enable OAUTH2 ORACLE on premise identity manager OIM. Default: false"
+DEFAULT_ORACLE_OIM_ENABLED="false"
+KEY_ORACLE_OIM_ENABLED="oracle-oim-enabled"
+
+DESCRIPTION_OAUTH2_ENABLED="Enable the OAuth2 connection. Default: false"
+DEFAULT_OAUTH2_ENABLED="false"
+KEY_OAUTH2_ENABLED="oauth2-enabled"
+
+DESCRIPTION_OIDC_REDIRECTION_ENABLED="Enable the OIDC/OAuth2 autologin. See https://github.com/wekan/wekan/wiki/autologin . Default: false"
+DEFAULT_OIDC_REDIRECTION_ENABLED="false"
+KEY_OIDC_REDIRECTION_ENABLED="oidc-redirection-enabled"
+
+DESCRIPTION_OAUTH2_CA_CERT="Optional OAuth2 CA Cert, see https://github.com/wekan/wekan/issues/3299."
+DEFAULT_OAUTH2_CA_CERT=""
+KEY_OAUTH2_CA_CERT="oauth2-ca-cert"
+
+DESCRIPTION_OAUTH2_ADFS_ENABLED="Enable OAuth2 ADFS. Default: false"
+DEFAULT_OAUTH2_ADFS_ENABLED="false"
+KEY_OAUTH2_ADFS_ENABLED="oauth2-adfs-enabled"
+
+DESCRIPTION_OAUTH2_B2C_ENABLED="Enable OAuth2 Azure AD B2C https://github.com/wekan/wekan/issues/5242. Default: false"
+DEFAULT_OAUTH2_B2C_ENABLED="false"
+KEY_OAUTH2_B2C_ENABLED="oauth2-b2c-enabled"
+
+DESCRIPTION_OAUTH2_MERGE_EXISTING_USERS="SECURITY GHSA-mp7g-hj5q-gxhq: Link an OIDC login to a pre-existing Wekan account with the same email. Default: false. When false, an OIDC login whose email already exists is rejected instead of merged, preventing account takeover via spoofed email claims. Only enable if you fully trust your OIDC provider's email claims, and even then the provider must send email_verified=true."
+DEFAULT_OAUTH2_MERGE_EXISTING_USERS="false"
+KEY_OAUTH2_MERGE_EXISTING_USERS="oauth2-merge-existing-users"
+
+DESCRIPTION_OAUTH2_LOGIN_STYLE="OAuth2 login style: redirect or popup. Default: redirect"
+DEFAULT_OAUTH2_LOGIN_STYLE="redirect"
+KEY_OAUTH2_LOGIN_STYLE="oauth2-login-style"
+
+DESCRIPTION_OAUTH2_CLIENT_ID="OAuth2 Client ID, for example from Rocket.Chat. Example: abcde12345"
+DEFAULT_OAUTH2_CLIENT_ID=""
+KEY_OAUTH2_CLIENT_ID="oauth2-client-id"
+
+DESCRIPTION_OAUTH2_SECRET="OAuth2 Secret, for example from Rocket.Chat: Example: 54321abcde"
+DEFAULT_OAUTH2_SECRET=""
+KEY_OAUTH2_SECRET="oauth2-secret"
+
+DESCRIPTION_OAUTH2_SERVER_URL="OAuth2 Server URL, for example Rocket.Chat. Example: https://chat.example.com"
+DEFAULT_OAUTH2_SERVER_URL=""
+KEY_OAUTH2_SERVER_URL="oauth2-server-url"
+
+DESCRIPTION_OAUTH2_AUTH_ENDPOINT="OAuth2 authorization endpoint. Example: /oauth/authorize"
+DEFAULT_OAUTH2_AUTH_ENDPOINT=""
+KEY_OAUTH2_AUTH_ENDPOINT="oauth2-auth-endpoint"
+
+DESCRIPTION_OAUTH2_USERINFO_ENDPOINT="OAuth2 userinfo endpoint. Example: /oauth/userinfo"
+DEFAULT_OAUTH2_USERINFO_ENDPOINT=""
+KEY_OAUTH2_USERINFO_ENDPOINT="oauth2-userinfo-endpoint"
+
+DESCRIPTION_OAUTH2_TOKEN_ENDPOINT="OAuth2 token endpoint. Example: /oauth/token"
+DEFAULT_OAUTH2_TOKEN_ENDPOINT=""
+KEY_OAUTH2_TOKEN_ENDPOINT="oauth2-token-endpoint"
+
+DESCRIPTION_OAUTH2_LOGOUT_ENDPOINT="OIDC RP-initiated logout endpoint (end_session_endpoint), returns user to Wekan after logout. Example: /realms/<realm>/protocol/openid-connect/logout"
+DEFAULT_OAUTH2_LOGOUT_ENDPOINT=""
+KEY_OAUTH2_LOGOUT_ENDPOINT="oauth2-logout-endpoint"
+
+DESCRIPTION_OAUTH2_ID_MAP="OAuth2 ID Mapping. Example: email"
+DEFAULT_OAUTH2_ID_MAP=""
+KEY_OAUTH2_ID_MAP="oauth2-id-map"
+
+DESCRIPTION_OAUTH2_USERNAME_MAP="OAuth2 Username Mapping. Example: email"
+DEFAULT_OAUTH2_USERNAME_MAP=""
+KEY_OAUTH2_USERNAME_MAP="oauth2-username-map"
+
+DESCRIPTION_OAUTH2_FULLNAME_MAP="OAuth2 Fullname Mapping. Example: name"
+DEFAULT_OAUTH2_FULLNAME_MAP=""
+KEY_OAUTH2_FULLNAME_MAP="oauth2-fullname-map"
+
+DESCRIPTION_OAUTH2_FULLNAME_MAP="OAuth2 Fullname Mapping. Example: name"
+DEFAULT_OAUTH2_FULLNAME_MAP=""
+KEY_OAUTH2_FULLNAME_MAP="oauth2-fullname-map"
+
+DESCRIPTION_OAUTH2_ID_TOKEN_WHITELIST_FIELDS="OAuth2 ID Token Whitelist Fields."
+DEFAULT_OAUTH2_ID_TOKEN_WHITELIST_FIELDS=""
+KEY_OAUTH2_ID_TOKEN_WHITELIST_FIELDS="oauth2-id-token-whitelist-fields"
+
+DESCRIPTION_OAUTH2_REQUEST_PERMISSIONS="OAuth2 scopes, space separated and WITHOUT quotes. Example: openid profile email"
+# #6545: the quotes used to be part of the VALUE, so the scope sent to the
+# provider was `'openid profile email'` and Keycloak refused the whole
+# authorization request - the login popup opened and closed again. WeKan strips
+# them defensively too (models/lib/oauth2Scopes.js), so an install still carrying
+# the old value keeps working.
+DEFAULT_OAUTH2_REQUEST_PERMISSIONS="openid profile email"
+KEY_OAUTH2_REQUEST_PERMISSIONS="oauth2-request-permissions"
+
+DESCRIPTION_OAUTH2_EMAIL_MAP="OAuth2 Email Mapping. Example: email"
+DEFAULT_OAUTH2_EMAIL_MAP=""
+KEY_OAUTH2_EMAIL_MAP="oauth2-email-map"
+
+DESCRIPTION_LDAP_ENABLE="Enable or not the connection by the LDAP"
+DEFAULT_LDAP_ENABLE="false"
+KEY_LDAP_ENABLE="ldap-enable"
+
+DESCRIPTION_LDAP_PORT="The port of the LDAP server"
+DEFAULT_LDAP_PORT="389"
+KEY_LDAP_PORT="ldap-port"
+
+DESCRIPTION_LDAP_HOST="The host server for the LDAP server"
+DEFAULT_LDAP_HOST=""
+KEY_LDAP_HOST="ldap-host"
+
+DESCRIPTION_LDAP_AD_SIMPLE_AUTH="LDAP AD Simple Auth. When enabled, ldap-basedn is not needed, and also do set ldap-user-authentication='true'. Example: true"
+DEFAULT_LDAP_AD_SIMPLE_AUTH=""
+KEY_LDAP_AD_SIMPLE_AUTH="ldap-ad-simple-auth"
+
+DESCRIPTION_LDAP_BASEDN="The base DN for the LDAP Tree"
+DEFAULT_LDAP_BASEDN=""
+KEY_LDAP_BASEDN="ldap-basedn"
+
+DESCRIPTION_LDAP_LOGIN_FALLBACK="Fallback on the default authentication method"
+DEFAULT_LDAP_LOGIN_FALLBACK="false"
+KEY_LDAP_LOGIN_FALLBACK="ldap-login-fallback"
+
+DESCRIPTION_LDAP_RECONNECT="Reconnect to the server if the connection is lost"
+DEFAULT_LDAP_RECONNECT="true"
+KEY_LDAP_RECONNECT="ldap-reconnect"
+
+DESCRIPTION_LDAP_TIMEOUT="Overall timeout, in milliseconds."
+DEFAULT_LDAP_TIMEOUT="10000"
+KEY_LDAP_TIMEOUT="ldap-timeout"
+
+DESCRIPTION_LDAP_IDLE_TIMEOUT="Specifies the timeout for idle LDAP connections in milliseconds"
+DEFAULT_LDAP_IDLE_TIMEOUT="10000"
+KEY_LDAP_IDLE_TIMEOUT="ldap-idle-timeout"
+
+DESCRIPTION_LDAP_CONNECT_TIMEOUT="Connection timeout, in milliseconds."
+DEFAULT_LDAP_CONNECT_TIMEOUT="10000"
+KEY_LDAP_CONNECT_TIMEOUT="ldap-connect-timeout"
+
+DESCRIPTION_LDAP_AUTHENTIFICATION="If the LDAP needs a user account to search"
+DEFAULT_LDAP_AUTHENTIFICATION="false"
+KEY_LDAP_AUTHENTIFICATION="ldap-authentication"
+
+DESCRIPTION_LDAP_AUTHENTIFICATION_USERDN="The search user DN"
+DEFAULT_LDAP_AUTHENTIFICATION_USERDN=""
+KEY_LDAP_AUTHENTIFICATION_USERDN="ldap-authentication-userdn"
+
+DESCRIPTION_LDAP_AUTHENTIFICATION_PASSWORD="The password for the search user"
+DEFAULT_LDAP_AUTHENTIFICATION_PASSWORD=""
+KEY_LDAP_AUTHENTIFICATION_PASSWORD="ldap-authentication-password"
+
+DESCRIPTION_LDAP_LOG_ENABLED="Enable logs for the module"
+DEFAULT_LDAP_LOG_ENABLED="false"
+KEY_LDAP_LOG_ENABLED="ldap-log-enabled"
+
+DESCRIPTION_LDAP_BACKGROUND_SYNC="If the sync of the users should be done in the background"
+DEFAULT_LDAP_BACKGROUND_SYNC="false"
+KEY_LDAP_BACKGROUND_SYNC="ldap-background-sync"
+
+DESCRIPTION_LDAP_BACKGROUND_SYNC_INTERVAL="How often the background task syncs: milliseconds (3600000 = hourly) or later.js text such as every 1 hours"
+DEFAULT_LDAP_BACKGROUND_SYNC_INTERVAL=""
+KEY_LDAP_BACKGROUND_SYNC_INTERVAL="ldap-background-sync-interval"
+
+DESCRIPTION_LDAP_BACKGROUND_SYNC_KEEP_EXISTANT_USERS_UPDATED=""
+DEFAULT_LDAP_BACKGROUND_SYNC_KEEP_EXISTANT_USERS_UPDATED="false"
+KEY_LDAP_BACKGROUND_SYNC_KEEP_EXISTANT_USERS_UPDATED="ldap-background-sync-keep-existant-users-updated"
+
+DESCRIPTION_LDAP_BACKGROUND_SYNC_IMPORT_NEW_USERS=""
+DEFAULT_LDAP_BACKGROUND_SYNC_IMPORT_NEW_USERS="false"
+KEY_LDAP_BACKGROUND_SYNC_IMPORT_NEW_USERS="ldap-background-sync-import-new-users"
+
+DESCRIPTION_LDAP_ENCRYPTION="If using LDAPS, use LDAP_ENCRYPTION=ssl"
+DEFAULT_LDAP_ENCRYPTION="false"
+KEY_LDAP_ENCRYPTION="ldap-encryption"
+
+DESCRIPTION_LDAP_CA_CERT="The certification for the LDAPS server"
+DEFAULT_LDAP_CA_CERT=""
+KEY_LDAP_CA_CERT="ldap-ca-cert"
+
+DESCRIPTION_LDAP_REJECT_UNAUTHORIZED="Reject Unauthorized Certificate"
+DEFAULT_LDAP_REJECT_UNAUTHORIZED="true"
+KEY_LDAP_REJECT_UNAUTHORIZED="ldap-reject-unauthorized"
+
+DESCRIPTION_LDAP_USER_AUTHENTICATION="Option to login to the LDAP server with the user's own username and password, instead of an administrator key. Default: false (use administrator key)."
+DEFAULT_LDAP_USER_AUTHENTICATION="false"
+KEY_LDAP_USER_AUTHENTICATION="ldap-user-authentication"
+
+DESCRIPTION_LDAP_USER_AUTHENTICATION_FIELD="Which field is used to find the user for the user authentication. Default: uid."
+DEFAULT_LDAP_USER_AUTHENTICATION_FIELD="uid"
+KEY_LDAP_USER_AUTHENTICATION_FIELD="ldap-user-authentication-field"
+
+DESCRIPTION_LDAP_USER_SEARCH_FILTER="Optional extra LDAP filters. Don't forget the outmost enclosing parentheses if needed"
+DEFAULT_LDAP_USER_SEARCH_FILTER=""
+KEY_LDAP_USER_SEARCH_FILTER="ldap-user-search-filter"
+
+DESCRIPTION_LDAP_USER_SEARCH_SCOPE="base (search only in the provided DN), one (search only in the provided DN and one level deep), or sub (search the whole subtree). Example: one"
+DEFAULT_LDAP_USER_SEARCH_SCOPE=""
+KEY_LDAP_USER_SEARCH_SCOPE="ldap-user-search-scope"
+
+DESCRIPTION_LDAP_USER_SEARCH_FIELD="Which field is used to find the user"
+DEFAULT_LDAP_USER_SEARCH_FIELD=""
+KEY_LDAP_USER_SEARCH_FIELD="ldap-user-search-field"
+
+DESCRIPTION_LDAP_SEARCH_PAGE_SIZE="Used for pagination (0=unlimited)"
+DEFAULT_LDAP_SEARCH_PAGE_SIZE="0"
+KEY_LDAP_SEARCH_PAGE_SIZE="ldap-search-page-size"
+
+DESCRIPTION_LDAP_SEARCH_SIZE_LIMIT="The limit number of entries (0=unlimited)"
+DEFAULT_LDAP_SEARCH_SIZE_LIMIT="0"
+KEY_LDAP_SEARCH_SIZE_LIMIT="ldap-search-size-limit"
+
+DESCRIPTION_LDAP_GROUP_FILTER_ENABLE="Enable the login restriction group filter (only members of ldap-group-filter-group-name may log in). This does NOT gate admin status sync (ldap-sync-admin-status) or group/role sync (ldap-sync-group-roles), which query LDAP groups independently. The ldap-group-filter-* metadata must still be set for any group search."
+DEFAULT_LDAP_GROUP_FILTER_ENABLE="false"
+KEY_LDAP_GROUP_FILTER_ENABLE="ldap-group-filter-enable"
+
+DESCRIPTION_LDAP_GROUP_FILTER_OBJECTCLASS="The object class for filtering"
+DEFAULT_LDAP_GROUP_FILTER_OBJECTCLASS=""
+KEY_LDAP_GROUP_FILTER_OBJECTCLASS="ldap-group-filter-objectclass"
+
+DESCRIPTION_LDAP_GROUP_FILTER_GROUP_ID_ATTRIBUTE="The attribute of a group identifying it. Default: ''"
+DEFAULT_LDAP_GROUP_FILTER_GROUP_ID_ATTRIBUTE=""
+KEY_LDAP_GROUP_FILTER_GROUP_ID_ATTRIBUTE="ldap-group-filter-id-attribute"
+
+DESCRIPTION_LDAP_GROUP_FILTER_GROUP_MEMBER_ATTRIBUTE="The attribute inside a group object listing its members. Default: ''"
+DEFAULT_LDAP_GROUP_FILTER_GROUP_MEMBER_ATTRIBUTE=""
+KEY_LDAP_GROUP_FILTER_GROUP_MEMBER_ATTRIBUTE="ldap-group-filter-member-attribute"
+
+DESCRIPTION_LDAP_GROUP_FILTER_GROUP_MEMBER_FORMAT="The format of the value of ldap-group-filter-member-attribute (e.g. 'dn' if the user's dn ist saved as value into the attribute).  Default: ''"
+DEFAULT_LDAP_GROUP_FILTER_GROUP_MEMBER_FORMAT=""
+KEY_LDAP_GROUP_FILTER_GROUP_MEMBER_FORMAT="ldap-group-filter-member-format"
+
+DESCRIPTION_LDAP_GROUP_FILTER_NESTED="Active Directory nested groups: also accept users who are members of ldap-group-filter-group-name through another group (team group -> access group), using LDAP_MATCHING_RULE_IN_CHAIN 1.2.840.113556.1.4.1941. Needs a DN-valued member attribute (member, with ldap-group-filter-member-format=dn). Also applies to admin status, group/role and org/team sync. Default: false"
+DEFAULT_LDAP_GROUP_FILTER_NESTED="false"
+KEY_LDAP_GROUP_FILTER_NESTED="ldap-group-filter-nested"
+
+DESCRIPTION_LDAP_MIGRATION_ALLOW_PASSWORD_LOGIN="Let users moved from local password login to LDAP still log in with their old local password (true). Default: false"
+DEFAULT_LDAP_MIGRATION_ALLOW_PASSWORD_LOGIN=""
+KEY_LDAP_MIGRATION_ALLOW_PASSWORD_LOGIN="ldap-migration-allow-password-login"
+
+DESCRIPTION_LDAP_USER_ATTRIBUTES="Comma separated LDAP attributes to read for a user. Empty: all attributes. Example: uid,cn,mail"
+DEFAULT_LDAP_USER_ATTRIBUTES=""
+KEY_LDAP_USER_ATTRIBUTES="ldap-user-attributes"
+
+DESCRIPTION_LDAP_GROUP_BASEDN="Where the LDAP groups are, when they are not under LDAP_BASEDN. Empty: LDAP_BASEDN. Example: ou=groups,dc=example,dc=org"
+DEFAULT_LDAP_GROUP_BASEDN=""
+KEY_LDAP_GROUP_BASEDN="ldap-group-basedn"
+
+DESCRIPTION_OAUTH2_AVATAR_MAP="The OIDC user info claim that holds the avatar URL. Default: picture"
+DEFAULT_OAUTH2_AVATAR_MAP=""
+KEY_OAUTH2_AVATAR_MAP="oauth2-avatar-map"
+
+DESCRIPTION_OAUTH2_ALLOWED_EMAIL_DOMAINS="Comma separated e-mail domains allowed to log in with OAuth2/OIDC. Empty: every domain. Example: example.com,example.org"
+DEFAULT_OAUTH2_ALLOWED_EMAIL_DOMAINS=""
+KEY_OAUTH2_ALLOWED_EMAIL_DOMAINS="oauth2-allowed-email-domains"
+
+DESCRIPTION_OAUTH2_DEFAULT_ORGANIZATION="An existing organization (short name, display name or id) that every account created by an OAuth2/OIDC login joins"
+DEFAULT_OAUTH2_DEFAULT_ORGANIZATION=""
+KEY_OAUTH2_DEFAULT_ORGANIZATION="oauth2-default-organization"
+
+DESCRIPTION_PROPAGATE_OIDC_DATA="Update groups, admin status, e-mail, full name and username from the OIDC provider at every login (true). Default: false"
+DEFAULT_PROPAGATE_OIDC_DATA=""
+KEY_PROPAGATE_OIDC_DATA="propagate-oidc-data"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_KEY_PATH="Sign in with Apple: path to the private key (.p8) that signs the client secret JWT. Empty: OAUTH2_SECRET is used"
+DEFAULT_OAUTH2_SECRET_JWT_KEY_PATH=""
+KEY_OAUTH2_SECRET_JWT_KEY_PATH="oauth2-secret-jwt-key-path"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_ISSUER="Sign in with Apple: the Team ID, issuer of the client secret JWT"
+DEFAULT_OAUTH2_SECRET_JWT_ISSUER=""
+KEY_OAUTH2_SECRET_JWT_ISSUER="oauth2-secret-jwt-issuer"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_KEY_ID="Sign in with Apple: the Key ID of the private key"
+DEFAULT_OAUTH2_SECRET_JWT_KEY_ID=""
+KEY_OAUTH2_SECRET_JWT_KEY_ID="oauth2-secret-jwt-key-id"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_AUDIENCE="Audience of the client secret JWT. Default: https://appleid.apple.com"
+DEFAULT_OAUTH2_SECRET_JWT_AUDIENCE=""
+KEY_OAUTH2_SECRET_JWT_AUDIENCE="oauth2-secret-jwt-audience"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_SUBJECT="Subject of the client secret JWT. Default: OAUTH2_CLIENT_ID"
+DEFAULT_OAUTH2_SECRET_JWT_SUBJECT=""
+KEY_OAUTH2_SECRET_JWT_SUBJECT="oauth2-secret-jwt-subject"
+
+DESCRIPTION_OAUTH2_SECRET_JWT_EXPIRES_IN="Lifetime of the client secret JWT in seconds. Default: 300"
+DEFAULT_OAUTH2_SECRET_JWT_EXPIRES_IN=""
+KEY_OAUTH2_SECRET_JWT_EXPIRES_IN="oauth2-secret-jwt-expires-in"
+
+DESCRIPTION_CAS_MERGE_EXISTING_USERS="Let a CAS login take over an existing local account with the same username (true). Default: false"
+DEFAULT_CAS_MERGE_EXISTING_USERS=""
+KEY_CAS_MERGE_EXISTING_USERS="cas-merge-existing-users"
+
+DESCRIPTION_LDAP_GROUP_FILTER_GROUP_NAME="The group name (id) that matches all users. Default: ''"
+DEFAULT_LDAP_GROUP_FILTER_GROUP_NAME=""
+KEY_LDAP_GROUP_FILTER_GROUP_NAME="ldap-group-filter-group-name"
+
+DESCRIPTION_LDAP_UNIQUE_IDENTIFIER_FIELD="This field is sometimes class GUID (Globally Unique Identifier)"
+DEFAULT_LDAP_UNIQUE_IDENTIFIER_FIELD=""
+KEY_LDAP_UNIQUE_IDENTIFIER_FIELD="ldap-unique-identifier-field"
+
+DESCRIPTION_LDAP_UTF8_NAMES_SLUGIFY="Convert the username to utf8"
+DEFAULT_LDAP_UTF8_NAMES_SLUGIFY="true"
+KEY_LDAP_UTF8_NAMES_SLUGIFY="ldap-utf8-names-slugify"
+
+DESCRIPTION_LDAP_USERNAME_FIELD="Which field contains the ldap username"
+DEFAULT_LDAP_USERNAME_FIELD=""
+KEY_LDAP_USERNAME_FIELD="ldap-username-field"
+
+DESCRIPTION_LDAP_FULLNAME_FIELD="Which field contains the ldap fullname"
+DEFAULT_LDAP_FULLNAME_FIELD=""
+KEY_LDAP_FULLNAME_FIELD="ldap-fullname-field"
+
+DESCRIPTION_LDAP_MERGE_EXISTING_USERS="ldap-merge-existing-users . Default: false"
+DEFAULT_LDAP_MERGE_EXISTING_USERS="false"
+KEY_LDAP_MERGE_EXISTING_USERS="ldap-merge-existing-users"
+
+DESCRIPTION_LDAP_EMAIL_MATCH_ENABLE="ldap-email-match-enable . Default: false"
+DEFAULT_LDAP_EMAIL_MATCH_ENABLE="false"
+KEY_LDAP_EMAIL_MATCH_ENABLE="ldap-email-match-enable"
+
+DESCRIPTION_LDAP_EMAIL_MATCH_REQUIRE="ldap-email-match-require . Default: false"
+DEFAULT_LDAP_EMAIL_MATCH_REQUIRE="false"
+KEY_LDAP_EMAIL_MATCH_REQUIRE="ldap-email-match-require"
+
+DESCRIPTION_LDAP_EMAIL_MATCH_VERIFIED="ldap-email-match-verified . Default: false"
+DEFAULT_LDAP_EMAIL_MATCH_VERIFIED="false"
+KEY_LDAP_EMAIL_MATCH_VERIFIED="ldap-email-match-verified"
+
+DESCRIPTION_LDAP_EMAIL_FIELD="Which field contains the ldap e-mail address"
+DEFAULT_LDAP_EMAIL_FIELD=""
+KEY_LDAP_EMAIL_FIELD="ldap-email-field"
+
+DESCRIPTION_LDAP_SYNC_USER_DATA="ldap-sync-user-data . Default: false"
+DEFAULT_LDAP_SYNC_USER_DATA="false"
+KEY_LDAP_SYNC_USER_DATA="ldap-sync-user-data"
+
+DESCRIPTION_LDAP_SYNC_USER_DATA_FIELDMAP="LDAP Sync User Data Fieldmap. Example: ldap-sync-user-data-fieldmap='{\"cn\":\"name\", \"mail\":\"email\"}'"
+DEFAULT_LDAP_SYNC_USER_DATA_FIELDMAP=""
+KEY_LDAP_SYNC_USER_DATA_FIELDMAP="ldap-sync-user-data-fieldmap"
+
+DESCRIPTION_LDAP_SYNC_GROUP_ROLES="ldap-sync-group-roles . Default: '' (empty)."
+DEFAULT_LDAP_SYNC_GROUP_ROLES=""
+KEY_LDAP_SYNC_GROUP_ROLES="ldap-sync-group-roles"
+
+DESCRIPTION_LDAP_SYNC_ADMIN_STATUS="Enable/Disable syncing of admin status based on LDAP groups. Does not require ldap-group-filter-enable=true (that flag only controls login restriction); the ldap-group-filter-* metadata must still be set. Example: true"
+DEFAULT_LDAP_SYNC_ADMIN_STATUS=""
+KEY_LDAP_SYNC_ADMIN_STATUS="ldap-sync-admin-status"
+
+DESCRIPTION_LDAP_SYNC_ADMIN_GROUPS="Comma separated list of admin group names to sync. Example: group1, group2"
+DEFAULT_LDAP_SYNC_ADMIN_GROUPS=""
+KEY_LDAP_SYNC_ADMIN_GROUPS="ldap-sync-admin-groups"
+
+DESCRIPTION_OAUTH2_AUTO_REGISTRATION="When false, OAuth2/OIDC login is refused for users that do not already have a Wekan account (matched by verified email)."
+DEFAULT_OAUTH2_AUTO_REGISTRATION="true"
+KEY_OAUTH2_AUTO_REGISTRATION="oauth2-auto-registration"
+
+DESCRIPTION_OAUTH2_ADMIN_GROUPS="Comma/space separated OAuth2/OIDC group names whose members become Wekan admins. Empty = off."
+DEFAULT_OAUTH2_ADMIN_GROUPS=""
+KEY_OAUTH2_ADMIN_GROUPS="oauth2-admin-groups"
+
+DESCRIPTION_NOTIFY_ON_ASSIGN="Notify the user directly when they are added as a card member or assignee. Set false to disable."
+DEFAULT_NOTIFY_ON_ASSIGN="true"
+KEY_NOTIFY_ON_ASSIGN="notify-on-assign"
+
+DESCRIPTION_LDAP_BACKGROUND_SYNC_DISABLE_NONEXISTANT_USERS="When true, the LDAP background sync disables users no longer present in LDAP (and re-enables them when they reappear)."
+DEFAULT_LDAP_BACKGROUND_SYNC_DISABLE_NONEXISTANT_USERS="false"
+KEY_LDAP_BACKGROUND_SYNC_DISABLE_NONEXISTANT_USERS="ldap-background-sync-disable-nonexistant-users"
+
+DESCRIPTION_LDAP_SYNC_ORGANIZATIONS="When true, sync a user's LDAP groups as Wekan Organizations."
+DEFAULT_LDAP_SYNC_ORGANIZATIONS="false"
+KEY_LDAP_SYNC_ORGANIZATIONS="ldap-sync-organizations"
+
+DESCRIPTION_LDAP_SYNC_ORGANIZATIONS_GROUPS="Comma separated allowlist of LDAP group names to sync as Organizations. Empty = all of the user's groups."
+DEFAULT_LDAP_SYNC_ORGANIZATIONS_GROUPS=""
+KEY_LDAP_SYNC_ORGANIZATIONS_GROUPS="ldap-sync-organizations-groups"
+
+DESCRIPTION_LDAP_SYNC_TEAMS="When true, sync a user's LDAP groups as Wekan Teams."
+DEFAULT_LDAP_SYNC_TEAMS="false"
+KEY_LDAP_SYNC_TEAMS="ldap-sync-teams"
+
+DESCRIPTION_LDAP_SYNC_TEAMS_GROUPS="Comma separated allowlist of LDAP group names to sync as Teams. Empty = all of the user's groups."
+DEFAULT_LDAP_SYNC_TEAMS_GROUPS=""
+KEY_LDAP_SYNC_TEAMS_GROUPS="ldap-sync-teams-groups"
+
+DESCRIPTION_LDAP_DEFAULT_DOMAIN="LDAP default domain. a) In case AD SimpleAuth is configured, the default domain is appended to the given loginname for creating the correct username for the bind request to AD. b) The default domain of the ldap it is used to create email if the field is not map correctly with the ldap-sync-user-data-fieldmap."
+DEFAULT_LDAP_DEFAULT_DOMAIN=""
+KEY_LDAP_DEFAULT_DOMAIN="ldap-default-domain"
+
+DESCRIPTION_HEADER_LOGIN_ID="Header login ID. Example for siteminder: HEADERUID"
+DEFAULT_HEADER_LOGIN_ID=""
+KEY_HEADER_LOGIN_ID="header-login-id"
+
+DESCRIPTION_HEADER_LOGIN_FIRSTNAME="Header login firstname. Example for siteminder: HEADERFIRSTNAME"
+DEFAULT_HEADER_LOGIN_FIRSTNAME="Header login firstname. Example for siteminder: HEADERFIRSTNAME"
+KEY_HEADER_LOGIN_FIRSTNAME="header-login-firstname"
+
+DESCRIPTION_HEADER_LOGIN_LASTNAME="Header login lastname. Example for siteminder: HEADERLASTNAME"
+DEFAULT_HEADER_LOGIN_LASTNAME="Header login firstname. Example for siteminder: HEADERLASTNAME"
+KEY_HEADER_LOGIN_LASTNAME="header-login-lastname"
+
+DESCRIPTION_HEADER_LOGIN_EMAIL="Header login email. Example for siteminder: HEADEREMAILADDRESS"
+DEFAULT_HEADER_LOGIN_EMAIL="Header login email. Example for siteminder: HEADEREMAILADDRESS"
+KEY_HEADER_LOGIN_EMAIL="header-login-email"
+
+DESCRIPTION_HEADER_LOGIN_TRUSTED_IPS="SECURITY: comma-separated allowlist of source IPs (your reverse proxy) allowed to use header login. The source IP is the real TCP peer, not the spoofable X-Forwarded-For header. Required when header login is enabled: if empty, header login fails closed and authenticates no one."
+DEFAULT_HEADER_LOGIN_TRUSTED_IPS=""
+KEY_HEADER_LOGIN_TRUSTED_IPS="header-login-trusted-ips"
+
+DESCRIPTION_HEADER_LOGIN_TRUSTED_PROXIES="Optional. If WeKan is behind multiple proxy hops, comma-separated intermediate proxy IPs. X-Forwarded-For is honored only when the immediate peer is one of these trusted proxies; the right-most non-proxy hop (real client) is then matched against header-login-trusted-ips."
+DEFAULT_HEADER_LOGIN_TRUSTED_PROXIES=""
+KEY_HEADER_LOGIN_TRUSTED_PROXIES="header-login-trusted-proxies"
+
+DESCRIPTION_LOGOUT_WITH_TIMER="Sign users out automatically: true or false. Needs logout-in and/or logout-on-hours."
+DEFAULT_LOGOUT_WITH_TIMER="false"
+KEY_LOGOUT_WITH_TIMER="logout-with-timer"
+
+DESCRIPTION_LOGOUT_IN="Days after signing in that a login ends. With logout-on-hours, the login ends on that day at that time."
+DEFAULT_LOGOUT_IN=""
+KEY_LOGOUT_IN="logout-in"
+
+DESCRIPTION_LOGOUT_ON_HOURS="Hour of the day, 0-23 in server time, at which logins end"
+DEFAULT_LOGOUT_ON_HOURS=""
+KEY_LOGOUT_ON_HOURS="logout-on-hours"
+
+DESCRIPTION_LOGOUT_ON_MINUTES="Minute of that hour, 0-59"
+DEFAULT_LOGOUT_ON_MINUTES=""
+KEY_LOGOUT_ON_MINUTES="logout-on-minutes"
+
+DESCRIPTION_DEFAULT_AUTHENTICATION_METHOD="The default authentication method used if a user does not exist to create and authenticate. Method can be password or ldap."
+DEFAULT_DEFAULT_AUTHENTICATION_METHOD=""
+KEY_DEFAULT_AUTHENTICATION_METHOD="default-authentication-method"
+
+DESCRIPTION_PASSWORD_LOGIN_ENABLED="To hide the password login form"
+DEFAULT_PASSWORD_LOGIN_ENABLED="true"
+KEY_PASSWORD_LOGIN_ENABLED="password-login-enabled"
+
+DESCRIPTION_CAS_ENABLED="CAS Enabled"
+DEFAULT_CAS_ENABLED="false"
+KEY_CAS_ENABLED="cas-enabled"
+
+DESCRIPTION_CAS_BASE_URL="CAS Base URL"
+DEFAULT_CAS_BASE_URL=""
+KEY_CAS_BASE_URL="cas-base-url"
+
+DESCRIPTION_CAS_LOGIN_URL="CAS Login URL"
+DEFAULT_CAS_LOGIN_URL=""
+KEY_CAS_LOGIN_URL="cas-login-url"
+
+DESCRIPTION_CAS_VALIDATE_URL="CAS Validate URL"
+DEFAULT_CAS_VALIDATE_URL=""
+KEY_CAS_VALIDATE_URL="cas-validate-url"
+
+DESCRIPTION_SAML_ENABLED="SAML Enabled. Default: false"
+DEFAULT_SAML_ENABLED="false"
+KEY_SAML_ENABLED="saml-enabled"
+
+DESCRIPTION_SAML_PROVIDER="SAML Provider"
+DEFAULT_SAML_PROVIDER=""
+KEY_SAML_PROVIDER="saml-provider"
+
+DESCRIPTION_SAML_ENTRYPOINT="SAML Entrypoint"
+DEFAULT_SAML_ENTRYPOINT=""
+KEY_SAML_ENTRYPOINT="saml-entrypoint"
+
+DESCRIPTION_SAML_ISSUER="SAML Issuer"
+DEFAULT_SAML_ISSUER=""
+KEY_SAML_ISSUER="saml-issuer"
+
+DESCRIPTION_SAML_CERT="SAML Cert"
+DEFAULT_SAML_CERT=""
+KEY_SAML_CERT="saml-cert"
+
+DESCRIPTION_SAML_IDPSLO_REDIRECTURL="SAML IDPSLO Redirect URL"
+DEFAULT_SAML_IDPSLO_REDIRECTURL=""
+KEY_SAML_IDPSLO_REDIRECTURL="saml-idpslo-redirecturl"
+
+DESCRIPTION_SAML_PRIVATE_KEYFILE="SAML Private Keyfile"
+DEFAULT_SAML_PRIVATE_KEYFILE=""
+KEY_SAML_PRIVATE_KEYFILE="saml-private-keyfile"
+
+DESCRIPTION_SAML_PUBLIC_CERTFILE="SAML Public Certfile"
+DEFAULT_SAML_PUBLIC_CERTFILE=""
+KEY_SAML_PUBLIC_CERTFILE="saml-public-certfile"
+
+DESCRIPTION_SAML_PUBLIC_CERTFILE="SAML Public Certfile"
+DEFAULT_SAML_PUBLIC_CERTFILE=""
+KEY_SAML_PUBLIC_CERTFILE="saml-public-certfile"
+
+DESCRIPTION_SAML_IDENTIFIER_FORMAT="SAML Identifier Format"
+DEFAULT_SAML_IDENTIFIER_FORMAT=""
+KEY_SAML_IDENTIFIER_FORMAT="saml-identifier-format"
+
+DESCRIPTION_SAML_IDENTIFIER_FORMAT="SAML Identifier Format"
+DEFAULT_SAML_IDENTIFIER_FORMAT=""
+KEY_SAML_IDENTIFIER_FORMAT="saml-identifier-format"
+
+DESCRIPTION_SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE="SAML Local Profile Match Attribute"
+DEFAULT_SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE=""
+KEY_SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE="saml-local-profile-match-attribute"
+
+DESCRIPTION_SAML_ATTRIBUTES="SAML Attributes"
+DEFAULT_SAML_ATTRIBUTES=""
+KEY_SAML_ATTRIBUTES="saml-attributes"
+
+DESCRIPTION_OAUTH_GOOGLE_ENABLED="Show the \"Sign in with Google\" button. Default: false"
+DEFAULT_OAUTH_GOOGLE_ENABLED="false"
+KEY_OAUTH_GOOGLE_ENABLED="oauth-google-enabled"
+
+DESCRIPTION_OAUTH_GOOGLE_CLIENT_ID="Google OAuth Client ID, from https://console.cloud.google.com/apis/credentials"
+DEFAULT_OAUTH_GOOGLE_CLIENT_ID=""
+KEY_OAUTH_GOOGLE_CLIENT_ID="oauth-google-client-id"
+
+DESCRIPTION_OAUTH_GOOGLE_SECRET="Google OAuth secret"
+DEFAULT_OAUTH_GOOGLE_SECRET=""
+KEY_OAUTH_GOOGLE_SECRET="oauth-google-secret"
+
+DESCRIPTION_OAUTH_GOOGLE_SECRET_FILE="File to read the Google OAuth secret from (Docker secrets), instead of OAUTH_GOOGLE_SECRET. Example: /run/secrets/oauth_google_secret"
+DEFAULT_OAUTH_GOOGLE_SECRET_FILE=""
+KEY_OAUTH_GOOGLE_SECRET_FILE="oauth-google-secret-file"
+
+DESCRIPTION_OAUTH_GITHUB_ENABLED="Show the \"Sign in with GitHub\" button. Default: false"
+DEFAULT_OAUTH_GITHUB_ENABLED="false"
+KEY_OAUTH_GITHUB_ENABLED="oauth-github-enabled"
+
+DESCRIPTION_OAUTH_GITHUB_CLIENT_ID="GitHub OAuth Client ID, from https://github.com/settings/developers"
+DEFAULT_OAUTH_GITHUB_CLIENT_ID=""
+KEY_OAUTH_GITHUB_CLIENT_ID="oauth-github-client-id"
+
+DESCRIPTION_OAUTH_GITHUB_SECRET="GitHub OAuth secret"
+DEFAULT_OAUTH_GITHUB_SECRET=""
+KEY_OAUTH_GITHUB_SECRET="oauth-github-secret"
+
+DESCRIPTION_OAUTH_GITHUB_SECRET_FILE="File to read the GitHub OAuth secret from (Docker secrets), instead of OAUTH_GITHUB_SECRET. Example: /run/secrets/oauth_github_secret"
+DEFAULT_OAUTH_GITHUB_SECRET_FILE=""
+KEY_OAUTH_GITHUB_SECRET_FILE="oauth-github-secret-file"
+
+DESCRIPTION_OAUTH_FACEBOOK_ENABLED="Show the \"Sign in with Facebook\" button. Default: false"
+DEFAULT_OAUTH_FACEBOOK_ENABLED="false"
+KEY_OAUTH_FACEBOOK_ENABLED="oauth-facebook-enabled"
+
+DESCRIPTION_OAUTH_FACEBOOK_APP_ID="Facebook OAuth App ID, from https://developers.facebook.com/apps/"
+DEFAULT_OAUTH_FACEBOOK_APP_ID=""
+KEY_OAUTH_FACEBOOK_APP_ID="oauth-facebook-app-id"
+
+DESCRIPTION_OAUTH_FACEBOOK_SECRET="Facebook OAuth secret"
+DEFAULT_OAUTH_FACEBOOK_SECRET=""
+KEY_OAUTH_FACEBOOK_SECRET="oauth-facebook-secret"
+
+DESCRIPTION_OAUTH_FACEBOOK_SECRET_FILE="File to read the Facebook OAuth secret from (Docker secrets), instead of OAUTH_FACEBOOK_SECRET. Example: /run/secrets/oauth_facebook_secret"
+DEFAULT_OAUTH_FACEBOOK_SECRET_FILE=""
+KEY_OAUTH_FACEBOOK_SECRET_FILE="oauth-facebook-secret-file"
+
+DESCRIPTION_OAUTH_TWITTER_ENABLED="Show the \"Sign in with Twitter / X\" button. Default: false"
+DEFAULT_OAUTH_TWITTER_ENABLED="false"
+KEY_OAUTH_TWITTER_ENABLED="oauth-twitter-enabled"
+
+DESCRIPTION_OAUTH_TWITTER_CONSUMER_KEY="Twitter / X OAuth Consumer Key (API key), from https://developer.x.com/en/portal/dashboard"
+DEFAULT_OAUTH_TWITTER_CONSUMER_KEY=""
+KEY_OAUTH_TWITTER_CONSUMER_KEY="oauth-twitter-consumer-key"
+
+DESCRIPTION_OAUTH_TWITTER_SECRET="Twitter / X OAuth secret"
+DEFAULT_OAUTH_TWITTER_SECRET=""
+KEY_OAUTH_TWITTER_SECRET="oauth-twitter-secret"
+
+DESCRIPTION_OAUTH_TWITTER_SECRET_FILE="File to read the Twitter / X OAuth secret from (Docker secrets), instead of OAUTH_TWITTER_SECRET. Example: /run/secrets/oauth_twitter_secret"
+DEFAULT_OAUTH_TWITTER_SECRET_FILE=""
+KEY_OAUTH_TWITTER_SECRET_FILE="oauth-twitter-secret-file"
+
+DESCRIPTION_OAUTH_METEOR_DEVELOPER_ENABLED="Show the \"Sign in with Meteor Developer\" button. Default: false"
+DEFAULT_OAUTH_METEOR_DEVELOPER_ENABLED="false"
+KEY_OAUTH_METEOR_DEVELOPER_ENABLED="oauth-meteor-developer-enabled"
+
+DESCRIPTION_OAUTH_METEOR_DEVELOPER_CLIENT_ID="Meteor Developer OAuth Client ID, from https://www.meteor.com/"
+DEFAULT_OAUTH_METEOR_DEVELOPER_CLIENT_ID=""
+KEY_OAUTH_METEOR_DEVELOPER_CLIENT_ID="oauth-meteor-developer-client-id"
+
+DESCRIPTION_OAUTH_METEOR_DEVELOPER_SECRET="Meteor Developer OAuth secret"
+DEFAULT_OAUTH_METEOR_DEVELOPER_SECRET=""
+KEY_OAUTH_METEOR_DEVELOPER_SECRET="oauth-meteor-developer-secret"
+
+DESCRIPTION_OAUTH_METEOR_DEVELOPER_SECRET_FILE="File to read the Meteor Developer OAuth secret from (Docker secrets), instead of OAUTH_METEOR_DEVELOPER_SECRET. Example: /run/secrets/oauth_meteor_developer_secret"
+DEFAULT_OAUTH_METEOR_DEVELOPER_SECRET_FILE=""
+KEY_OAUTH_METEOR_DEVELOPER_SECRET_FILE="oauth-meteor-developer-secret-file"
+
+DESCRIPTION_OAUTH_WEIBO_ENABLED="Show the \"Sign in with Weibo\" button. Default: false"
+DEFAULT_OAUTH_WEIBO_ENABLED="false"
+KEY_OAUTH_WEIBO_ENABLED="oauth-weibo-enabled"
+
+DESCRIPTION_OAUTH_WEIBO_CLIENT_ID="Weibo OAuth Client ID, from https://open.weibo.com/"
+DEFAULT_OAUTH_WEIBO_CLIENT_ID=""
+KEY_OAUTH_WEIBO_CLIENT_ID="oauth-weibo-client-id"
+
+DESCRIPTION_OAUTH_WEIBO_SECRET="Weibo OAuth secret"
+DEFAULT_OAUTH_WEIBO_SECRET=""
+KEY_OAUTH_WEIBO_SECRET="oauth-weibo-secret"
+
+DESCRIPTION_OAUTH_WEIBO_SECRET_FILE="File to read the Weibo OAuth secret from (Docker secrets), instead of OAUTH_WEIBO_SECRET. Example: /run/secrets/oauth_weibo_secret"
+DEFAULT_OAUTH_WEIBO_SECRET_FILE=""
+KEY_OAUTH_WEIBO_SECRET_FILE="oauth-weibo-secret-file"
+
+DESCRIPTION_OAUTH_MEETUP_ENABLED="Show the \"Sign in with Meetup\" button. Default: false"
+DEFAULT_OAUTH_MEETUP_ENABLED="false"
+KEY_OAUTH_MEETUP_ENABLED="oauth-meetup-enabled"
+
+DESCRIPTION_OAUTH_MEETUP_CLIENT_ID="Meetup OAuth Client ID, from https://www.meetup.com/api/oauth/list/"
+DEFAULT_OAUTH_MEETUP_CLIENT_ID=""
+KEY_OAUTH_MEETUP_CLIENT_ID="oauth-meetup-client-id"
+
+DESCRIPTION_OAUTH_MEETUP_SECRET="Meetup OAuth secret"
+DEFAULT_OAUTH_MEETUP_SECRET=""
+KEY_OAUTH_MEETUP_SECRET="oauth-meetup-secret"
+
+DESCRIPTION_OAUTH_MEETUP_SECRET_FILE="File to read the Meetup OAuth secret from (Docker secrets), instead of OAUTH_MEETUP_SECRET. Example: /run/secrets/oauth_meetup_secret"
+DEFAULT_OAUTH_MEETUP_SECRET_FILE=""
+KEY_OAUTH_MEETUP_SECRET_FILE="oauth-meetup-secret-file"
+
+DESCRIPTION_OAUTH_PROVIDERS_LOGIN_STYLE="Login style of the provider buttons above: redirect or popup. Default: redirect"
+DEFAULT_OAUTH_PROVIDERS_LOGIN_STYLE="redirect"
+KEY_OAUTH_PROVIDERS_LOGIN_STYLE="oauth-providers-login-style"
+
+DESCRIPTION_OAUTH_PROVIDERS_MERGE_EXISTING_USERS="Link a provider login to an existing WeKan account with the same email. Default: false, the login is refused instead of merged (same rule as OAUTH2_MERGE_EXISTING_USERS)"
+DEFAULT_OAUTH_PROVIDERS_MERGE_EXISTING_USERS="false"
+KEY_OAUTH_PROVIDERS_MERGE_EXISTING_USERS="oauth-providers-merge-existing-users"
+
+DESCRIPTION_OAUTH_PROVIDERS_ALLOWED_EMAIL_DOMAINS="Only these email domains may sign in with the OAuth login providers, comma separated, like OAUTH2_ALLOWED_EMAIL_DOMAINS. Empty: all domains"
+DEFAULT_OAUTH_PROVIDERS_ALLOWED_EMAIL_DOMAINS=""
+KEY_OAUTH_PROVIDERS_ALLOWED_EMAIL_DOMAINS="oauth-providers-allowed-email-domains"
+
+DESCRIPTION_PASSWORDLESS_ENABLED="Email a one-time sign-in code instead of asking a password. Needs MAIL_URL. Default: false"
+DEFAULT_PASSWORDLESS_ENABLED="false"
+KEY_PASSWORDLESS_ENABLED="passwordless-enabled"
+
+DESCRIPTION_RESULTS_PER_PAGE="Number of search results to show per page by default"
+DEFAULT_RESULTS_PER_PAGE=""
+KEY_RESULTS_PER_PAGE="results-per-page"
+
+DESCRIPTION_WAIT_SPINNER="Default wait spinner to use"
+DEFAULT_WAIT_SPINNER="Bounce"
+KEY_WAIT_SPINNER="wait-spinner"
+
+# Docker Compose Secrets Support
+DESCRIPTION_LDAP_AUTHENTIFICATION_PASSWORD_FILE="LDAP authentication password file (Docker secrets). Example: /run/secrets/ldap_auth_password"
+DEFAULT_LDAP_AUTHENTIFICATION_PASSWORD_FILE=""
+KEY_LDAP_AUTHENTIFICATION_PASSWORD_FILE="ldap-authentication-password-file"
+
+DESCRIPTION_OAUTH2_SECRET_FILE="OAuth2 secret file (Docker secrets). Example: /run/secrets/oauth2_secret"
+DEFAULT_OAUTH2_SECRET_FILE=""
+KEY_OAUTH2_SECRET_FILE="oauth2-secret-file"
+
+DESCRIPTION_MAIL_URL_FILE="File holding the whole MAIL_URL, password included (secrets). Example: /var/snap/wekan/common/secrets/mail_url"
+DEFAULT_MAIL_URL_FILE=""
+KEY_MAIL_URL_FILE="mail-url-file"
+
+DESCRIPTION_MONGO_URL_FILE="File holding the whole MONGO_URL, password included (secrets). Example: /var/snap/wekan/common/secrets/mongo_url"
+DEFAULT_MONGO_URL_FILE=""
+KEY_MONGO_URL_FILE="mongo-url-file"
+
+DESCRIPTION_S3='AWS S3 for files. Example: {"s3":{"key": "xxx", "secret": "xxx", "bucket": "xxx", "region": "eu-west-1"}}'
+DEFAULT_S3=""
+KEY_S3="s3"
+
+DESCRIPTION_S3_SECRET_KEY_FILE="File holding the S3 secret access key, S3_SECRET_KEY (secrets). Example: /var/snap/wekan/common/secrets/s3_secret_key"
+DEFAULT_S3_SECRET_KEY_FILE=""
+KEY_S3_SECRET_KEY_FILE="s3-secret-key-file"
+
+DESCRIPTION_SAML_MERGE_EXISTING_USERS="Allow explicit SAML account linking. Default: false"
+DEFAULT_SAML_MERGE_EXISTING_USERS="false"
+KEY_SAML_MERGE_EXISTING_USERS="saml-merge-existing-users"
+
+DESCRIPTION_SAML_IDP_PROFILE="Identity provider profile: standard (signed Response, popup) or signed-assertion-redirect (signed Assertion, full-page redirect). Default: standard"
+DEFAULT_SAML_IDP_PROFILE="standard"
+KEY_SAML_IDP_PROFILE="saml-idp-profile"
+
+DESCRIPTION_SAML_WANT_RESPONSE_SIGNED="Require a signed SAML Response (true/false). Default: from SAML_IDP_PROFILE"
+DEFAULT_SAML_WANT_RESPONSE_SIGNED=""
+KEY_SAML_WANT_RESPONSE_SIGNED="saml-want-response-signed"
+
+DESCRIPTION_SAML_WANT_ASSERTIONS_SIGNED="Require a signed SAML Assertion (true/false). Default: from SAML_IDP_PROFILE"
+DEFAULT_SAML_WANT_ASSERTIONS_SIGNED=""
+KEY_SAML_WANT_ASSERTIONS_SIGNED="saml-want-assertions-signed"
+
+DESCRIPTION_SAML_LOGIN_FLOW="SAML login flow: redirect or popup. Default: from SAML_IDP_PROFILE, redirect for every profile"
+DEFAULT_SAML_LOGIN_FLOW=""
+KEY_SAML_LOGIN_FLOW="saml-login-flow"

@@ -1,0 +1,131 @@
+template(name="customFieldsSidebar")
+    ul.sidebar-list.js-custom-fields-sidebar-list
+        each customFields
+            li(data-id="{{_id}}")
+                div.minicard-wrapper.js-minicard
+                    i.fa.fa-bars.js-custom-field-drag-handle
+                    div.minicard
+                        a.js-edit-custom-field.minicard-edit-button(title="{{_ 'editCustomFieldPopup-title'}}")
+                          i.fa.fa-pencil
+                        div.minicard-title
+                          +viewer
+                            =name
+                          | ({{ type }})
+
+    if currentUser.isBoardMember
+        hr
+        a.sidebar-btn.js-open-create-custom-field
+            i.fa.fa-plus
+            span {{_ 'createCustomField'}}
+
+//- The board's list of custom fields as a right-sidebar view. Nothing opens it
+  any more: every custom field of the board is listed - with a tick when it is
+  on this card, a pencil, and "Add custom field" - by the hamburger at the end
+  of the card's own Custom Fields heading, which is where the fields are shown.
+  The templates below are the forms both used, and they are still opened from
+  there. client/components/cards/cardCustomFields.jade
+template(name="createCustomFieldPopup")
+    form
+        label
+            | {{_ 'name'}}
+            unless _id
+                textarea.js-field-name(rows="2" autofocus)
+            else
+                textarea.js-field-name(rows="2")= name
+
+        label
+            | {{_ 'type'}}
+            select.js-field-type(disabled="{{#if _id}}disabled{{/if}}")
+                each types
+                    if selected
+                        option(value=value selected="selected") {{name}}
+                    else
+                        option(value=value) {{name}}
+
+        div.js-field-settings.js-field-settings-currency(class="{{#if isTypeNotSelected 'currency'}}hide{{/if}}")
+            label
+                | {{_ 'custom-field-currency-option'}}
+            select.js-field-currency
+              each getCurrencyCodes
+                if selected
+                  option(value=value selected="selected") {{name}}
+                else
+                  option(value=value) {{name}}
+            a.flex.js-field-show-sum-at-top-of-list(class="{{#if showSumAtTopOfList}}is-checked{{/if}}")
+                .materialCheckBox(class="{{#if showSumAtTopOfList}}is-checked{{/if}}")
+                span {{_ 'showSum-field-on-list'}}
+
+        div.js-field-settings.js-field-settings-currency(class="{{#if isTypeNotSelected 'number'}}hide{{/if}}")
+            a.flex.js-field-show-sum-at-top-of-list(class="{{#if showSumAtTopOfList}}is-checked{{/if}}")
+                .materialCheckBox(class="{{#if showSumAtTopOfList}}is-checked{{/if}}")
+                span {{_ 'showSum-field-on-list'}}
+
+        div.js-field-settings.js-field-settings-dropdown(class="{{#if isDropdownTypeNotSelected}}hide{{/if}}")
+            label
+                | {{_ 'custom-field-dropdown-options'}}
+            each dropdownItems.get
+                input.js-dropdown-item(type="text" value=name placeholder="")
+            input.js-dropdown-item.last(type="text" value="" placeholder="{{_ 'custom-field-dropdown-options-placeholder'}}")
+
+        div.js-field-settings.js-field-settings-stringtemplate(class="{{#if isTypeNotSelected 'stringtemplate'}}hide{{/if}}")
+            label
+                | {{_ 'custom-field-stringtemplate-format'}}
+            input.js-field-stringtemplate-format(type="text" value=getStringtemplateFormat)
+            p.quiet {{_ 'custom-field-stringtemplate-context-hint'}}
+            label
+                | {{_ 'custom-field-stringtemplate-separator'}}
+            input.js-field-stringtemplate-separator(type="text" value=getStringtemplateSeparator)
+
+        a.flex.js-field-show-on-card(class="{{#if showOnCard}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if showOnCard}}is-checked{{/if}}")
+
+            span {{_ 'show-field-on-card'}}
+        a.flex.js-field-automatically-on-card(class="{{#if automaticallyOnCard}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if automaticallyOnCard}}is-checked{{/if}}")
+
+            span {{_ 'automatically-field-on-card'}}
+
+        a.flex.js-field-always-on-card(class="{{#if alwaysOnCard}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if alwaysOnCard}}is-checked{{/if}}")
+            span {{_ 'always-field-on-card'}}
+
+        //- #2012: only on Story or Task cards; neither ticked is every card.
+        .custom-field-card-kinds
+          span {{_ 'custom-field-card-kinds'}}
+          a.flex.js-field-card-kind(data-kind="story" class="{{#if hasCardKind 'story'}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if hasCardKind 'story'}}is-checked{{/if}}")
+            span {{_ 'card-kind-story'}}
+          a.flex.js-field-card-kind(data-kind="task" class="{{#if hasCardKind 'task'}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if hasCardKind 'task'}}is-checked{{/if}}")
+            span {{_ 'card-kind-task'}}
+
+        a.flex.js-field-showLabel-on-card(class="{{#if showLabelOnMiniCard}}is-checked{{/if}}")
+            .materialCheckBox(class="{{#if showLabelOnMiniCard}}is-checked{{/if}}")
+
+            span {{_ 'showLabel-field-on-card'}}
+
+        //- #3141: only a board admin may see/toggle this - it decides whether
+          the field's value is hidden from everyone else. Non-admins never see
+          the control at all, matching how other admin-only UI is gated.
+        if currentUser.isBoardAdmin
+            a.flex.js-field-admin-only(class="{{#if adminOnly}}is-checked{{/if}}")
+                .materialCheckBox(class="{{#if adminOnly}}is-checked{{/if}}")
+                span {{_ 'admin-only-field'}}
+            //- #3143: every member sees the value; only a board admin sets it.
+            a.flex.js-field-read-only(class="{{#if readOnly}}is-checked{{/if}}")
+                .materialCheckBox(class="{{#if readOnly}}is-checked{{/if}}")
+                span {{_ 'read-only-field'}}
+
+        button.primary.wide.left(type="button")
+            | {{_ 'save'}}
+        if _id
+            button.negate.wide.right.js-delete-custom-field(type="button")
+                | {{_ 'delete'}}
+
+template(name="deleteCustomFieldPopup")
+    p {{_ "custom-field-delete-pop"}}
+    button.js-confirm.negate.full(type="submit") {{_ 'delete'}}
+
+// Reuse the create form for editing to satisfy popup template lookup
+template(name="editCustomFieldPopup")
+    +Template.dynamic(template="createCustomFieldPopup")

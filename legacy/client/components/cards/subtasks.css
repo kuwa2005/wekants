@@ -1,0 +1,255 @@
+.js-add-subtask {
+  color: #8c8c8c;
+}
+textarea.js-add-subtask-item,
+textarea.js-edit-subtask-item {
+  overflow: hidden;
+  word-wrap: break-word;
+  resize: none;
+  height: 34px;
+}
+.delete-text,
+.subtask-title .js-delete-subtask,
+.subtask-title .js-view-subtask,
+.js-delete-subtask-item {
+  color: #8c8c8c;
+  text-decoration: underline;
+  word-wrap: break-word;
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+.delete-text:hover,
+.subtask-title .js-delete-subtask:hover,
+.subtask-title .js-view-subtask:hover,
+.js-delete-subtask-item:hover {
+  color: inherit;
+}
+.subtask-title {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.subtask-title .checkbox {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  font-size: calc(18px * var(--wekan-ui-font-scale, 1));
+  line-height: calc(30px * var(--wekan-ui-font-scale, 1));
+}
+.subtask-title .title {
+  font-size: calc(18px * var(--wekan-ui-font-scale, 1));
+  line-height: calc(25px * var(--wekan-ui-font-scale, 1));
+  flex: 1;
+  order: 1;
+}
+.subtask-title .subtasks-stat {
+  margin: 0 0.5em;
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+.subtask-title .subtasks-stat.is-finished {
+  color: #3cb500;
+}
+.subtask-title .js-delete-subtask {
+  margin: 0 0.5em;
+}
+.subtask-title .js-view-subtask {
+  margin: 0 0.5em;
+}
+.js-confirm-subtask-delete {
+  background-color: #f7f7f7;
+  position: absolute;
+  float: inline-start;
+  width: 60%;
+  margin-top: 0;
+  margin-inline-start: 13%;
+  padding-bottom: 2%;
+  padding-inline-start: 3%;
+  padding-inline-end: 3%;
+  z-index: 17;
+  border-radius: 3px;
+}
+.js-confirm-subtask-delete p {
+  position: relative;
+  margin-top: 3%;
+  width: 100%;
+  text-align: center;
+}
+.js-confirm-subtask-delete p span {
+  font-weight: bold;
+}
+.js-confirm-subtask-delete p i {
+  font-size: 2em;
+}
+.js-confirm-subtask-delete .js-subtask-delete-buttons {
+  position: relative;
+  padding: left 2% right 2%;
+}
+.js-confirm-subtask-delete .js-subtask-delete-buttons .confirm-subtask-delete {
+  margin-inline-start: 12%;
+  float: inline-start;
+}
+.js-confirm-subtask-delete .js-subtask-delete-buttons .toggle-delete-subtask-dialog {
+  margin-inline-end: 12%;
+  float: inline-end;
+}
+#card-details-overlay {
+  top: 0;
+  bottom: -600px;
+  inset-inline-end: 0;
+  z-index: 15;
+}
+
+/* Fix for mobile Safari: ensure this doesn't block card interaction */
+@media screen and (max-width: 800px) {
+  #card-details-overlay {
+    z-index: 15;
+    pointer-events: none;
+  }
+}
+.subtasks {
+  background: #f7f7f7;
+}
+.subtasks.placeholder {
+  background: #ccc;
+  border-radius: 2px;
+}
+.subtasks.ui-sortable-helper {
+  box-shadow: -2px 2px 8px rgba(0,0,0,0.3), 0 0 1px rgba(0,0,0,0.5);
+  transform: rotate(4deg);
+  cursor: grabbing;
+}
+.subtasks-item {
+  margin: 0 0 0 0.1em;
+  line-height: calc(18px * var(--wekan-ui-font-scale, 1));
+  font-size: 1.1em;
+  margin-top: 3px;
+  display: flex;
+  background: #f7f7f7;
+}
+.subtasks-item.placeholder {
+  background: #ccc;
+  border-radius: 2px;
+}
+.subtasks-item.ui-sortable-helper {
+  box-shadow: -2px 2px 8px rgba(0,0,0,0.3), 0 0 1px rgba(0,0,0,0.5);
+  transform: rotate(4deg);
+  cursor: grabbing;
+}
+.subtasks-item:hover {
+  background-color: #ebebeb;
+}
+.subtasks-item .check-box-container {
+  padding-inline-end: 10px;
+}
+.subtasks-item .check-box {
+  margin: 0.1em 0 0 0;
+}
+.subtasks-item .check-box.is-checked {
+  border-bottom: 2px solid #3cb500;
+  border-right: 2px solid #3cb500;
+}
+/* Unicode checkbox icons styling */
+.subtasks-item .check-box-unicode {
+  font-size: 1.3em;
+  margin-inline-end: 8px;
+  cursor: pointer;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+.subtasks-item .item-title {
+  flex: 1;
+  padding-inline-start: 10px;
+}
+.subtasks-item .item-title.is-checked {
+  color: #8c8c8c;
+  font-style: italic;
+}
+.subtasks-item .item-title .viewer p {
+  margin-bottom: 2px;
+}
+.js-delete-subtask-item {
+  margin: 0 0 0.5em 1.33em;
+  padding: 12px 0 0 0;
+}
+.add-subtask-item {
+  margin: 0.2em 0 0.5em 1.33em;
+  display: inline-block;
+}
+.subtask-details-menu {
+  flex-shrink: 0;
+  padding: 6px 10px 6px 10px;
+  order: 2;
+}
+/* #3409: an archived subtask stays visible in the list, marked completed,
+   instead of disappearing — the same dimmed/italic treatment a checked
+   checklist item gets (.subtasks-item .item-title.is-checked above). */
+.subtask.is-completed .subtask-title .title {
+  color: #8c8c8c;
+  font-style: italic;
+  text-decoration: line-through;
+}
+.subtask-completed-icon {
+  color: #3cb500;
+  flex-shrink: 0;
+  padding-top: 6px;
+  margin-inline-end: 0.3em;
+}
+.subtasks-hide-completed-toggle {
+  display: inline-block;
+  margin: 0.2em 0 0.5em 1.33em;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+.subtasks-hide-completed-toggle:hover {
+  color: inherit;
+}
+.subtasks-hide-completed-toggle i.fa {
+  margin-inline-end: 4px;
+}
+/* #2184: "Inherit parent's labels" checkbox on the add-subtask form */
+.subtask-inherit-labels {
+  display: block;
+  margin: 0.4em 0;
+  font-weight: normal;
+  cursor: pointer;
+}
+.subtask-inherit-labels input {
+  margin-inline-end: 4px;
+}
+/* #6091: read-only status (current list / board) of a subtask */
+.subtask-title .subtask-status {
+  order: 1;
+  flex-shrink: 0;
+  margin: 0 0.5em;
+  padding-top: 6px;
+  color: #8c8c8c;
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+.subtask-title .subtask-status i.fa {
+  margin-inline-end: 4px;
+}
+
+/* #4693: the done checkbox at the start of each subtask row, like a checklist
+   item's. order: -1 keeps it first whatever else the row carries. */
+.subtask-title .subtask-done-toggle {
+  order: -1;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
+  cursor: pointer;
+}
+.subtask-title .subtask-done-toggle.is-disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.subtask-title.is-done .title {
+  text-decoration: line-through;
+  color: #8c8c8c;
+}

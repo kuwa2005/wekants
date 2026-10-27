@@ -1,0 +1,707 @@
+import { ReactiveCache } from '/imports/reactiveCache';
+import { TAPi18n } from '/imports/i18n';
+const { OAUTH_PROVIDERS, providerByKey } = require('/models/lib/oauthProviders');
+const { loginOriginMismatch, offersProviderLogin } = require('/models/lib/loginOriginMismatch');
+import { FlowRouter } from 'meteor/ostrio:flow-router-extra';
+import { Accounts } from 'meteor/accounts-base';
+import Users from '/models/users';
+import { EscapeActions } from '/client/lib/escapeActions';
+import { enablePageDragscroll, disablePageDragscroll } from '/client/lib/pageDragscroll';
+import { trapTabKey } from '/client/lib/accessibility';
+import { OidcAutoRedirect } from '/client/lib/oidcAutoRedirect';
+import { createAuthenticationSubmitHandler } from '/client/lib/authenticationSubmit';
+
+let alreadyCheck = 1;
+let isCheckDone = false;
+let counter = 0;
+const validator = {
+  set(obj, prop, value) {
+    if (prop === 'state' && value !== 'signIn') {
+      $('.at-form-authentication').hide();
+    } else if (prop === 'state' && value === 'signIn') {
+      $('.at-form-authentication').show();
+    }
+    // The default behavior to store the value
+    obj[prop] = value;
+    // Indicate success
+    return true;
+  },
+};
+
+Template.userFormsLayout.onCreated(function () {
+  const templateInstance = this;
+  templateInstance.currentSetting = new ReactiveVar();
+  templateInstance.isLoading = new ReactiveVar(false);
+  templateInstance.subscribe('setting', {
+    onReady() {
+      templateInstance.currentSetting.set(ReactiveCache.getCurrentSetting());
+    },
+  });
+  // The Meteor accounts-* OAuth providers the server reports enabled (keys
+  // only) and whether e-mailed one-time-code login is on; both are filled by
+  // the getAuthenticationsEnabled call in onRendered.
+  templateInstance.enabledOauthProviders = new ReactiveVar([]);
+  templateInstance.passwordlessEnabled = new ReactiveVar(false);
+  // #5847: what the passkey sign-in said, if it failed.
+  templateInstance.passkeyMessage = new ReactiveVar('');
+  // #2460: the SQRL session being shown ({ link, svg }), and what it said.
+  templateInstance.sqrlShown = new ReactiveVar(null);
+  templateInstance.sqrlMessage = new ReactiveVar('');
+  // The page a SQRL client opened on this device signs in with its token.
+  const sqrlToken = FlowRouter.getQueryParam('sqrl');
+  if (sqrlToken && !Meteor.userId()) {
+    require('/client/lib/sqrl').signInWithSqrlToken(sqrlToken)
+      .then(() => FlowRouter.go('/'))
+      .catch(() => templateInstance.sqrlMessage.set(TAPi18n.__('sqrl-sign-in-failed')));
+  }
+  // #5758: back from /sso/windows with a one-time token (server/windowsSso.js).
+  const windowsSsoToken = FlowRouter.getQueryParam('windowsSso');
+  if (windowsSsoToken && !Meteor.userId()) {
+    const failed = () => templateInstance.sqrlMessage.set(TAPi18n.__('windows-sso-failed'));
+    if (windowsSsoToken === 'failed') failed();
+    else {
+      Accounts.callLoginMethod({ methodArguments: [{ windowsSso: String(windowsSsoToken) }],
+        userCallback: error => (error ? failed() : FlowRouter.go('/')) });
+    }
+  }
+  // The ROOT_URL origin and this page's, when they differ and a provider
+  // login is offered (models/lib/loginOriginMismatch.js).
+  templateInstance.loginOriginMismatch = new ReactiveVar(null);
+  // 'email' while asking for an address, 'code' once the code was sent.
+  templateInstance.passwordlessStep = new ReactiveVar('email');
+  templateInstance.passwordlessEmail = new ReactiveVar('');
+
+  if (!ReactiveCache.getCurrentUser()?.profile) {
+    Meteor.call('isOidcRedirectionEnabled', (_, result) => {
+      // Recheck after the asynchronous settings call: a resumed session or
+      // OAuth callback may have completed while it was in flight (#6722).
+      if (result && !templateInstance.isDestroyed && !Meteor.userId() &&
+          !Meteor.loggingIn() && !OidcAutoRedirect.hasAlreadyFired() &&
+          OidcAutoRedirect.markFired()) {
+        AccountsTemplates.options.socialLoginStyle = 'redirect';
+        // #5695: this is an ES module, so the body runs in strict mode and
+        // the previous undeclared `options = {...}` assignment threw a
+        // ReferenceError, breaking the OIDC_REDIRECTION_ENABLED auto-login.
+        const options = {
+          loginStyle: AccountsTemplates.options.socialLoginStyle,
+        };
+        Meteor.loginWithOidc(options);
+      }
+    });
+
+  }
+});
+
+Template.userFormsLayout.onRendered(function () {
+  if (pendingRedirectLoginError) Meteor.defer(() => showLoginError(redirectLoginErrorForDisplay(pendingRedirectLoginError)));
+  const instance = this;
+  // Login / register pages scroll on <body>; enable drag-to-scroll there so the
+  // gesture works the same as on the board swimlanes view.
+  enablePageDragscroll();
+
+  // Mark the auth pages so CSS can let <body> scroll as a normal document.
+  // body.mobile-mode locks <body> to position:fixed/100vh (an iOS board-view
+  // anti-bounce fix); without an inner #content scroller that traps these pages
+  // at viewport height, hiding the sign-up link / language selector below the
+  // form (and they sit behind the on-screen keyboard). See userForm.css.
+  document.body.classList.add('userform-layout');
+
+  Meteor.call('getAuthenticationsEnabled', (_, result) => {
+    let enabledAuthenticationMethods = ['password']; // we show/hide this based on isPasswordLoginEnabled
+
+    // A provider login opened at another address than ROOT_URL returns to
+    // ROOT_URL and never completes here; say so instead of looping.
+    if (offersProviderLogin(result)) {
+      instance.loginOriginMismatch.set(loginOriginMismatch(
+        window.__meteor_runtime_config__ && window.__meteor_runtime_config__.ROOT_URL,
+        window.location.href,
+      ));
+    }
+
+    if (result) {
+      Object.keys(result).forEach((m) => {
+        if (result[m]) enabledAuthenticationMethods.push(m);
+      });
+    }
+
+    Meteor.call('isPasswordLoginEnabled', (_, result) => {
+      // Issue #6380: the password form (.at-pwd-form) is hidden by default in CSS
+      // and only revealed here. If this method call errors / returns late, or the
+      // accounts-templates form has not rendered its fields yet when this runs,
+      // the login page is left without username and password fields. Treat
+      // password login as enabled unless it is explicitly disabled
+      // (result === false), and wait for the form element to appear before
+      // showing it (same pattern as the OAuth button above).
+      if (result === false) return;
+      (function showPwdFormWhenReady() {
+        if (!$('.at-pwd-form')[0]) return setTimeout(showPwdFormWhenReady, 100);
+        $('.at-pwd-form').show();
+      })();
+    });
+
+    // #4394 (security): a one-shot $('.at-signup-link').hide() does not survive
+    // the useraccounts form re-rendering that happens after a failed login (e.g.
+    // an LDAP "User not Found") — the links were recreated without the inline
+    // display:none and reappeared even though registration / forgot-password
+    // were disabled in the Admin Panel. Toggle a class on the stable <body>
+    // ancestor and hide the links via CSS (userForm.css) so the rule keeps
+    // applying to every freshly re-rendered copy of the links.
+    Meteor.call('isDisableRegistration', (_, result) => {
+      if (result) {
+        document.body.classList.add('registration-disabled');
+        $('.at-signup-link').hide();
+      }
+    });
+
+    Meteor.call('isDisableForgotPassword', (_, result) => {
+      if (result) {
+        document.body.classList.add('forgotpwd-disabled');
+        $('.at-pwd-link').hide();
+      }
+    });
+
+    if (enabledAuthenticationMethods.indexOf('oauth2') !== -1) {
+      // TODO find better way to run this code once the oauth2 UI is injected in the DOM
+      (function waitForElementAndShow() {
+        if (!$('.at-oauth')[0]) return setTimeout(waitForElementAndShow, 100);
+        $('.at-oauth').show();
+      })();
+    }
+
+    // Same conditional-render pattern as the OAuth2 button above: SAML is a
+    // redirect/popup flow rather than a username+password submit, so it gets
+    // its own button (#at-saml in layouts.jade) shown only when the server
+    // reports the 'saml' authentication method enabled (SAML_ENABLED, see
+    // server/authentication.js).
+    if (enabledAuthenticationMethods.indexOf('saml') !== -1) {
+      $('#at-saml').removeClass('hide');
+    }
+
+    // Meteor's own accounts-* providers (Google, GitHub, Facebook, X/Twitter,
+    // Meteor Developer, Weibo, Meetup): the server reports one key per
+    // enabled provider, and the form renders one .js-oauth-provider button
+    // per key from the catalog (models/lib/oauthProviders.js). Passwordless
+    // (e-mailed one-time code) gets its own small form.
+    if (!instance.view.isDestroyed) {
+      instance.enabledOauthProviders.set(
+        OAUTH_PROVIDERS.filter(p => enabledAuthenticationMethods.indexOf(p.key) !== -1).map(
+          p => p.key,
+        ),
+      );
+      instance.passwordlessEnabled.set(
+        enabledAuthenticationMethods.indexOf('passwordless') !== -1,
+      );
+    }
+
+    AccountsTemplates.state.form.keys = new Proxy(
+      AccountsTemplates.state.form.keys,
+      validator,
+    );
+    EscapeActions.executeAll();
+
+    // Set up MutationObserver for OIDC button instead of deprecated DOMSubtreeModified
+    const oidcButton = document.getElementById('at-oidc');
+    if (oidcButton) {
+      const observer = new MutationObserver((mutations) => {
+        if (alreadyCheck <= 2) {
+          let currSetting = ReactiveCache.getCurrentSetting();
+          let oidcBtnElt = $('#at-oidc');
+          if (
+            currSetting &&
+            currSetting !== undefined &&
+            currSetting.oidcBtnText !== undefined &&
+            oidcBtnElt != null &&
+            oidcBtnElt != undefined
+          ) {
+            let htmlvalue = "<i class='fa fa-oidc'></i>" + currSetting.oidcBtnText;
+            if (alreadyCheck == 1) {
+              alreadyCheck++;
+              oidcBtnElt.html('');
+            } else {
+              alreadyCheck++;
+              oidcBtnElt.html(htmlvalue);
+            }
+          }
+        } else {
+          alreadyCheck = 1;
+        }
+      });
+      observer.observe(oidcButton, { childList: true, subtree: true });
+    }
+
+    // Set up MutationObserver for .at-form instead of deprecated DOMSubtreeModified
+    const atForm = document.querySelector('.at-form');
+    if (atForm) {
+      const formObserver = new MutationObserver((mutations) => {
+        if (alreadyCheck <= 2 && !isCheckDone) {
+          if (document.getElementById('at-oidc') != null) {
+            let currSetting = ReactiveCache.getCurrentSetting();
+            let oidcBtnElt = $('#at-oidc');
+            if (
+              currSetting &&
+              currSetting !== undefined &&
+              currSetting.oidcBtnText !== undefined &&
+              oidcBtnElt != null &&
+              oidcBtnElt != undefined
+            ) {
+              let htmlvalue =
+                "<i class='fa fa-oidc'></i>" + currSetting.oidcBtnText;
+              if (alreadyCheck == 1) {
+                alreadyCheck++;
+                oidcBtnElt.html('');
+              } else {
+                alreadyCheck++;
+                isCheckDone = true;
+                oidcBtnElt.html(htmlvalue);
+              }
+            }
+          }
+        } else {
+          alreadyCheck = 1;
+        }
+      });
+      formObserver.observe(atForm, { childList: true, subtree: true });
+    }
+
+    // Add autocomplete attribute to login input for WCAG compliance
+    const loginInput = document.querySelector(
+      'input[type="text"], input[type="email"]',
+    );
+    if (
+      loginInput &&
+      loginInput.name &&
+      (loginInput.name.toLowerCase().includes('user') ||
+        loginInput.name.toLowerCase().includes('email'))
+    ) {
+      loginInput.setAttribute('autocomplete', 'username email');
+    }
+
+    // Add autocomplete attributes to password fields for WCAG compliance
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    passwordInputs.forEach((input) => {
+      if (input.name && input.name.includes('password')) {
+        if (
+          input.name.includes('password_again') ||
+          input.name.includes('new_password')
+        ) {
+          input.setAttribute('autocomplete', 'new-password');
+        } else {
+          input.setAttribute('autocomplete', 'current-password');
+        }
+      }
+    });
+  });
+});
+
+Template.userFormsLayout.onDestroyed(function () {
+  // #2460: a SQRL session still waiting stops polling.
+  this.sqrlCancelled = true;
+  // Stop drag-scrolling <body> after leaving login / register (e.g. once logged
+  // in) so other layouts keep their normal behaviour.
+  disablePageDragscroll();
+  document.body.classList.remove('userform-layout');
+});
+
+Template.userFormsLayout.helpers({
+  passkeysSupported() { return require('/client/lib/passkeys').passkeysSupported(); },
+  passkeyMessage() { return Template.instance().passkeyMessage.get(); },
+  windowsSsoOffered() { return Meteor.settings?.public?.windowsSsoEnabled === true; },
+  sqrlOffered() { return require('/client/lib/sqrl').sqrlOffered(Template.instance().currentSetting.get()); },
+  sqrlShown() { return Template.instance().sqrlShown.get(); },
+  sqrlMessage() { return Template.instance().sqrlMessage.get(); },
+  logoSettingsReady() {
+    return Template.instance().subscriptionsReady();
+  },
+  // One entry per enabled Meteor accounts-* provider: key, icon class and the
+  // translated provider name for {{_ 'sign-in-with' label}}. No credential
+  // ever reaches this list - the server sends keys only.
+  oauthProviders() {
+    return Template.instance()
+      .enabledOauthProviders.get()
+      .map(key => providerByKey(key))
+      .filter(Boolean)
+      .map(p => ({ key: p.key, icon: p.icon, label: TAPi18n.__(p.labelKey) }));
+  },
+
+  passwordlessEnabled() {
+    return Template.instance().passwordlessEnabled.get();
+  },
+
+  loginOriginMismatch() {
+    return Template.instance().loginOriginMismatch.get();
+  },
+
+  passwordlessCodeStep() {
+    return Template.instance().passwordlessStep.get() === 'code';
+  },
+
+  passwordlessEmail() {
+    return Template.instance().passwordlessEmail.get();
+  },
+
+  isLegalNoticeLinkExist() {
+    const currSet = Template.instance().currentSetting.get();
+    if (currSet && currSet !== undefined && currSet != null) {
+      return (
+        currSet.legalNotice !== undefined && currSet.legalNotice.trim() != ''
+      );
+    } else return false;
+  },
+
+  getLegalNoticeWithWritTraduction() {
+    let spanLegalNoticeElt = $('#legalNoticeSpan');
+    if (spanLegalNoticeElt != null && spanLegalNoticeElt != undefined) {
+      spanLegalNoticeElt.html(TAPi18n.__('acceptance_of_our_legalNotice', {}));
+    }
+    let atLinkLegalNoticeElt = $('#legalNoticeAtLink');
+    if (atLinkLegalNoticeElt != null && atLinkLegalNoticeElt != undefined) {
+      atLinkLegalNoticeElt.html(TAPi18n.__('legalNotice', {}));
+    }
+    return true;
+  },
+
+  isLoading() {
+    return Template.instance().isLoading.get();
+  },
+
+  afterBodyStart() {
+    return currentSetting.customHTMLafterBodyStart;
+  },
+
+  beforeBodyEnd() {
+    return currentSetting.customHTMLbeforeBodyEnd;
+  },
+
+  languages() {
+    return TAPi18n.getSupportedLanguages()
+      .map(({ tag, name, rtl }) => ({ tag, name, rtl }))
+      .sort((a, b) => {
+        if (a.name === b.name) {
+          return 0;
+        } else {
+          return a.name > b.name ? 1 : -1;
+        }
+      });
+  },
+
+  isCurrentLanguage() {
+    const curLang = TAPi18n.getLanguage();
+    return this.tag === curLang;
+  },
+});
+
+Template.main.helpers({
+  htmlLang() {
+    return TAPi18n.getLanguage() || 'en';
+  },
+
+  htmlDir() {
+    return TAPi18n.getLanguageDirection() || 'ltr';
+  },
+});
+
+Template.userFormsLayout.events({
+  // #5847: the browser offers this site's passkeys; the server verifies one.
+  async 'click .js-passkey-sign-in'(event, templateInstance) {
+    event.preventDefault();
+    templateInstance.passkeyMessage.set('');
+    try {
+      await require('/client/lib/passkeys').signInWithPasskey();
+      FlowRouter.go('/');
+    } catch (error) {
+      if (error && error.name === 'NotAllowedError') return; // the person closed the browser's dialog
+      templateInstance.passkeyMessage.set(TAPi18n.__(error.reason === 'passkey-invalid' || error.error === 'passkey-invalid'
+        ? 'passkey-invalid' : 'passkey-sign-in-failed'));
+    }
+  },
+  // #2460: show the SQRL link and code, and wait for the SQRL client.
+  async 'click .js-sqrl-sign-in'(event, templateInstance) {
+    event.preventDefault();
+    templateInstance.sqrlMessage.set('');
+    const run = (templateInstance.sqrlRun || 0) + 1;
+    templateInstance.sqrlRun = run;
+    try {
+      const ended = await require('/client/lib/sqrl').runSqrlSession('login', {
+        show: shown => templateInstance.sqrlShown.set(shown),
+        cancelled: () => templateInstance.sqrlCancelled || templateInstance.sqrlRun !== run,
+      });
+      if (ended === 'signed-in') FlowRouter.go('/');
+      else if (ended === 'expired') {
+        templateInstance.sqrlShown.set(null);
+        templateInstance.sqrlMessage.set(TAPi18n.__('sqrl-expired'));
+      }
+    } catch (error) {
+      templateInstance.sqrlShown.set(null);
+      templateInstance.sqrlMessage.set(TAPi18n.__(error && error.error === 'sqrl-needs-https' ? 'sqrl-needs-https' : 'sqrl-sign-in-failed'));
+    }
+  },
+  'change .js-userform-set-language'(event) {
+    const tag = $(event.currentTarget).val();
+    // setLanguage is async; surface a failed load instead of silently leaving
+    // the UI in English (#5756).
+    Promise.resolve(TAPi18n.setLanguage(tag)).catch(error => {
+      // eslint-disable-next-line no-console
+      console.error(`Failed to switch language to ${tag}:`, error);
+    });
+    event.preventDefault();
+  },
+  'click #at-saml'(event) {
+    event.preventDefault();
+    const provider = Meteor.settings.public.SAML_PROVIDER;
+    showLoginError('');
+    // In redirect mode the page leaves here and this callback never runs;
+    // the result is reported when the browser comes back.
+    Meteor.loginWithSaml({ provider }, (err) => {
+      if (err) {
+        showLoginError(err);
+        return;
+      }
+      FlowRouter.go('/');
+    });
+  },
+  // Google / GitHub / Facebook / X / Meteor Developer / Weibo / Meetup: the
+  // button's data-provider is a catalog key, and the catalog names the
+  // Meteor.loginWith… function the accounts-* package registered. The login
+  // style (popup or redirect) is decided by the server's ServiceConfiguration,
+  // which Meteor's OAuth client reads on its own.
+  'click .js-oauth-provider'(event) {
+    event.preventDefault();
+    const key = $(event.currentTarget).data('provider');
+    const provider = providerByKey(key);
+    if (!provider || typeof Meteor[provider.loginMethod] !== 'function') return;
+    showLoginError('');
+    Meteor[provider.loginMethod]({}, (err) => {
+      if (err) {
+        showLoginError(err);
+        return;
+      }
+      FlowRouter.go('/');
+    });
+  },
+  // Passwordless (accounts-passwordless): step one asks for the address and
+  // has the server e-mail a one-time code; step two exchanges the code for a
+  // login. Both steps report errors in the same #login-error-message region
+  // as the password form.
+  'submit .js-passwordless-request'(event, templateInstance) {
+    event.preventDefault();
+    const email = String($('#passwordless-email').val() || '').trim();
+    if (!email) return;
+    showLoginError('');
+    Accounts.requestLoginTokenForUser(
+      { selector: { email }, userData: { email, passwordless: true } },
+      (err) => {
+        if (err) {
+          showLoginError(err);
+          return;
+        }
+        templateInstance.passwordlessEmail.set(email);
+        templateInstance.passwordlessStep.set('code');
+      },
+    );
+  },
+  'submit .js-passwordless-login'(event, templateInstance) {
+    event.preventDefault();
+    const email = templateInstance.passwordlessEmail.get();
+    const code = String($('#passwordless-code').val() || '').trim();
+    if (!email || !code) return;
+    showLoginError('');
+    Meteor.passwordlessLoginWithToken(email, code, (err) => {
+      if (err) {
+        showLoginError(err);
+        return;
+      }
+      templateInstance.passwordlessStep.set('email');
+      FlowRouter.go('/');
+    });
+  },
+  'click .js-passwordless-cancel'(event, templateInstance) {
+    event.preventDefault();
+    showLoginError('');
+    templateInstance.passwordlessStep.set('email');
+  },
+});
+
+// The same ARIA live region config/accounts.js writes the password form's
+// login errors into, so a provider or code error reads the same way.
+// A redirect login - OAuth2/OIDC and Google & co (Meteor's accounts-oauth),
+// SAML, CAS; redirect is the default for all of them - finishes after the page
+// has reloaded, where no button callback is left to show its error. Without
+// this, a refused login just landed on the sign-in page again, silently. Each
+// reports here instead, possibly before the sign-in form exists: keep the last
+// error until then. It also arrives before translations load, so a message key
+// is translated each time it is shown, and shown again once the language is
+// ready.
+let pendingRedirectLoginError = null;
+const redirectLoginErrorForDisplay = error => (error && error.error === 'saml-login-not-started'
+  ? { reason: TAPi18n.__('saml-login-not-started') } : error);
+function reportRedirectLoginError(error) {
+  if (!error) return;
+  pendingRedirectLoginError = error;
+  showLoginError(redirectLoginErrorForDisplay(error));
+}
+// wekan-accounts-saml and wekan-accounts-cas report through an event.
+for (const name of ['wekan-saml-login', 'wekan-cas-login']) {
+  window.addEventListener(name, event => reportRedirectLoginError(event.detail && event.detail.error));
+}
+// accounts-oauth reports a redirect login's result through Accounts'
+// page-load hook. A resumed session is not a login the user just tried.
+Accounts.onPageLoadLogin(attempt => {
+  if (attempt && attempt.type !== 'resume' && attempt.error) reportRedirectLoginError(attempt.error);
+});
+Accounts.onLogin(() => { pendingRedirectLoginError = null; });
+Tracker.autorun(() => {
+  TAPi18n.ready.get();
+  TAPi18n.revision.get();
+  if (pendingRedirectLoginError) {
+    Tracker.nonreactive(() => showLoginError(redirectLoginErrorForDisplay(pendingRedirectLoginError)));
+  }
+});
+
+function showLoginError(err) {
+  const errorDiv = document.getElementById('login-error-message');
+  if (!errorDiv) return;
+  if (!err) {
+    errorDiv.textContent = '';
+    return;
+  }
+  const reason = err.reason || err.message || '';
+  // #2460: an account its member locked to SQRL says so in their language.
+  const translated = ['oauth-account-conflict', 'sqrl-only', 'sqrl-hardlock']
+    .find(key => err.error === key || reason === key);
+  errorDiv.textContent = translated
+    ? TAPi18n.__(translated)
+    : reason || String(err.error || err);
+}
+
+Template.defaultLayout.events({
+  'click .js-close-modal': () => {
+    Modal.close();
+  },
+  'keydown #modal'(event) {
+    trapTabKey(event);
+  },
+});
+
+// Accessibility (WCAG 2.4.3 Focus Order): when a modal dialog opens, move
+// keyboard focus into it so screen-reader and keyboard users land inside the
+// dialog instead of being left behind in the page. When it closes, restore
+// focus to whatever element was focused before it opened.
+Template.defaultLayout.onRendered(function () {
+  let lastFocused = null;
+  this.autorun(() => {
+    const isOpen = Modal.isOpen();
+    Tracker.afterFlush(() => {
+      if (isOpen) {
+        lastFocused = document.activeElement;
+        const modal = document.getElementById('modal');
+        if (modal) {
+          const focusTarget = modal.querySelector('.modal-close-btn') || modal;
+          focusTarget.focus();
+        }
+      } else if (lastFocused && typeof lastFocused.focus === 'function') {
+        lastFocused.focus();
+        lastFocused = null;
+      }
+    });
+  });
+
+  // Drag-to-scroll for every whole-page layout rendered inside defaultLayout
+  // (All Boards, My Cards, Due Cards, Global Search, Public, Bookmarks, Broken
+  // Cards, Settings, People, Admin, Import, board Rules, …). These pages scroll
+  // <body> on desktop and #content in mobile mode (where <body> is
+  // position:fixed), so enablePageDragscroll() tags whichever element actually
+  // scrolls. The board-canvas pages are the exception: their own
+  // `.board-canvas.dragscroll` handles dragging, and the canvas does its own
+  // vertical/horizontal scroll, so page-level tagging is turned off there to
+  // avoid scrolling #content and the canvas at the same time. defaultLayout is
+  // persistent (only its `content` swaps), so this single autorun covers every
+  // route without per-template wiring. Login / Register use userFormsLayout and
+  // keep their own enable/disable. Works the same in mobile and desktop mode.
+  const boardCanvasRoutes = ['board', 'board-short', 'card'];
+  this.autorun(() => {
+    FlowRouter.watchPathChange();
+    const onBoardCanvas = boardCanvasRoutes.includes(FlowRouter.getRouteName());
+    Tracker.afterFlush(() => {
+      if (onBoardCanvas) {
+        disablePageDragscroll();
+      } else {
+        enablePageDragscroll();
+      }
+    });
+  });
+});
+
+// A capture listener runs before useraccounts' nested submit handler. A click
+// handler that awaits a subscription cannot cancel the browser's submit in time.
+Template.userFormsLayout.onRendered(function () {
+  const instance = this;
+  const dialog = this.find('.auth-dialog');
+  const submit = createAuthenticationSubmitHandler({
+    isSignIn: () => FlowRouter.getRouteName() === 'atSignIn',
+    readCredentials: form => ({
+      username: form.querySelector('#at-field-username_and_email')?.value,
+      password: form.querySelector('#at-field-password')?.value,
+    }),
+    resolveMethod: username => getAuthenticationMethod(instance.currentSetting.get(), username),
+    submitPassword: form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+    login(method, username, password, callback) {
+      if (method === 'ldap') Meteor.loginWithLDAP(username, password, callback);
+      // CAS signs in on the CAS server's own page: no username or password.
+      else if (method === 'cas') Meteor.loginWithCas({}, callback);
+      else Meteor.loginWithSaml({ provider: Meteor.settings.public.SAML_PROVIDER }, callback);
+    },
+    setBusy(busy) {
+      AccountsTemplates.setDisabled(busy);
+      if (busy) showLoginError('');
+      isCheckDone = false;
+    },
+    complete(error) {
+      if (error) showLoginError(error);
+      else AccountsTemplates.submitCallback(null, 'signIn');
+    },
+  });
+  dialog.addEventListener('submit', submit, true);
+  this.removeAuthenticationSubmit = () => dialog.removeEventListener('submit', submit, true);
+});
+
+Template.userFormsLayout.onDestroyed(function () {
+  this.removeAuthenticationSubmit?.();
+});
+
+function getAuthenticationMethod(
+  settings,
+  match,
+) {
+  if (!settings) {
+    return getUserAuthenticationMethod(undefined, match);
+  }
+
+  const { displayAuthenticationMethod, defaultAuthenticationMethod } = settings;
+
+  if (displayAuthenticationMethod) {
+    return $('.select-authentication').val();
+  }
+  return getUserAuthenticationMethod(defaultAuthenticationMethod, match);
+}
+
+function getUserAuthenticationMethod(defaultAuthenticationMethod, match) {
+  // The metadata publication requires authentication. The sign-in form must
+  // use the configured default instead of issuing an unauthorized subscription.
+  if (!Meteor.userId()) return Promise.resolve(defaultAuthenticationMethod);
+  return new Promise((resolve) => {
+    try {
+      Meteor.subscribe('user-authenticationMethod', match, {
+        onReady() {
+          const user = Users.findOne();
+          const authenticationMethod = user
+            ? user.authenticationMethod
+            : defaultAuthenticationMethod;
+
+          resolve(authenticationMethod);
+        },
+      });
+    } catch (error) {
+      resolve(defaultAuthenticationMethod);
+    }
+  });
+}

@@ -1,0 +1,65 @@
+template(name="dueCardsControls")
+  //- The controls of this page. They were a group in its second header bar,
+    beside a title the first bar now carries; they are a view of the shared
+    page sidebar. models/lib/pageSidebar.js, docs/Features/Header-Bar/Header.md
+  a.board-header-btn.js-due-cards-view-change(title="{{_ 'dueCardsViewChange-title'}}")
+    i.fa.fa-caret-down
+    if $eq dueCardsView 'me'
+      i.fa.fa-user
+      | {{_ 'dueCardsViewChange-choice-me'}}
+    if $eq dueCardsView 'all'
+      i.fa.fa-users
+      | {{_ 'dueCardsViewChange-choice-all'}}
+
+template(name="dueCards")
+  if currentUser
+    if searching.get
+      +spinner
+    else if hasResults.get
+      .global-search-results-list-wrapper
+        if hasQueryErrors.get
+          div
+            each msg in errorMessages
+              span.global-search-error-messages
+                = msg
+        else
+          .due-cards-results-header
+            h1
+              = resultsText
+          .due-cards-list
+            each card in dueCardsList
+              +resultCard(card)
+          .global-search-pager
+            if hasPreviousPage
+              button.js-due-cards-previous-page
+                | {{_ 'previous-page' }}
+            if hasNextPage
+              button.js-due-cards-next-page
+                | {{_ 'next-page' }}
+    else
+      .global-search-results-list-wrapper
+        .no-results
+          h3 {{_ 'dueCards-noResults-title'}}
+          p {{_ 'dueCards-noResults-description'}}
+
+template(name="dueCardsViewChangePopup")
+  if currentUser
+    ul.pop-over-list
+      li
+        with "dueCardsViewChange-choice-me"
+          a.js-due-cards-view-me
+            i.fa.fa-user
+            | {{_ 'dueCardsViewChange-choice-me'}}
+            if $eq Utils.dueCardsView "me"
+              i.fa.fa-check
+      hr
+      li
+        with "dueCardsViewChange-choice-all"
+          a.js-due-cards-view-all
+            i.fa.fa-users
+            | {{_ 'dueCardsViewChange-choice-all'}}
+            span.sub-name
+              +viewer
+                | {{_ 'dueCardsViewChange-choice-all-description' }}
+            if $eq Utils.dueCardsView "all"
+              i.fa.fa-check

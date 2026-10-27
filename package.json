@@ -1,0 +1,15 @@
+{
+  "name": "wekants",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.18.2",
+  "scripts": {
+    "build:core": "pnpm --filter @wekants/wekan-core-node build",
+    "dev": "pnpm --filter @wekants/api --filter @wekants/web --parallel dev",
+    "test": "cargo test && pnpm --filter @wekants/api test",
+    "test:e2e": "pnpm --filter @wekants/web test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

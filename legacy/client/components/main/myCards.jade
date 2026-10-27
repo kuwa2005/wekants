@@ -1,0 +1,108 @@
+template(name="myCardsControls")
+  //- The controls of this page. They were a group in its second header bar,
+    beside a title the first bar now carries; they are a view of the shared
+    page sidebar. models/lib/pageSidebar.js, docs/Features/Header-Bar/Header.md
+  a.board-header-btn.js-my-cards-view-change(title="{{_ 'myCardsViewChange-title'}}")
+    i.fa.fa-caret-down
+    if $eq myCardsView 'boards'
+      i.fa.fa-list
+      | {{_ 'myCardsViewChange-choice-boards'}}
+    if $eq myCardsView 'table'
+      i.fa.fa-bar-chart
+      | {{_ 'myCardsViewChange-choice-table'}}
+
+template(name="myCards")
+  if currentUser
+    if searching.get
+      +spinner
+    else
+      if $eq myCardsView 'boards'
+        .wrapper
+          each board in myCardsList
+            .my-cards-board-wrapper
+              .my-cards-board-title(class=board.colorClass)
+                a(href=board.originRelativeUrl)
+                  +viewer
+                    = board.title
+              each swimlane in board.mySwimlanes
+                .my-cards-swimlane-title(class="{{#if swimlane.colorClass}}{{ swimlane.colorClass }}{{else}}swimlane-default-color{{/if}}")
+                  +viewer
+                    = swimlane.title
+                each list in swimlane.myLists
+                  .my-cards-list-wrapper
+                    .my-cards-list-title(class=list.colorClass)
+                      +viewer
+                        = list.title
+                    each card in list.myCards
+                      .my-cards-card-wrapper
+                        a.minicard-wrapper.js-minicard(href=card.originRelativeUrl data-card-id=card._id data-board-id=card.boardId)
+                          +minicard(card)
+      if $eq myCardsView 'table'
+        .wrapper
+          table.my-cards-board-table
+            caption.sr-only {{_ 'my-cards'}}
+            thead
+              tr
+                th(scope="col") {{_ "card"}}
+                th(scope="col") {{_ "list"}}
+                th(scope="col") {{_ "board"}}
+                th(scope="col") {{_ "swimlane"}}
+                unless isMiniScreen
+                  th(scope="col") {{_ "members"}}
+                  th(scope="col") {{_ "labels"}}
+                  th(scope="col") {{_ "due-date"}}
+            tbody
+                each board in myCardsList
+                    each swimlane in board.mySwimlanes
+                      each list in swimlane.myLists
+                        each card in list.myCards
+                            tr
+                              td
+                                unless isMiniScreen
+                                  .my-cards-board-badge(class=board.colorClass)
+                                .my-cards-card-title-table
+                                  | {{card.title}}
+                                  //a.minicard-wrapper(href=card.originRelativeUrl)
+                                  //
+                                    | {{card.title}}
+                              td
+                                | {{list.title}}
+                              td
+                                | {{board.title}}
+                                //a(href=board.originRelativeUrl)
+                              td
+                                | {{swimlane.title}}
+
+                              unless isMiniScreen
+                                td
+                                  .div
+                                    each member in card.members
+                                      a.name
+                                        +userAvatar(userId=member noRemove=true)
+                                td
+                                  .div
+                                    each label in card.labelIds
+                                      span.card-label(class="{{labelColorClass (labelColor board label)}}" style="{{labelColorStyle (labelColor board label)}}" title=name)
+                                        | {{labelName board label}}
+                                td
+                                  if card.dueAt
+                                    | {{ displayDate card.dueAt 'LLL' }}
+
+template(name="myCardsViewChangePopup")
+  if currentUser
+    ul.pop-over-list
+      li
+        with "myCardsViewChange-choice-boards"
+          a.js-my-cards-view-boards
+            i.fa.fa-list
+            | {{_ 'myCardsViewChange-choice-boards'}}
+            if $eq Utils.myCardsView "boards"
+              i.fa.fa-check
+      hr
+      li
+        with "myCardsViewChange-choice-table"
+          a.js-my-cards-view-table
+            i.fa.fa-bar-chart
+            | {{_ 'myCardsViewChange-choice-table'}}
+            if $eq Utils.myCardsView "table"
+              i.fa.fa-check

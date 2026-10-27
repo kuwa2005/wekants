@@ -1,0 +1,1794 @@
+import { isSubmitKey } from '/models/lib/editorSubmitKey';
+import { titleSortIndexes } from '/models/lib/multilineTitles';
+import { titleTagText } from '/models/lib/titleTags';
+import { titlesFromComposer } from '/client/components/forms/multilineTitleChoice';
+import { openNewDrawingWhenOpen } from '/client/lib/newDrawing';
+import { dueFromTitle, resetDueFromTitle } from '/client/components/forms/titleDueHint';
+import '/client/components/cards/similarCards';
+import { ReactiveCache } from '/imports/reactiveCache';
+import { TAPi18n } from '/imports/i18n';
+import { FlowRouter } from 'meteor/ostrio:flow-router-extra';
+import { getSpinnerName, getSpinnerTemplate } from '/client/lib/spinner';
+import getSlug from 'limax';
+import { Random } from 'meteor/random';
+import Boards from '/models/boards';
+import Cards from '/models/cards';
+import Swimlanes from '/models/swimlanes';
+import { Filter } from '/client/lib/filter';
+import { MultiSelection } from '/client/lib/multiSelection';
+import { Utils } from '/client/lib/utils';
+import { UnsavedEdits } from '/client/lib/unsavedEdits';
+import { isLinkableCardTarget } from '/models/lib/linkedCardTarget';
+import { listCardsSelector } from '/models/lib/swimlaneFilter';
+import { sortWithIdTiebreaker } from '/models/lib/cardSortTiebreaker';
+import { sortCardsByTitle } from '/models/lib/sortCardsByTitle';
+import { sortCardsByVotes } from '/models/lib/voteSortCards';
+import { labelMatchesTerm } from '/models/lib/labelAutocomplete';
+import { memberMatchesTerm } from '/models/lib/memberAutocomplete';
+import {
+  parseQuickAddCardLabel,
+  findExistingLabelIdByName,
+  pickDefaultLabelColor,
+} from '/models/lib/quickAddCardLabel';
+import { LABEL_COLORS } from '/models/metadata/colors';
+import { isLazyCards, BoardListCardCounts, windowCountId } from '/client/lib/lazyCards';
+import {
+  shouldShowLoadMoreSpinner,
+  renderableCardsSelector,
+} from '/client/lib/listCardWindow';
+import {
+  mutationsChangeDragGeometry,
+  findActiveCardDrag,
+} from '/client/lib/cardDragGeometry';
+import autosize from 'autosize';
+import { errorMessage } from '/client/lib/errorMessage';
+
+// SubsManager removed for Meteor 3 migration
+const InfiniteScrollIter = 10;
+
+// #6531: opening a card from the board.
+//
+// A click used to APPEND the card to the open-cards list, so the card that was
+// already open stayed open - which is not what clicking another card means, and was
+// reported as the bug it looks like: "click on another card doesn't close last
+// opened card".
+//
+// A click now opens THAT card and closes the previous one. Keeping several open at
+// the same time is still possible, as the per-user setting it should always have
+// been: Member Settings / "Open many cards at once"
+// (`profile.openManyCardsAtOnce`), off by default.
+function openCardWindow(cardId) {
+  const user = ReactiveCache.getCurrentUser();
+  const many = !!(user && user.hasOpenManyCardsAtOnce && user.hasOpenManyCardsAtOnce());
+  if (!many) {
+    Session.set('openCards', [cardId]);
+    return;
+  }
+  const openCards = Session.get('openCards') || [];
+  if (!openCards.includes(cardId)) {
+    Session.set('openCards', [...openCards, cardId]);
+  }
+}
+
+// #6465: "Clicking the mini card again to close the popout is still not
+// possible."
+//
+// On a desktop-sized screen the card details are NOT the route: clicking a
+// minicard only writes `openCards`, and boardBody renders one draggable window
+// per id in that list. The URL stays on the board. So closing by navigating to
+// the board - which is what the second click did - cleared `currentCard` and
+// left the window on screen, because nothing had taken the card OUT of
+// `openCards`. Only the window's own X button did that, which is why closing
+// worked from the card and not from the minicard.
+//
+// This is the close button's logic (cardDetails.js, `click
+// .js-close-card-details`), so both ways of closing a card do the same thing.
+function cardWindowIsOpen(cardId) {
+  if (!Utils.isMiniScreen() && (Session.get('openCards') || []).includes(cardId)) {
+    return true;
+  }
+  return Session.equals('currentCard', cardId);
+}
+
+function closeCardWindow(cardId) {
+  Session.set(
+    'openCards',
+    (Session.get('openCards') || []).filter(id => id !== cardId),
+  );
+  if (Session.equals('currentCard', cardId)) {
+    Session.set('currentCard', null);
+  }
+  // #6745: null, the same value every route sets - never Session.delete. A
+  // delete followed by a route's set(null) is a CHANGE of popupCardBoardId, and
+  // Utils.getCurrentBoardId() reads it, so every minicard re-ran its
+  // currentBoard helpers on a card open or close.
+  Session.set('popupCardId', null);
+  Session.set('popupCardBoardId', null);
+  // A card opened by its own URL IS the route, and then the board has to be
+  // navigated back to. A card opened by clicking a minicard is not, and
+  // navigating would reset the board view for nothing.
+  const boardId = Session.get('currentBoard');
+  if (FlowRouter.current()?.params?.cardId === cardId && boardId) {
+    Utils.goBoardId(boardId);
+  }
+}
+
+Template.listBody.onCreated(function () {
+  // for infinite scrolling
+  this.cardlimit = new ReactiveVar(InfiniteScrollIter);
+
+  this.openForm = (options) => {
+    options = options || {};
+    options.position = options.position || 'top';
+
+    const formEls = this.findAll('.js-inlined-form-wrapper');
+    let formInstance = null;
+    let firstInstance = null;
+    let lastInstance = null;
+    for (const el of formEls) {
+      const view = Blaze.getView(el, 'Template.inlinedForm');
+      const inst = view?.templateInstance?.();
+      if (inst) {
+        if (!firstInstance) {
+          firstInstance = inst;
+        }
+        lastInstance = inst;
+        if (el.dataset.position === options.position) {
+          formInstance = inst;
+          break;
+        }
+      }
+    }
+    if (!formInstance) {
+      formInstance = options.position === 'bottom' ? lastInstance : firstInstance;
+    }
+    if (formInstance) {
+      formInstance.isOpen.set(true);
+    }
+  };
+
+  this.cardFormComponent = (submittedForm) => {
+    // A list renders independent top and bottom composers. Resolve the
+    // addCardForm below the form that actually submitted; a template-wide
+    // first match points at the hidden top composer when the bottom one saves.
+    const composerEl = submittedForm?.querySelector('.js-composer');
+    if (composerEl) {
+      const view = Blaze.getView(composerEl, 'Template.addCardForm');
+      return view?.templateInstance?.() || null;
+    }
+    return null;
+  };
+
+  this.scrollToBottom = () => {
+    const container = this.firstNode;
+    $(container).animate({
+      scrollTop: container.scrollHeight,
+    });
+  };
+
+  this.idOrNull = (swimlaneId) => {
+    const data = this.data;
+    if (!data) {
+      return undefined;
+    }
+    if (
+      Utils.boardView() === 'board-view-swimlanes' ||
+      data.board().isTemplatesBoard()
+    )
+      return swimlaneId;
+    return undefined;
+  };
+
+  this.addCard = async (evt) => {
+    evt.preventDefault();
+    const firstCardDom = this.find('.js-minicard:first');
+    const lastCardDom = this.find('.js-minicard:last');
+    const submittedForm = evt.target?.closest('form');
+    if (!submittedForm) {
+      return;
+    }
+    const textarea = $(submittedForm).find('textarea.js-card-title');
+    const position = Blaze.getData(submittedForm)?.position;
+    if (this.creatingCards) return;
+    const titles = titlesFromComposer(textarea[0]);
+    // #6802: the composer's Drawing button - one card, then its drawing.
+    const drawAfterAdd = submittedForm.dataset.drawAfterAdd === 'true' && titles.length === 1;
+    delete submittedForm.dataset.drawAfterAdd;
+    const indexes = titleSortIndexes(
+      position === 'bottom' && lastCardDom ? Blaze.getData(lastCardDom).sort : null,
+      position === 'top' && firstCardDom ? Blaze.getData(firstCardDom).sort : null,
+      titles.length,
+    );
+    this.creatingCards = true;
+    textarea[0].disabled = true;
+    let titleIndex = 0;
+    try {
+      for (const rawTitle of titles) {
+        // #3986: a leading "[LabelName] " prefix on the typed title applies (and,
+        // if needed, creates) that label instead of becoming part of the card
+        // title - e.g. "[Fedora] Do a thing" creates "Do a thing" labeled
+        // "Fedora". Only a single bracket prefix at the very start is parsed.
+        const { title: labelledTitle, labelName: quickAddLabelName } = parseQuickAddCardLabel(rawTitle);
+
+        const sortIndex = indexes[titleIndex];
+
+        const formComponent = this.cardFormComponent(submittedForm);
+        if (!formComponent) {
+          return;
+        }
+        const members = formComponent.members.get();
+        let labelIds = formComponent.labels.get();
+        const customFields = formComponent.customFields.get();
+        // #3967: "More options" lets a few common fields be filled in as part of
+        // THIS SAME Cards.insert call, rather than as separate Cards.update calls
+        // right after creation. Each Cards.update fires its own watcher
+        // notification email (server/models/activities.js reacts to every
+        // Activities insert), so a card created with its description/due
+        // date/assignees already set produces exactly one "card created"
+        // notification instead of one email per field the user would otherwise
+        // set afterward.
+        const description = formComponent.description?.get().trim() || '';
+        const dueAtValue = formComponent.dueAt?.get() || '';
+        const dueAt = dueAtValue ? new Date(dueAtValue) : undefined;
+        const assignees = formComponent.assignees?.get() || [];
+
+        const data = this.data;
+        if (!data) {
+          return;
+        }
+        // A due date typed at the end of the title ("... tomorrow 14:00"),
+        // unless More options set one or the hint's x kept the words. A card
+        // added to a linked list goes to the source board as typed.
+        // docs/Features/Cards/Dates/Due-Date-From-Title.md
+        const fromTitle = !dueAt && !data.linkedListId
+          ? dueFromTitle(submittedForm, labelledTitle, 'allowsDueFromTitleOnMinicard')
+          : null;
+        const title = fromTitle ? fromTitle.title : labelledTitle;
+        const cardDueAt = dueAt || (fromTitle && fromTitle.dueAt);
+        const board = data.board();
+        let linkedId = '';
+        let swimlaneId = '';
+        let cardType = 'cardType-card';
+        if (title) {
+          // Clear the textarea immediately so the next card starts empty,
+          // before any async operations that would leave the old text visible.
+          textarea.val('').focus();
+          autosize.update(textarea);
+          resetDueFromTitle(submittedForm);
+
+          // #3986: resolve the "[LabelName] " bracket prefix (if any) against the
+          // board's labels - match an existing label by name case-insensitively,
+          // or create one (with the same default-color pick as the "Add label"
+          // popup) when no label with that name exists yet.
+          if (quickAddLabelName) {
+            let quickAddLabelId = findExistingLabelIdByName(board.labels, quickAddLabelName);
+            if (!quickAddLabelId) {
+              quickAddLabelId = Random.id(6);
+              const color = pickDefaultLabelColor(board.labels, LABEL_COLORS);
+              await Boards.updateAsync(board._id, {
+                $push: { labels: { _id: quickAddLabelId, name: quickAddLabelName, color } },
+              });
+            }
+            if (labelIds.indexOf(quickAddLabelId) === -1) {
+              labelIds = [...labelIds, quickAddLabelId];
+            }
+          }
+
+          if (board.isTemplatesBoard()) {
+            const swimlaneEl = this.$('.js-minicards').closest('.swimlane').get(0);
+            swimlaneId = swimlaneEl && Blaze.getData(swimlaneEl)?._id; // Always swimlanes view
+            const swimlane = ReactiveCache.getSwimlane(swimlaneId);
+            // If this is the card templates swimlane, insert a card template
+            if (swimlane.isCardTemplatesSwimlane()) cardType = 'template-card';
+            // If this is the board templates swimlane, insert a board template and a linked card
+            else if (swimlane.isBoardTemplatesSwimlane()) {
+              linkedId = await Boards.insertAsync({
+                title,
+                slug: getSlug(title) || 'board',
+                permission: 'private',
+                type: 'template-board',
+              });
+              const defaultTitle = TAPi18n.__('default');
+              await Swimlanes.insertAsync({
+                title: typeof defaultTitle === 'string' ? defaultTitle : 'Default',
+                boardId: linkedId,
+              });
+              cardType = 'cardType-linkedBoard';
+            }
+          } else if (Utils.boardView() === 'board-view-swimlanes') {
+            const swimlaneEl2 = this.$('.js-minicards').closest('.swimlane').get(0);
+            swimlaneId = swimlaneEl2 && Blaze.getData(swimlaneEl2)?._id;
+          }
+          else if (
+            Utils.boardView() === 'board-view-lists' ||
+            Utils.boardView() === 'board-view-cal' ||
+            !Utils.boardView()
+          ) {
+            swimlaneId = data.swimlaneId || board.getDefaultSwimline()._id;
+          }
+
+          const nextCardNumber = await board.getNextCardNumber();
+
+          const cardFields = {
+            title,
+            members,
+            labelIds,
+            customFields,
+            listId: data._id,
+            boardId: board._id,
+            sort: sortIndex,
+            swimlaneId,
+            type: cardType,
+            cardNumber: nextCardNumber,
+            linkedId,
+          };
+          // #3967: only add these when actually filled in via "More options", so a
+          // plain quick-add card keeps behaving exactly as before.
+          if (description) {
+            cardFields.description = description;
+          }
+          if (cardDueAt && !isNaN(cardDueAt.getTime())) {
+            cardFields.dueAt = cardDueAt;
+          }
+          if (assignees.length) {
+            cardFields.assignees = assignees;
+          }
+          // #2809: in a linked list the card goes to the source list, by the
+          // source board's rules.
+          if (data.linkedListId) {
+            await Meteor.callAsync('addCardToLinkedList', data._id, title);
+            titleIndex += 1;
+            formComponent.saveTitleDraft(titles.slice(titleIndex).join('\n'));
+            continue;
+          }
+          const _id = await Cards.insertAsync(cardFields);
+          titleIndex += 1;
+          formComponent.saveTitleDraft(titles.slice(titleIndex).join('\n'));
+          if (drawAfterAdd) {
+            Utils.goCardId(_id);
+            openNewDrawingWhenOpen(_id);
+          }
+
+          // if the displayed card count is less than the total cards in the list,
+          // we need to increment the displayed card count to prevent the spinner
+          // to appear
+          const cardCount = data
+            .cards(this.idOrNull(swimlaneId))
+            .length;
+          if (this.cardlimit.get() < cardCount) {
+            this.cardlimit.set(this.cardlimit.get() + InfiniteScrollIter);
+          }
+
+          // In case the filter is active we need to add the newly inserted card in
+          // the list of exceptions -- cards that are not filtered. Otherwise the
+          // card will disappear instantly.
+          // See https://github.com/wekan/wekan/issues/80
+          Filter.addException(_id);
+
+          // We keep the form opened and scroll to it.
+          if (position === 'bottom') {
+            this.scrollToBottom();
+          }
+        }
+      }
+    } catch (error) {
+      textarea.val(titles.slice(titleIndex).join('\n'));
+      autosize.update(textarea);
+      throw error;
+    } finally {
+      this.creatingCards = false;
+      textarea[0].disabled = false;
+      textarea[0].focus();
+      textarea[0].dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  };
+
+  this.clickOnMiniCard = (evt) => {
+    const $target = $(evt.target);
+    const card = Blaze.getData(evt.currentTarget) || Template.currentData();
+    if (!card || !card._id) {
+      return;
+    }
+    const clickedTitle = $target.closest('.minicard-title').length > 0;
+    const clickedLinkedReference = $target.closest('.js-linked-link').length > 0;
+    const clickedChecklist = $target.closest('.minicard-checklist').length > 0;
+
+    // When multi-selection is active (or Shift is held), a click anywhere on the
+    // minicard toggles its selection. This must be checked before the title and
+    // checklist handlers below, otherwise clicking a card's title (which covers
+    // most of the minicard) would open the card details instead of (de)selecting
+    // it, making it impossible to check some cards in multi-selection mode.
+    if (MultiSelection.isActive() || evt.shiftKey) {
+      evt.stopImmediatePropagation();
+      evt.preventDefault();
+      const methodName = evt.shiftKey ? 'toggleRange' : 'toggle';
+      MultiSelection[methodName](card._id);
+      return;
+    }
+
+    if (clickedChecklist) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      return;
+    }
+
+    /* Direct minicard title editing is disabled so title drags can reach the
+    // sortable when handles are off and board dragscroll when handles are on.
+    // Former inline-editor click guard:
+    // #4990: clicking the title TEXT edits it on the board, the way a list's
+    // title is edited. The minicard's own inlinedForm has already opened by the
+    // time this runs (it is delegated deeper in the DOM), so all that is left
+    // here is to not open the card on top of the editor - and to stop the
+    // wrapper link navigating away from the card being renamed. The rest of the
+    // minicard still opens it, and so does a middle-click or Ctrl-click on the
+    // link, which never reaches this handler.
+    const clickedEditableTitle =
+      clickedTitle && $target.closest('.js-open-inlined-form').length > 0;
+    if (clickedEditableTitle || $target.closest('.js-minicard-title-form').length > 0) {
+      // Let the title's own inlinedForm click handler run. Both handlers are
+      // delegated by Blaze on the same event root, so either propagation stop
+      // can prevent that sibling handler from replacing the title.
+      evt.preventDefault();
+      return;
+    }
+    */
+
+    // Title clicks should open the regular board card details view.
+    if (clickedTitle && !clickedLinkedReference) {
+      evt.stopImmediatePropagation();
+      evt.preventDefault();
+      // #6465: clicking the OPEN card again closes it. The toggle below has
+      // always been here, but this branch returned before ever reaching it - and
+      // the title covers most of the minicard, so in practice the second click
+      // almost always lands here and just re-opened the card that was already
+      // open. That is why it read as a missing feature rather than a dead
+      // branch. Same call as below, so both click targets behave alike.
+      if (cardWindowIsOpen(card._id)) {
+        closeCardWindow(card._id);
+        return;
+      }
+      Session.set('popupCardId', null);
+      Session.set('popupCardBoardId', null);
+      Session.set('currentCard', card._id);
+      openCardWindow(card._id);
+      return;
+    }
+
+    if (Utils.isMiniScreen()) {
+      evt.preventDefault();
+      // ...and on a phone, where the card is a popup rather than a pane, the
+      // second click closes that popup for the same reason.
+      if (Session.equals('popupCardId', card._id) && Popup.isOpen()) {
+        Popup.back();
+        return;
+      }
+      Session.set('popupCardId', card._id);
+      this.cardDetailsPopup(evt);
+    } else if (cardWindowIsOpen(card._id)) {
+      evt.stopImmediatePropagation();
+      evt.preventDefault();
+      closeCardWindow(card._id);
+    } else {
+      // Allow normal href navigation, but if it's the same card URL,
+      // we'll handle it by directly setting the session
+      evt.preventDefault();
+      Session.set('currentCard', card._id);
+      openCardWindow(card._id);
+    }
+  };
+
+  this.toggleMultiSelection = (evt) => {
+    evt.stopImmediatePropagation();
+    evt.preventDefault();
+    // Resolve the card from the clicked checkbox element. Using
+    // Blaze.getData(evt.currentTarget) is reliable for the per-card data
+    // context, whereas Template.currentData() can resolve to the enclosing
+    // list context and toggle the wrong id (so the checkbox appears to do
+    // nothing). Falls back to Template.currentData() just in case.
+    const card =
+      Blaze.getData(evt.currentTarget) || Template.currentData();
+    if (card && card._id) {
+      MultiSelection.toggle(card._id);
+    }
+  };
+
+  this.cardDetailsPopup = (event) => {
+    if (!Popup.isOpen()) {
+      Popup.open("cardDetails")(event);
+    }
+  };
+});
+
+Template.listBody.helpers({
+  containerSwimlaneId() {
+    const list = Template.currentData();
+    if (!list || Utils.boardView() !== 'board-view-swimlanes') {
+      return undefined;
+    }
+    // #6660: do not depend on Jade's fragile `../../_id` traversal. Find the
+    // enclosing swimlane data context explicitly; an undefined id removes the
+    // swimlane clause and renders the list's cards in every swimlane.
+    for (let depth = 1; depth <= 5; depth += 1) {
+      const candidate = Template.parentData(depth);
+      if (
+        candidate &&
+        candidate._id &&
+        candidate._id !== list._id &&
+        candidate.boardId === list.boardId
+      ) {
+        return candidate._id;
+      }
+    }
+    return undefined;
+  },
+  idOrNull(swimlaneId) {
+    return Template.instance().idOrNull(swimlaneId);
+  },
+  customFieldsSum() {
+    const list = Template.currentData();
+    if (!list) return [];
+    const boardId = Session.get('currentBoard');
+    const fields = ReactiveCache.getCustomFields({
+      boardIds: { $in: [boardId] },
+      showSumAtTopOfList: true,
+    });
+
+    if (!fields || !fields.length) return [];
+
+    const cards = ReactiveCache.getCards({
+      listId: list._id,
+      archived: false,
+    });
+
+    const result = fields.map(field => {
+      let sum = 0;
+      if (cards && cards.length) {
+        cards.forEach(card => {
+          const cfs = (card.customFields || []);
+          const cf = cfs.find(f => f && f._id === field._id);
+          if (!cf || cf.value === null || cf.value === undefined) return;
+          let v = cf.value;
+          if (typeof v === 'string') {
+            // try to parse string numbers, accept comma decimal
+            const parsed = parseFloat(v.replace(',', '.'));
+            if (isNaN(parsed)) return;
+            v = parsed;
+          }
+          if (typeof v === 'number' && isFinite(v)) {
+            sum += v;
+          }
+        });
+      }
+      return {
+        _id: field._id,
+        name: field.name,
+        type: field.type,
+        settings: field.settings || {},
+        value: sum,
+      };
+    });
+
+    return result;
+  },
+
+  cardsWithLimit(swimlaneId) {
+    const tpl = Template.instance();
+    const limit = tpl.cardlimit.get();
+    const defaultSort = { sort: 1 };
+    // Session is reset on page reload; fall back to the persisted card sort so a
+    // chosen sort (e.g. by due date) is remembered across reloads (#5886).
+    let sortBy = Session.get('sortBy');
+    if (!sortBy) {
+      try {
+        const stored = window.localStorage.getItem('wekan-cards-sortBy');
+        if (stored) {
+          sortBy = JSON.parse(stored);
+        }
+      } catch (e) {}
+    }
+    if (!sortBy) {
+      sortBy = defaultSort;
+    }
+    // #6511: append a UNIQUE `_id` tiebreaker so the LIMITED, ordered card cursor
+    // never has ambiguous ties. Equal `sort` (or equal due-date, etc.) values would
+    // otherwise order non-deterministically across observe cycles, and Blaze's #each
+    // ordered diff throws "Bad index in range.removeMember" — leaving the board with
+    // no cards. Applied before BOTH the server window subscription and the client
+    // cursor below, so they agree on a deterministic order.
+    // #3050: "Sort by votes" is a pure DISPLAY-order mode - it floats
+    // highest-voted cards to the top without touching the manual `sort`
+    // field, so turning it off restores the original manual drag order
+    // exactly. Vote score (positive minus negative) is not a stored Mongo
+    // field, so it cannot be expressed as a Mongo sort spec: fetch the
+    // window in the underlying manual order (`defaultSort`) and re-sort the
+    // resulting array client-side instead of passing `sortBy` through to
+    // Mongo/minimongo.
+    const sortByVotes = !!(sortBy && sortBy.votes);
+    // #2040: by the board's label order - also a display order only.
+    const sortByLabelOrder = !!(sortBy && sortBy.labelOrder);
+    if (sortByVotes || sortByLabelOrder) {
+      sortBy = defaultSort;
+    }
+    sortBy = sortWithIdTiebreaker(sortBy);
+    // #6441: build the swimlane-membership fallback as a single `swimlaneId:
+    // { $in: [...] }` clause (via the shared, unit-tested helper) instead of a
+    // bare top-level `$or`, so it never competes with the board Filter's own
+    // top-level `$or` (labels/members/exceptions) and the label filter applies
+    // board-wide across every swimlane.
+    // #6443: in the first swimlane also surface orphaned cards (a swimlaneId
+    // pointing at a deleted swimlane) so they are not invisible in swimlane view.
+    const list = Template.currentData();
+    // #2809: a linked whole list shows its source list's cards
+    // (server/linkedLists.js publishes them to those who may see both boards).
+    const { isLinkedList, linkedListCardsSelector } = require('/models/lib/linkedList');
+    if (isLinkedList(list)) {
+      tpl.subscribe('linkedListCards', list._id);
+      const board = ReactiveCache.getBoard(list.boardId);
+      const first = board && board.swimlanes && board.swimlanes()[0];
+      return ReactiveCache.getCards(Filter.mongoSelector(linkedListCardsSelector(list,
+        { swimlaneId, firstSwimlaneId: first && first._id })), { sort: sortWithIdTiebreaker({ sort: 1 }), limit });
+    }
+    const selector = listCardsSelector(
+      list._id,
+      swimlaneId,
+      list.orphanedCardsSwimlaneIds
+        ? list.orphanedCardsSwimlaneIds(swimlaneId)
+        : undefined,
+    );
+    const mongoSelector = Filter.mongoSelector(selector);
+    // Lazy card loading: the board publication ships no cards, so subscribe to
+    // just this list/swimlane window (grows with `limit` as the user scrolls)
+    // plus its reactive total count. Default mode keeps everything in minimongo
+    // already, so these subscriptions are skipped.
+    if (list.boardId && isLazyCards(list.boardId)) {
+      tpl.subscribe('boardCardsWindow', list.boardId, mongoSelector, sortBy, limit);
+      tpl.subscribe(
+        'boardListCardCount',
+        // The selector is part of the count document's id: without it a filter
+        // change re-subscribed under the SAME id and could keep the previous
+        // filter's count (see models/lib/cardsLoading.js).
+        windowCountId(list._id, swimlaneId, mongoSelector),
+        list.boardId,
+        mongoSelector,
+      );
+    }
+    if (sortByLabelOrder) {
+      const cards = ReactiveCache.getCards(renderableCardsSelector(mongoSelector), { sort: sortBy, limit });
+      const board = ReactiveCache.getBoard(list.boardId);
+      return require('/models/lib/labelOrder').sortCardsByLabelOrder(cards, board ? board.labels : []);
+    }
+    if (sortByVotes) {
+      // Fetch as a plain array (not a cursor) so it can be re-sorted by vote
+      // score in JS - see the comment above. The underlying documents and
+      // their `sort` field are untouched; only the rendered ORDER changes.
+      const cards = ReactiveCache.getCards(renderableCardsSelector(mongoSelector), {
+        sort: sortBy,
+        limit,
+      });
+      return sortCardsByVotes(cards);
+    }
+    const ret = ReactiveCache.getCards(renderableCardsSelector(mongoSelector), {
+      // sort: ['sort'],
+      sort: sortBy,
+      limit,
+    }, true);
+    return ret;
+  },
+
+  showSpinner(swimlaneId) {
+    const tpl = Template.instance();
+    const list = Template.currentData();
+    const limit = tpl.cardlimit.get();
+
+    // The same selector and sort cardsWithLimit renders with, so "how many cards
+    // are on screen" is measured against what is actually on screen. The two used
+    // to be built in different places from different sources, which is how the
+    // spinner came to disagree with an empty list.
+    const selector = listCardsSelector(
+      list._id,
+      swimlaneId,
+      list.orphanedCardsSwimlaneIds
+        ? list.orphanedCardsSwimlaneIds(swimlaneId)
+        : undefined,
+    );
+    const mongoSelector = Filter.mongoSelector(selector);
+    const renderSelector = renderableCardsSelector(mongoSelector);
+    const loaded = ReactiveCache.getCards(renderSelector, { limit }).length;
+
+    let total;
+    if (isLazyCards(list.boardId)) {
+      // In lazy mode minimongo only holds the loaded window, so the total comes
+      // from the server count published into BoardListCardCounts. (This used to
+      // ask isLazyCards() with no board, which could disagree with the branch
+      // cardsWithLimit took for the same list.)
+      const countDoc = BoardListCardCounts.findOne(
+        windowCountId(list._id, swimlaneId, mongoSelector),
+      );
+      total = countDoc ? countDoc.count : 0;
+    } else {
+      total = ReactiveCache.getCards(renderSelector).length;
+    }
+
+    return shouldShowLoadMoreSpinner({ total, loaded, limit });
+  },
+
+  canSeeAddCard() {
+    const tpl = Template.instance();
+    const list = Template.currentData();
+    // #2095: count all cards in the list, not only the filtered/visible ones.
+    const reachedWipLimit = !list.getWipLimit('soft') &&
+      list.getWipLimit('enabled') &&
+      list.getWipLimit('value') <= list.cardsUnfiltered().length;
+    return (
+      !reachedWipLimit &&
+      Utils.canModifyCard()
+    );
+  },
+
+  reachedWipLimit() {
+    const list = Template.currentData();
+    return (
+      !list.getWipLimit('soft') &&
+      list.getWipLimit('enabled') &&
+      // #2095: count all cards in the list, not only the filtered/visible ones.
+      list.getWipLimit('value') <= list.cardsUnfiltered().length
+    );
+  },
+
+  isVerticalScrollbars() {
+    const user = ReactiveCache.getCurrentUser();
+    return user && user.isVerticalScrollbars();
+  },
+
+  cardIsSelected() {
+    return Session.equals('currentCard', Template.currentData()._id);
+  },
+
+  formattedCurrencyCustomFieldValue(val) {
+    // `this` is the custom field sum object from customFieldsSum each-iteration
+    const field = this || {};
+    const code = (field.settings && field.settings.currencyCode) || 'USD';
+    try {
+      const n = typeof val === 'number' ? val : parseFloat(val);
+      if (!isFinite(n)) return val;
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(n);
+    } catch (e) {
+      return `${code} ${val}`;
+    }
+  },
+});
+
+Template.listBody.events({
+  'click .js-minicard'(evt, tpl) {
+    tpl.clickOnMiniCard(evt);
+  },
+  'click .js-toggle-multi-selection'(evt, tpl) {
+    tpl.toggleMultiSelection(evt);
+  },
+  'click .open-minicard-composer'(evt, tpl) {
+    tpl.scrollToBottom();
+  },
+  submit(evt, tpl) {
+    tpl.addCard(evt);
+  },
+});
+
+// #2769 Card lands in the WRONG swimlane when it is dropped while a connected
+// list's layout changed mid-drag. jQuery UI sortable snapshots the geometry
+// of every connected `.js-minicards` container once at drag start
+// (_mouseStart runs refreshPositions() BEFORE the `start` callback) and only
+// re-snapshots after its own placeholder moves — never when Blaze mutates the
+// DOM. Two such mutations routinely happen during a drag: another user's
+// newly added card is reactively inserted into the target list (the issue's
+// "target column where a new card is being added"), and the dragging user's
+// own open add-card composer is closed by the `start` callback's
+// EscapeActions call, AFTER the snapshot. Every list/swimlane below the
+// change then shifts vertically while the cached rectangles stay put, so the
+// drop resolves against a stale map: the placeholder is parked in the
+// neighbouring swimlane's copy of the list (hence the reporter's "no drop
+// shadow in the target column") and the stop handler's
+// ui.item.parents('.swimlane') (client/components/lists/list.js) faithfully
+// persists that wrong swimlane.
+// Fix: watch each list's minicards for REAL DOM changes (Blaze insertions and
+// removals — not jQuery UI's own placeholder/helper churn, which the library
+// already follows with its own refresh) and re-cache the active drag's
+// geometry with sortable('refresh'). The decision helpers are pure and unit
+// tested in tests/cardDragGeometry.test.cjs.
+Template.listBody.onRendered(function () {
+  const minicardsEl = this.find('.js-minicards');
+  if (!minicardsEl || typeof MutationObserver === 'undefined') {
+    return;
+  }
+  this.dragGeometryRefreshQueued = false;
+  this.dragGeometryObserver = new MutationObserver(mutations => {
+    // Cheapest gate first: no drag helper on the page means no drag at all
+    // (this observer also fires on every ordinary reactive card update).
+    if (!document.getElementsByClassName('ui-sortable-helper').length) {
+      return;
+    }
+    if (!mutationsChangeDragGeometry(mutations)) {
+      return;
+    }
+    if (this.dragGeometryRefreshQueued) {
+      return;
+    }
+    this.dragGeometryRefreshQueued = true;
+    // Coalesce bursts (Blaze can insert several nodes per flush); by the time
+    // the timeout runs, this tick's layout is final and measurable.
+    setTimeout(() => {
+      this.dragGeometryRefreshQueued = false;
+      const active = findActiveCardDrag(
+        $('.js-minicards')
+          .toArray()
+          .map(el => $.data(el, 'ui-sortable')),
+      );
+      if (active) {
+        try {
+          // Re-collects the items of every connected container and re-measures
+          // all container rectangles, so the pointer is matched against the
+          // CURRENT layout for the rest of the drag.
+          active.refresh();
+        } catch (e) {
+          // A failed re-measure must never break the drag itself.
+        }
+      }
+    }, 0);
+  });
+  this.dragGeometryObserver.observe(minicardsEl, {
+    childList: true,
+    subtree: true,
+  });
+});
+
+Template.listBody.onDestroyed(function () {
+  if (this.dragGeometryObserver) {
+    this.dragGeometryObserver.disconnect();
+    this.dragGeometryObserver = null;
+  }
+});
+
+function toggleValueInReactiveArray(reactiveValue, value) {
+  const array = reactiveValue.get();
+  const valueIndex = array.indexOf(value);
+  if (valueIndex === -1) {
+    array.push(value);
+  } else {
+    array.splice(valueIndex, 1);
+  }
+  reactiveValue.set(array);
+}
+
+// Issue #2392: a custom field with "Auto create field to all cards" (or
+// "Always on card") applied correctly to the FIRST card of a quick-add
+// session but not to any card created after it, because this same
+// computation lived only inline in `onCreated` - the one place that ran
+// before the very first card - while `reset()` (meant to clear the form
+// between cards) just set `customFields` back to `[]` instead of
+// recomputing it. Any code path that clears the form between submits would
+// therefore drop the automatic field from every card after the first.
+// Sharing one helper between `onCreated` and `reset()` means the automatic
+// fields are (re)applied consistently, not only once per template lifetime.
+function automaticCustomFieldsForCurrentBoard() {
+  const currentBoardId = Session.get('currentBoard');
+  const board = ReactiveCache.getBoard(currentBoardId);
+  const arr = [];
+  (board?.customFields() || []).forEach(function (field) {
+    if (field.automaticallyOnCard || field.alwaysOnCard)
+      arr.push({ _id: field._id, value: null });
+  });
+  return arr;
+}
+
+Template.addCardForm.onCreated(function () {
+  this.subscribe('unsaved-edits');
+  const data = Template.currentData();
+  this.titleDraftKey = {
+    fieldName: `newCardTitle:${data.swimlaneId || ''}:${data.position || ''}`,
+    docId: data.listId,
+  };
+  this.titleDraftOwner = Meteor.userId();
+  this.titleDraftEdited = false;
+  this.saveTitleDraft = value => {
+    clearTimeout(this.titleDraftTimer);
+    this.titleDraftPending = undefined;
+    // A logout or impersonation must not save a previous user's draft.
+    if (!this.titleDraftOwner || Meteor.userId() !== this.titleDraftOwner) return;
+    if (value.trim()) UnsavedEdits.set(this.titleDraftKey, value);
+    else UnsavedEdits.reset(this.titleDraftKey);
+  };
+  this.labels = new ReactiveVar([]);
+  this.members = new ReactiveVar([]);
+  this.customFields = new ReactiveVar([]);
+  // #6802: how many cards the composer would add, for its Drawing button.
+  this.titleCount = new ReactiveVar(0);
+  this.countTitles = () => this.titleCount.set(titlesFromComposer(this.find('textarea.js-card-title')).length);
+  // #3967: "More options" — a handful of common fields that can be filled in
+  // before the card is created, so they travel in the SAME Cards.insert call
+  // as the title instead of as separate edits (and separate watcher-
+  // notification emails) right after.
+  this.showMoreOptions = new ReactiveVar(false);
+  this.description = new ReactiveVar('');
+  this.dueAt = new ReactiveVar('');
+  this.assignees = new ReactiveVar([]);
+
+  this.customFields.set(automaticCustomFieldsForCurrentBoard());
+
+  this.reset = () => {
+    this.labels.set([]);
+    this.members.set([]);
+    // #2392: recompute rather than clear, so a card created after a reset
+    // still gets its board's automatic custom fields.
+    this.customFields.set(automaticCustomFieldsForCurrentBoard());
+    this.showMoreOptions.set(false);
+    this.description.set('');
+    this.dueAt.set('');
+    this.assignees.set([]);
+  };
+
+  this.pressKey = (evt) => {
+    // The current user preference determines whether Enter submits.
+    if (isSubmitKey(evt, { submitOnEnter: !!ReactiveCache.getCurrentUser()?.hasSubmitOnEnter?.() })) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const $form = $(evt.currentTarget).closest('form');
+      // XXX For some reason $form.submit() does not work (it's probably a bug
+      // of blaze-component related to the fact that the submit event is non-
+      // bubbling). This is why we click on the submit button instead -- which
+      // work.
+      $form.find('button[type=submit]').click();
+
+      // Pressing Tab should open the form of the next column, and Maj+Tab go
+      // in the reverse order
+    } else if (evt.keyCode === 9) {
+      // Prevent custom focus movement on Tab key for accessibility
+      // evt.preventDefault();
+      // #1195: Tab opens the NEXT column's add-card form, but it used to abandon
+      // whatever was typed in THIS one — silently losing the card's content. Submit
+      // the current card first (when the textarea has non-whitespace content) so it
+      // is saved to this list, then move on to the next column's form.
+      const $currentForm = $(evt.currentTarget).closest('form');
+      const typed = $currentForm.find('textarea').val();
+      if (typeof typed === 'string' && typed.trim() !== '') {
+        $currentForm.find('button[type=submit]').click();
+      }
+      const isReverse = evt.shiftKey;
+      const list = $(`#js-list-${Template.currentData().listId}`);
+      const listSelector = '.js-list:not(.js-list-composer)';
+      let nextList = list[isReverse ? 'prev' : 'next'](listSelector).get(0);
+      // If there is no next list, loop back to the beginning.
+      if (!nextList) {
+        nextList = $(listSelector + (isReverse ? ':last' : ':first')).get(0);
+      }
+
+      const nextListView = Blaze.getView(nextList, 'Template.list');
+      const nextListInstance = nextListView?.templateInstance?.();
+      if (nextListInstance) {
+        nextListInstance.openForm({
+          position: Template.currentData().position,
+        });
+      }
+    }
+  };
+});
+
+Template.addCardForm.helpers({
+  members() {
+    return Template.instance().members;
+  },
+  getLabels() {
+    const tpl = Template.instance();
+    const currentBoardId = Session.get('currentBoard');
+    if (ReactiveCache.getBoard(currentBoardId).labels) {
+      return ReactiveCache.getBoard(currentBoardId).labels.filter(label => {
+        return tpl.labels.get().indexOf(label._id) > -1;
+      });
+    }
+    return false;
+  },
+  // #3967
+  showMoreOptions() {
+    return Template.instance().showMoreOptions.get();
+  },
+  boardMembersForAssignees() {
+    const currentBoardId = Session.get('currentBoard');
+    const board = ReactiveCache.getBoard(currentBoardId);
+    return (board?.members || []).filter(m => m.isActive !== false);
+  },
+  isAssignee(userId) {
+    return Template.instance().assignees.get().includes(userId);
+  },
+  singleCardTitle() {
+    return Template.instance().titleCount.get() === 1;
+  },
+});
+
+Template.addCardForm.events({
+  'input .js-card-title, change .js-multiline-title-mode'(event, tpl) {
+    tpl.countTitles();
+  },
+  // #6802: the same submit as Add, marked to open the card and its drawing.
+  'click .js-add-card-drawing'(event, tpl) {
+    event.preventDefault();
+    const form = event.currentTarget.closest('form');
+    if (!form || tpl.titleCount.get() !== 1) return;
+    form.dataset.drawAfterAdd = 'true';
+    form.requestSubmit();
+  },
+  'input .js-card-title'(event, tpl) {
+    tpl.titleDraftEdited = true;
+    tpl.titleDraftPending = event.currentTarget.value;
+    clearTimeout(tpl.titleDraftTimer);
+    tpl.titleDraftTimer = setTimeout(() => tpl.saveTitleDraft(tpl.titleDraftPending || ''), 300);
+  },
+  keydown(evt, tpl) {
+    tpl.pressKey(evt);
+  },
+  'click .js-toggle-more-options'(evt, tpl) {
+    evt.preventDefault();
+    tpl.showMoreOptions.set(!tpl.showMoreOptions.get());
+  },
+  'input .js-more-options-description'(evt, tpl) {
+    tpl.description.set(evt.currentTarget.value);
+  },
+  'change .js-more-options-due-at'(evt, tpl) {
+    tpl.dueAt.set(evt.currentTarget.value);
+  },
+  'change .js-more-options-assignee'(evt, tpl) {
+    toggleValueInReactiveArray(tpl.assignees, evt.currentTarget.value);
+  },
+  'click .js-link': Popup.open('linkCard'),
+  'click .js-search': Popup.open('searchElement'),
+  'click .js-card-template': Popup.open('searchElement'),
+});
+
+Template.addCardForm.onRendered(function () {
+  const tpl = this;
+  const $textarea = this.$('textarea');
+  // A draft restored into the composer counts too (#6802 Drawing button).
+  Meteor.defer(() => tpl.countTitles());
+
+  this.autorun(() => {
+    if (!this.subscriptionsReady() || this.titleDraftEdited) return;
+    this.$('.js-card-title').val(UnsavedEdits.get(this.titleDraftKey));
+    autosize.update(this.$('.js-card-title'));
+  });
+
+  autosize($textarea);
+
+  // #1273: a per-user choice, off by default.
+  const keepTitleTags = () => {
+    const user = ReactiveCache.getCurrentUser();
+    return !!(user && typeof user.hasKeepTitleTags === 'function' && user.hasKeepTitleTags());
+  };
+
+  $textarea.escapeableTextComplete(
+    [
+      // User mentions
+      {
+        match: /\B@([\w.-]*)$/,
+        search(term, callback) {
+          const currentBoard = Utils.getCurrentBoard();
+          callback(
+            $.map(currentBoard.activeMembers(), member => {
+              const user = ReactiveCache.getUser(member.userId);
+              // #5116 follow-up: match case-INSENSITIVELY as a substring of the
+              // username OR full name (was user.username.indexOf(term) === 0,
+              // which was case-sensitive, prefix-only, username-only and threw
+              // when getUser() returned null). Shared with the editor '@' mention.
+              return memberMatchesTerm(user, term) ? user : null;
+            }),
+          );
+        },
+        template(user) {
+          if (user.profile && user.profile.fullname) {
+            return (user.username + " (" + user.profile.fullname + ")");
+          }
+          return user.username;
+        },
+        replace(user) {
+          toggleValueInReactiveArray(tpl.members, user._id);
+          // #1273: Member Settings can keep the "@member" text in the title.
+          return titleTagText('member', user, keepTitleTags());
+        },
+        index: 1,
+      },
+
+      // Labels
+      {
+        match: /\B#(\w*)$/,
+        search(term, callback) {
+          const currentBoard = Utils.getCurrentBoard();
+          callback(
+            $.map(currentBoard.labels, label => {
+              if (label.name == undefined) {
+                label.name = "";
+              }
+              // #5116: match case-INSENSITIVELY so "#test" suggests "Testing"
+              // (was label.name.indexOf(term), which never matched a differently
+              // cased label). Matches name or color, like the shared helper.
+              if (labelMatchesTerm(label, term)) {
+                return label;
+              }
+              return null;
+            }),
+          );
+        },
+        template(label) {
+          return Blaze.toHTMLWithData(Template.autocompleteLabelLine, {
+            hasNoName: !label.name,
+            colorName: label.color,
+            labelName: label.name || label.color,
+          });
+        },
+        replace(label) {
+          toggleValueInReactiveArray(tpl.labels, label._id);
+          return titleTagText('label', label, keepTitleTags());
+        },
+        index: 1,
+      },
+    ],
+    {
+      // When the autocomplete menu is shown we want both a press of both `Tab`
+      // or `Enter` to validation the auto-completion. We also need to stop the
+      // event propagation to prevent the card from submitting (on `Enter`) or
+      // going on the next column (on `Tab`).
+      /*
+      onKeydown(evt, commands) {
+        // Prevent custom focus movement on Tab key for accessibility
+        // if (evt.keyCode === 9 || evt.keyCode === 13) {
+        //  evt.stopPropagation();
+        //  return commands.KEY_ENTER;
+        //}
+        return null;
+      },
+      */
+    },
+  );
+});
+
+Template.addCardForm.onDestroyed(function () {
+  clearTimeout(this.titleDraftTimer);
+  if (this.titleDraftPending !== undefined) this.saveTitleDraft(this.titleDraftPending);
+});
+
+Template.linkCardPopup.onCreated(function () {
+  this.selectedBoardId = new ReactiveVar('');
+  this.selectedSwimlaneId = new ReactiveVar('');
+  this.selectedListId = new ReactiveVar('');
+  // Blaze only exposes Template.currentData() while a view is current. Store
+  // the add-card position now; both confirmation handlers cross an `await`, so
+  // asking Blaze for it later throws "There is no current view".
+  this.position = Template.currentData()?.position;
+
+  this.boardId = Session.get('currentBoard');
+  // Only when there IS a board. `currentBoard` is null on every page that is not
+  // a board, and a subscription with a null id is not a no-op: the publisher
+  // check()s its arguments, and a throw there took the server down (it escapes an
+  // async publisher as an unhandled rejection). The server refuses such a
+  // subscription now; not sending one is the other half.
+  if (this.boardId) {
+    Meteor.subscribe('board', this.boardId, false);
+  }
+  this.board = ReactiveCache.getBoard(this.boardId);
+  // List where to insert card
+  this.list = $(Popup._getTopStack().openerElement).closest('.js-list');
+  const listData = Blaze.getData(this.list[0]);
+  this.listId = listData._id;
+  // Swimlane where to insert card
+  const swimlane = $(Popup._getTopStack().openerElement).closest(
+    '.js-swimlane',
+  );
+  this.swimlaneId = '';
+  if (Utils.boardView() === 'board-view-swimlanes')
+    this.swimlaneId = Blaze.getData(swimlane[0])._id;
+  else if (Utils.boardView() === 'board-view-lists' || !Utils.boardView)
+    this.swimlaneId = listData.swimlaneId || ReactiveCache.getSwimlane({ boardId: this.boardId })._id;
+
+  this.getSortIndex = () => {
+    let ret;
+    if (this.position === 'top') {
+      const firstCardDom = this.list.find('.js-minicard:first')[0];
+      ret = Utils.calculateIndex(null, firstCardDom).base;
+    } else if (this.position === 'bottom') {
+      const lastCardDom = this.list.find('.js-minicard:last')[0];
+      ret = Utils.calculateIndex(lastCardDom, null).base;
+    }
+    return ret;
+  };
+});
+
+Template.linkCardPopup.helpers({
+  boards() {
+    const ret = ReactiveCache.getBoards(
+      {
+        archived: false,
+        'members.userId': Meteor.userId(),
+        type: 'board',
+      },
+      {
+        sort: { sort: 1 /* boards default sorting */ },
+      },
+    );
+    return ret;
+  },
+
+  swimlanes() {
+    const tpl = Template.instance();
+    if (!tpl.selectedBoardId.get()) {
+      return [];
+    }
+    const board = ReactiveCache.getBoard(tpl.selectedBoardId.get());
+    if (!board) {
+      return [];
+    }
+
+    // Ensure default swimlane exists
+    board.getDefaultSwimline();
+
+    const swimlanes = ReactiveCache.getSwimlanes(
+    {
+      boardId: tpl.selectedBoardId.get()
+    },
+    {
+      sort: { sort: 1 },
+    });
+    return swimlanes;
+  },
+
+  lists() {
+    const tpl = Template.instance();
+    if (!tpl.selectedBoardId.get()) {
+      return [];
+    }
+    const lists = ReactiveCache.getLists(
+    {
+      boardId: tpl.selectedBoardId.get()
+    },
+    {
+      sort: { sort: 1 },
+    });
+    return lists;
+  },
+
+  cards() {
+    const tpl = Template.instance();
+    if (!tpl.board) {
+      return [];
+    }
+    // A mirror is a new card, so pointing at a real card on this board cannot
+    // create a self-link. Only exclude sources we already mirror (#5683).
+    const mirroredCardIds = tpl.board.cards()
+      .filter(card => card.type === 'cardType-linkedCard')
+      .map(card => card.linkedId);
+    const selector = {
+      archived: false,
+      _id: { $nin: mirroredCardIds },
+      // #5808: never offer an existing linked card/board as a link target —
+      // linking to one builds a chain of linkedId pointers that renders the
+      // card inaccessible. Only real cards may be linked.
+      type: { $nin: ['template-card', 'cardType-linkedCard', 'cardType-linkedBoard'] },
+    };
+    if (tpl.selectedBoardId.get()) selector.boardId = tpl.selectedBoardId.get();
+    if (tpl.selectedSwimlaneId.get()) selector.swimlaneId = tpl.selectedSwimlaneId.get();
+    if (tpl.selectedListId.get()) selector.listId = tpl.selectedListId.get();
+
+    const ret = ReactiveCache.getCards(selector, { sort: { sort: 1 } });
+    // #5394: sort the Cards dropdown alphabetically by title
+    // (case-insensitive) so a card can be found on boards with many cards.
+    return sortCardsByTitle(ret);
+  },
+
+  isTitleDefault(title) {
+    // https://github.com/wekan/wekan/issues/4763
+    // https://github.com/wekan/wekan/issues/4742
+    // Translation text for "default" does not work, it returns an object.
+    // When that happens, try use translation "defaultdefault" that has same content of default, or return text "Default".
+    // This can happen, if swimlane does not have name.
+    // Yes, this is fixing the symptom (Swimlane title does not have title)
+    // instead of fixing the problem (Add Swimlane title when creating swimlane)
+    // because there could be thousands of swimlanes, adding name Default to all of them
+    // would be very slow.
+    if (title.startsWith("key 'default") && title.endsWith('returned an object instead of string.')) {
+      if (`${TAPi18n.__('defaultdefault')}`.startsWith("key 'default") && `${TAPi18n.__('defaultdefault')}`.endsWith('returned an object instead of string.')) {
+        return 'Default';
+      } else  {
+        return `${TAPi18n.__('defaultdefault')}`;
+      }
+    } else if (title === 'Default') {
+      return `${TAPi18n.__('defaultdefault')}`;
+    } else  {
+      return title;
+    }
+  },
+});
+
+Template.linkCardPopup.events({
+  'change .js-select-boards'(evt, tpl) {
+    const val = $(evt.currentTarget).val();
+    if (val) Meteor.subscribe('board', val, false);
+    // Clear selections to allow linking only board or re-choose swimlane/list
+    tpl.selectedSwimlaneId.set('');
+    tpl.selectedListId.set('');
+    tpl.selectedBoardId.set(val);
+  },
+  'change .js-select-swimlanes'(evt, tpl) {
+    tpl.selectedSwimlaneId.set($(evt.currentTarget).val());
+  },
+  'change .js-select-lists'(evt, tpl) {
+    tpl.selectedListId.set($(evt.currentTarget).val());
+  },
+  async 'click .js-done'(evt, tpl) {
+    // LINK CARD (or, when no card is chosen, fall back to a board-level link
+    // so a whole board can be linked even when that board already has cards).
+    // https://github.com/wekan/wekan/issues/5715
+    evt.stopPropagation();
+    evt.preventDefault();
+    const linkedId = tpl.$('.js-select-cards').val();
+    if (!linkedId) {
+      const boardId = tpl.$('.js-select-boards').val();
+      // No source selected, or a whole-board self-link: nothing to link.
+      if (!boardId || boardId === tpl.boardId) {
+        Popup.back();
+        return;
+      }
+      // A linkedBoard card for this board already exists; avoid duplicates.
+      if (ReactiveCache.getCard({ linkedId: boardId, archived: false })) {
+        Popup.back();
+        return;
+      }
+      const boardCardNumber = await tpl.board.getNextCardNumber();
+      const boardSortIndex = tpl.getSortIndex();
+      const boardCardId = Cards.insert({
+        title: $('.js-select-boards option:selected').text(), //dummy
+        listId: tpl.listId,
+        swimlaneId: tpl.swimlaneId,
+        boardId: tpl.boardId,
+        sort: boardSortIndex,
+        type: 'cardType-linkedBoard',
+        linkedId: boardId,
+        cardNumber: boardCardNumber,
+      });
+      Filter.addException(boardCardId);
+      Popup.back();
+      return;
+    }
+    // #5808: refuse to link to a linked card/board or to a card that links back
+    // to this board — those build a chain/cycle of linkedId pointers that renders
+    // the cards inaccessible. The <select> already filters these out, but its
+    // options can be stale, so re-check the resolved target here.
+    const targetCard = ReactiveCache.getCard(linkedId);
+    const mirroredCardIds = tpl.board.cards()
+      .filter(card => card.type === 'cardType-linkedCard')
+      .map(card => card.linkedId);
+    if (!isLinkableCardTarget(targetCard, mirroredCardIds)) {
+      alert(TAPi18n.__('error-linked-card-not-allowed'));
+      Popup.back();
+      return;
+    }
+    const sortIndex = tpl.getSortIndex();
+    try {
+      const _id = await Meteor.callAsync(
+        'createLinkedCard',
+        linkedId,
+        tpl.boardId,
+        tpl.swimlaneId,
+        tpl.listId,
+        sortIndex,
+      );
+      Filter.addException(_id);
+      Session.set(
+        'boardSubscriptionGeneration',
+        (Session.get('boardSubscriptionGeneration') || 0) + 1,
+      );
+      Popup.back();
+    } catch (error) {
+      alert(error.reason || error.message);
+    }
+  },
+  async 'click .js-link-board'(evt, tpl) {
+    //LINK BOARD
+    evt.stopPropagation();
+    evt.preventDefault();
+    const impBoardId = tpl.$('.js-select-boards').val();
+    if (
+      impBoardId === tpl.boardId ||
+      !impBoardId ||
+      ReactiveCache.getCard({ linkedId: impBoardId, archived: false })
+    ) {
+      Popup.back();
+      return;
+    }
+    const nextCardNumber = await tpl.board.getNextCardNumber();
+    const sortIndex = tpl.getSortIndex();
+    const _id = Cards.insert({
+      title: tpl.$('.js-select-boards option:selected').text(), //dummy
+      listId: tpl.listId,
+      swimlaneId: tpl.swimlaneId,
+      boardId: tpl.boardId,
+      sort: sortIndex,
+      type: 'cardType-linkedBoard',
+      linkedId: impBoardId,
+      cardNumber: nextCardNumber,
+    });
+    Filter.addException(_id);
+    Popup.back();
+  },
+});
+
+Template.searchElementPopup.onCreated(function () {
+  this.isCardTemplateSearch = $(Popup._getTopStack().openerElement).hasClass(
+    'js-card-template',
+  );
+  this.isListTemplateSearch = $(Popup._getTopStack().openerElement).hasClass(
+    'js-list-template',
+  );
+  this.isSwimlaneTemplateSearch = $(
+    Popup._getTopStack().openerElement,
+  ).hasClass('js-open-add-swimlane-menu');
+  const popupOpener = $(Popup._getTopStack().openerElement);
+  this.isBoardTemplateSearch =
+    popupOpener.hasClass('js-add-board') ||
+    popupOpener.hasClass('js-create-board');
+  this.isTemplateSearch =
+    this.isCardTemplateSearch ||
+    this.isListTemplateSearch ||
+    this.isSwimlaneTemplateSearch ||
+    this.isBoardTemplateSearch;
+
+  let boardId = '';
+  if (this.isTemplateSearch) {
+    boardId = (ReactiveCache.getCurrentUser().profile || {}).templatesBoardId;
+    if (boardId) {
+      Meteor.subscribe('board', boardId, false);
+    }
+    // #2684: this popup used to be hard-wired to the current user's OWN
+    // templates board only, so a template-container board another member
+    // shared by adding them as a board member (the normal, existing sharing
+    // mechanism) never appeared here even though the All Boards "Templates"
+    // view already lists it (server/publications/boards.js's `boardTemplates`
+    // publication already selects by membership, not by ownership). Subscribe
+    // to that same publication so the "other template boards" dropdown below
+    // has the shared ones available in minimongo.
+    Meteor.subscribe('boardTemplates');
+  } else {
+    boardId = (Utils.getCurrentBoard() || {})._id;
+  }
+  if (!boardId) {
+    Popup.back();
+    return;
+  }
+  this.boardId = boardId;
+  // Subscribe to this board
+  Meteor.subscribe('board', this.boardId, false);
+  this.selectedBoardId = new ReactiveVar(this.boardId);
+  this.list = $(Popup._getTopStack().openerElement).closest('.js-list');
+
+    if (!this.isBoardTemplateSearch) {
+      this.swimlaneId = '';
+      // Swimlane where to insert card
+      const swimlane = $(Popup._getTopStack().openerElement).parents(
+        '.js-swimlane',
+      );
+      const listData = Blaze.getData(this.list[0]);
+      if (Utils.boardView() === 'board-view-swimlanes')
+        this.swimlaneId = Blaze.getData(swimlane[0])._id;
+      else this.swimlaneId = listData.swimlaneId || ReactiveCache.getSwimlane({ boardId: this.boardId })._id;
+      // List where to insert card
+      this.listId = listData._id;
+  }
+  this.term = new ReactiveVar('');
+  this.position = Template.currentData()?.position;
+
+  this.getSortIndex = () => {
+    const position = this.position;
+    let ret;
+    if (position === 'top') {
+      const firstCardDom = this.list.find('.js-minicard:first')[0];
+      ret = Utils.calculateIndex(null, firstCardDom).base;
+    } else if (position === 'bottom') {
+      const lastCardDom = this.list.find('.js-minicard:last')[0];
+      ret = Utils.calculateIndex(lastCardDom, null).base;
+    }
+    return ret;
+  };
+});
+
+Template.searchElementPopup.helpers({
+  boards() {
+    const ret = ReactiveCache.getBoards(
+      {
+        archived: false,
+        'members.userId': Meteor.userId(),
+        _id: { $ne: Session.get('currentBoard') },
+        type: 'board',
+      },
+      {
+        sort: { sort: 1 /* boards default sorting */ },
+      },
+    );
+    return ret;
+  },
+
+  results() {
+    const tpl = Template.instance();
+    if (!tpl.selectedBoardId) {
+      return [];
+    }
+    const board = ReactiveCache.getBoard(tpl.selectedBoardId.get());
+    // The template container is subscribed when this popup is created. Keep
+    // the popup open and reactively return results once Minimongo receives it;
+    // synchronously requiring the board here bounced a freshly opened picker
+    // back to Create Board and could leave only stale cached templates visible.
+    if (!board) return [];
+    if (!tpl.isTemplateSearch || tpl.isCardTemplateSearch) {
+      return board.searchCards(tpl.term.get(), false);
+    } else if (tpl.isListTemplateSearch) {
+      return board.searchLists(tpl.term.get());
+    } else if (tpl.isSwimlaneTemplateSearch) {
+      return board.searchSwimlanes(tpl.term.get());
+    } else if (tpl.isBoardTemplateSearch) {
+      const boards = board.searchBoards(tpl.term.get());
+      boards.forEach(board => {
+        // A template container that links no board has no linkedId.
+        if (board.linkedId) Meteor.subscribe('board', board.linkedId, false);
+      });
+      return boards;
+    } else {
+      return [];
+    }
+  },
+
+  // #4205: is this "Board Templates" card the user's current default?
+  isDefaultBoardTemplate(cardId) {
+    const user = ReactiveCache.getCurrentUser();
+    return !!user && user.isDefaultBoardTemplate(cardId);
+  },
+
+  // #2684: OTHER template-container boards the current user may search -
+  // ones shared with them the normal way (added as a board member) rather
+  // than their own personal templates board, which is the default this
+  // popup already opens with. Excludes the user's own so it is not offered
+  // twice.
+  otherTemplateBoards() {
+    const tpl = Template.instance();
+    if (!tpl.isTemplateSearch) return [];
+    return ReactiveCache.getBoards(
+      {
+        archived: false,
+        type: 'template-container',
+        members: { $elemMatch: { userId: Meteor.userId(), isActive: true } },
+        _id: { $ne: tpl.boardId },
+      },
+      { sort: { sort: 1 /* boards default sorting */ } },
+    );
+  },
+});
+
+Template.searchElementPopup.events({
+  // #4205: toggle this board template as the default, without also applying
+  // it (the rest of the row still does that - see 'click .js-minicard').
+  'click .js-set-default-board-template'(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    const cardId = this && this._id;
+    if (!cardId) return;
+    Meteor.call('toggleDefaultBoardTemplate', cardId, (err) => {
+      if (err) alert(errorMessage(err));
+    });
+  },
+  'change .js-select-boards'(evt, tpl) {
+    const boardId = $(evt.currentTarget).val();
+    // An empty <select> value is a null subscription - see above.
+    if (boardId) Meteor.subscribe('board', boardId, false);
+    tpl.selectedBoardId.set(boardId);
+  },
+  // #2684: switch which template-container board this popup searches, e.g.
+  // to one shared by another member rather than the user's own. An empty
+  // value falls back to the user's own templates board (tpl.boardId's
+  // original value never changes, so this always has somewhere to return
+  // to).
+  'change .js-select-template-board'(evt, tpl) {
+    const ownTemplatesBoardId =
+      (ReactiveCache.getCurrentUser().profile || {}).templatesBoardId;
+    const boardId = $(evt.currentTarget).val() || ownTemplatesBoardId;
+    if (boardId) Meteor.subscribe('board', boardId, false);
+    tpl.boardId = boardId;
+    tpl.selectedBoardId.set(boardId);
+  },
+  'submit .js-search-term-form'(evt, tpl) {
+    evt.preventDefault();
+    tpl.term.set(evt.target.searchTerm.value);
+  },
+  async 'click .js-minicard'(evt, tpl) {
+    // 0. Common
+    const title = $('.js-element-title')
+      .val()
+      .trim();
+    if (!title) return;
+    const element = Blaze.getData(evt.currentTarget);
+    const sourceBoard = ReactiveCache.getBoard(tpl.boardId);
+    if (!sourceBoard) return;
+    element.title = title;
+    let _id = '';
+    if (!tpl.isTemplateSearch || tpl.isCardTemplateSearch) {
+      // Card insertion
+      // 1. Common
+      // Compute the sort index BEFORE the first await: getSortIndex() reads
+      // Template.currentData(), and Blaze's current-view context is lost across
+      // an await, so calling it afterwards threw "There is no current view" and
+      // no card was created from the template. Capture it while still in the
+      // synchronous event/view context.
+      const sortIndex = tpl.getSortIndex();
+      element.cardNumber = await sourceBoard.getNextCardNumber();
+      element.sort = sortIndex;
+      // 1.A From template
+      if (tpl.isTemplateSearch) {
+        element.type = 'cardType-card';
+        element.linkedId = '';
+        // #5798: instantiate the template into the CURRENT board, not the
+        // templates board. For a template search tpl.boardId is the templates
+        // board (it is the search source), so copying with it created the card
+        // with boardId = templates board. The card still showed in the target
+        // list (the list query is by listId and the templates board is
+        // subscribed), but clicking it navigated to the templates board instead
+        // of opening the card. The target list/swimlane were already resolved on
+        // the current board.
+        // Instantiate into the board that OWNS the target list (where the user
+        // clicked "add card"). Deriving it from tpl.listId is reliable even when
+        // Utils.getCurrentBoard() (route/session state) has not settled yet — as
+        // on the slower CI production bundle, where falling back to tpl.boardId
+        // wrongly created the card on the templates board.
+        const targetList = ReactiveCache.getList(tpl.listId);
+        const targetBoardId =
+          (targetList || {}).boardId ||
+          (Utils.getCurrentBoard() || {})._id ||
+          tpl.boardId;
+        _id = await element.copy(targetBoardId, tpl.swimlaneId, tpl.listId);
+        // 1.B Linked card
+      } else {
+        _id = element.link(tpl.boardId, tpl.swimlaneId, tpl.listId);
+      }
+      Filter.addException(_id);
+      // List insertion
+    } else if (tpl.isListTemplateSearch) {
+      element.sort = ReactiveCache.getSwimlane(tpl.swimlaneId)
+        .lists()
+        .length;
+      element.type = 'list';
+      _id = await element.copy(tpl.boardId, tpl.swimlaneId);
+    } else if (tpl.isSwimlaneTemplateSearch) {
+      element.sort = ReactiveCache.getBoard(tpl.boardId)
+        .swimlanes()
+        .length;
+      element.type = 'swimlane';
+      _id = await element.copy(tpl.boardId);
+    } else if (tpl.isBoardTemplateSearch) {
+      Meteor.call(
+        'copyBoard',
+        element.linkedId,
+        {
+          sort: ReactiveCache.getBoards({ archived: false }).length,
+          type: 'board',
+          title: element.title,
+        },
+        (err, data) => {
+          _id = data;
+          // `data` is the new board's id, or undefined when the insert failed.
+          if (_id) Meteor.subscribe('board', _id, false);
+          FlowRouter.go('board', {
+            id: _id,
+            slug: getSlug(element.title),
+          });
+        },
+      );
+    }
+    Popup.back();
+  },
+});
+
+Template.spinnerList.helpers({
+  getSpinnerTemplate() {
+    return getSpinnerTemplate();
+  },
+  getSkSpinnerName() {
+    return 'sk-spinner-' + getSpinnerName().toLowerCase();
+  },
+});
+
+Template.spinnerList.onCreated(function () {
+  this.swimlaneId = '';
+});
+
+Template.spinnerList.onRendered(function () {
+  const instance = this;
+
+  // Find the parent listBody template instance via the DOM
+  const listBodyEl = this.$('.sk-spinner-list').closest('.list-body')[0];
+  const listBodyView = listBodyEl && Blaze.getView(listBodyEl, 'Template.listBody');
+  const listBodyInstance = listBodyView?.templateInstance?.();
+
+  instance.cardlimit = listBodyInstance && listBodyInstance.cardlimit;
+  instance.listId = listBodyInstance && Blaze.getData(listBodyEl)?._id;
+
+  const isSandstorm =
+    Meteor.settings &&
+    Meteor.settings.public &&
+    Meteor.settings.public.sandstorm;
+
+  // Get swimlane ID from the DOM hierarchy (listBody is inside list inside swimlane)
+  const getSwimlaneId = () => {
+    const swimlaneEl = listBodyEl && $(listBodyEl).closest('.swimlane').get(0);
+    return swimlaneEl && Blaze.getData(swimlaneEl)?._id;
+  };
+
+  if (isSandstorm) {
+    const user = ReactiveCache.getCurrentUser();
+    if (user) {
+      if (Utils.boardView() === 'board-view-swimlanes') {
+        instance.swimlaneId = getSwimlaneId();
+      }
+    }
+  } else if (Utils.boardView() === 'board-view-swimlanes') {
+    instance.swimlaneId = getSwimlaneId();
+  }
+
+  instance.spinner = instance.find('.sk-spinner-list');
+  instance.container = listBodyEl;
+
+  $(instance.container).on(
+    `scroll.spinner_${instance.swimlaneId}_${instance.listId}`,
+    () => instance._updateList(),
+  );
+  $(window).on(`resize.spinner_${instance.swimlaneId}_${instance.listId}`, () =>
+    instance._updateList(),
+  );
+
+  instance._updateList();
+});
+
+Template.spinnerList.onDestroyed(function () {
+  $(this.container).off(`scroll.spinner_${this.swimlaneId}_${this.listId}`);
+  $(window).off(`resize.spinner_${this.swimlaneId}_${this.listId}`);
+});
+
+function checkIdleTime() {
+  return window.requestIdleCallback ||
+    function (handler) {
+      const startTime = Date.now();
+      return setTimeout(function () {
+        handler({
+          didTimeout: false,
+          timeRemaining() {
+            return Math.max(0, 50.0 - (Date.now() - startTime));
+          },
+        });
+      }, 1);
+    };
+}
+
+Template.spinnerList.onCreated(function () {
+  const instance = this;
+
+  instance._updateList = function () {
+    // Use fallback when requestIdleCallback is not available on iOS and Safari
+    // https://www.afasterweb.com/2017/11/20/utilizing-idle-moments/
+    if (instance._spinnerInView()) {
+      instance.cardlimit.set(instance.cardlimit.get() + InfiniteScrollIter);
+      checkIdleTime()(() => instance._updateList());
+    }
+  };
+
+  instance._spinnerInView = function () {
+    // spinner deleted
+    if (!instance.spinner || !instance.spinner.offsetTop) {
+      return false;
+    }
+
+    const spinnerViewPosition = instance.spinner.offsetTop - instance.container.offsetTop + instance.spinner.clientHeight;
+
+    const parentViewHeight = instance.container.clientHeight;
+    const bottomViewPosition = instance.container.scrollTop + parentViewHeight;
+
+    return bottomViewPosition > spinnerViewPosition;
+  };
+});

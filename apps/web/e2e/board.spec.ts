@@ -291,3 +291,19 @@ test("create many boards and open the last one", async ({ page }) => {
   await expect(page.getByRole("link", { name: "One" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Two" })).toBeVisible();
 });
+
+test("move a card to the top and then the bottom of its list", async ({ page }) => {
+  await register(page, `ends_${stamp}`);
+  await hangBoard(page, "Ends");
+  const ready = page.locator(".list").nth(0);
+  for (const title of ["Alpha", "Beta", "Gamma"]) {
+    await ready.getByLabel("未着手 の新しいカード").fill(title);
+    await ready.getByRole("button", { name: "+" }).click();
+    await expect(ready.locator("[data-card-id]", { hasText: title })).toBeVisible();
+  }
+  await ready.locator("[data-card-id]").nth(2).dblclick();
+  await page.locator(".editor").getByRole("button", { name: "Gamma を先頭へ" }).click();
+  await expect(ready.locator("[data-card-id]").first()).toContainText("Gamma");
+  await page.locator(".editor").getByRole("button", { name: "Gamma を末尾へ" }).click();
+  await expect(ready.locator("[data-card-id]").last()).toContainText("Gamma");
+});

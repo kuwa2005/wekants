@@ -257,12 +257,13 @@ function WorkspaceColumn({
         className="batch"
         onSubmit={async (event) => {
           event.preventDefault();
-          const titles = titlesFromInput(title, boardBatch);
+          const source = title;
+          const titles = titlesFromInput(source, boardBatch);
           if (titles.length === 0) {
             return;
           }
           await onCreateBoard(titles);
-          setTitle("");
+          setTitle((current) => (current === source ? "" : current));
         }}
       >
         <textarea

@@ -149,7 +149,8 @@ function ListColumn({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const titles = titlesFromInput(title, cardBatch);
+    const source = title;
+    const titles = titlesFromInput(source, cardBatch);
     if (titles.length === 0) {
       return;
     }
@@ -159,9 +160,9 @@ function ListColumn({
         await onAdd(next);
         done += 1;
       }
-      setTitle("");
+      setTitle((current) => (current === source ? "" : current));
     } catch {
-      setTitle(cardBatch === "many" ? titles.slice(done).join("\n") : title);
+      setTitle((current) => (current === source ? (cardBatch === "many" ? titles.slice(done).join("\n") : source) : current));
     }
   }
 
@@ -561,7 +562,8 @@ export function BoardPage({ user, onLogout }: Props) {
 
   async function addList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const titles = titlesFromInput(listTitle, listBatch);
+    const source = listTitle;
+    const titles = titlesFromInput(source, listBatch);
     if (titles.length === 0) {
       return;
     }
@@ -574,9 +576,11 @@ export function BoardPage({ user, onLogout }: Props) {
         );
         done += 1;
       }
-      setListTitle("");
+      setListTitle((current) => (current === source ? "" : current));
     } catch {
-      setListTitle(listBatch === "many" ? titles.slice(done).join("\n") : listTitle);
+      setListTitle((current) =>
+        current === source ? (listBatch === "many" ? titles.slice(done).join("\n") : source) : current,
+      );
     }
   }
 
@@ -999,6 +1003,53 @@ export function BoardPage({ user, onLogout }: Props) {
               閉じる
             </button>
             {snapshot.board.ownerId === user.id ? (
+            <>
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`${editing.title} を先頭へ`}
+              onClick={() => {
+                const listCards = snapshot.cards.filter(
+                  (card) => card.listId === editing.listId && !card.archived,
+                );
+                const others = listCards
+                  .filter((card) => card.id !== editing.id)
+                  .slice()
+                  .sort((a, b) => a.rank - b.rank);
+                const { prevRank, nextRank } = neighborRanks(listCards, editing.id, others[0]?.id ?? null);
+                void api
+                  .moveCard(boardId, editing.id, { listId: editing.listId, prevRank, nextRank })
+                  .then((updated) => {
+                    setSnapshot((current) =>
+                      current ? { ...current, cards: upsertById(current.cards, [updated]) } : current,
+                    );
+                    setEditing(updated);
+                  });
+              }}
+            >
+              先頭へ
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`${editing.title} を末尾へ`}
+              onClick={() => {
+                const listCards = snapshot.cards.filter(
+                  (card) => card.listId === editing.listId && !card.archived,
+                );
+                const { prevRank, nextRank } = neighborRanks(listCards, editing.id, null);
+                void api
+                  .moveCard(boardId, editing.id, { listId: editing.listId, prevRank, nextRank })
+                  .then((updated) => {
+                    setSnapshot((current) =>
+                      current ? { ...current, cards: upsertById(current.cards, [updated]) } : current,
+                    );
+                    setEditing(updated);
+                  });
+              }}
+            >
+              末尾へ
+            </button>
             <button
               type="button"
               className="ghost"
@@ -1023,6 +1074,7 @@ export function BoardPage({ user, onLogout }: Props) {
             >
               保管
             </button>
+            </>
             ) : null}
             {snapshot.board.ownerId === user.id ? (
             <button

@@ -573,4 +573,55 @@ Use **3mm** steel.
     expect(cardRes.status).toBe(201);
     expect((await cardRes.json()).title).toBe("Plan\nBuild");
   });
+
+  it("moves a card to the start and then the end of its list", async () => {
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ends", password: "password1" }),
+    });
+    const jar = cookie(register);
+    const created = await app.request("/api/boards", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ title: "Ends" }),
+    });
+    const snapshot = await created.json();
+    const listId = snapshot.lists[0].id as string;
+    const titles = ["Alpha", "Beta", "Gamma"];
+    const made = [];
+    for (const title of titles) {
+      const res = await app.request(`/api/boards/${snapshot.board.id}/cards`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: jar },
+        body: JSON.stringify({ listId, title }),
+      });
+      made.push(await res.json());
+    }
+    const toStart = await app.request(`/api/boards/${snapshot.board.id}/cards/${made[2].id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, prevRank: null, nextRank: made[0].rank }),
+    });
+    expect(toStart.status).toBe(200);
+    const afterStart = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const startOrder = (await afterStart.json()).cards
+      .filter((card: { listId: string }) => card.listId === listId)
+      .sort((a: { rank: number }, b: { rank: number }) => a.rank - b.rank)
+      .map((card: { title: string; rank: number }) => card);
+    expect(startOrder.map((card: { title: string }) => card.title)).toEqual(["Gamma", "Alpha", "Beta"]);
+    const last = startOrder[startOrder.length - 1];
+    const toEnd = await app.request(`/api/boards/${snapshot.board.id}/cards/${made[2].id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar },
+      body: JSON.stringify({ listId, prevRank: last.rank, nextRank: null }),
+    });
+    expect(toEnd.status).toBe(200);
+    const afterEnd = await app.request(`/api/boards/${snapshot.board.id}`, { headers: { cookie: jar } });
+    const endOrder = (await afterEnd.json()).cards
+      .filter((card: { listId: string }) => card.listId === listId)
+      .sort((a: { rank: number }, b: { rank: number }) => a.rank - b.rank)
+      .map((card: { title: string }) => card.title);
+    expect(endOrder).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
 });
